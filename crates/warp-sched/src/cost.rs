@@ -6,6 +6,7 @@
 
 use crate::{ChunkId, CpuStateBuffers, EdgeIdx};
 use serde::{Deserialize, Serialize};
+use std::collections::HashSet;
 
 /// Cost function configuration with tunable weights
 ///
@@ -139,7 +140,8 @@ impl CpuCostMatrix {
             };
 
             let chunk_size = chunk.size;
-            let replicas = state.get_replicas(chunk_idx as u32);
+            // Convert replicas slice to HashSet for O(1) lookups instead of O(n)
+            let replicas: HashSet<EdgeIdx> = state.get_replicas(chunk_idx as u32).iter().copied().collect();
 
             for edge_idx in 0..actual_edges {
                 let edge = match state.get_edge(EdgeIdx(edge_idx as u32)) {
@@ -147,9 +149,8 @@ impl CpuCostMatrix {
                     None => continue,
                 };
 
-                // Check if this edge has a replica of the chunk
-                let has_replica = replicas.contains(&EdgeIdx(edge_idx as u32));
-                if !has_replica {
+                // Check if this edge has a replica of the chunk (O(1) with HashSet)
+                if !replicas.contains(&EdgeIdx(edge_idx as u32)) {
                     continue;
                 }
 

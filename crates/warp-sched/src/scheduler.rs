@@ -20,6 +20,7 @@ use crate::paths::{CpuPathSelector, PathConfig};
 use crate::reoptimize::{IncrementalConfig, IncrementalScheduler, ReoptPlan, ReoptScope, ReoptStrategy, Reassignment};
 use chrono::Utc;
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 /// Configuration for the chunk scheduler.
@@ -86,6 +87,8 @@ pub struct CpuChunkScheduler {
     reopt_step: usize,
     /// Current assignments for reoptimization reference
     current_assignments: Vec<Assignment>,
+    /// Index for O(1) assignment lookups by chunk_hash
+    assignment_index: HashMap<[u8; 32], usize>,
 }
 
 impl CpuChunkScheduler {
@@ -118,6 +121,7 @@ impl CpuChunkScheduler {
             pending_reopt: None,
             reopt_step: 0,
             current_assignments: Vec::new(),
+            assignment_index: HashMap::new(),
         }
     }
 
@@ -226,9 +230,8 @@ impl CpuChunkScheduler {
         // Find and update the assignment for this chunk
         let chunk_hash = self.find_chunk_hash(reassignment.chunk_id)?;
 
-        // Find the current assignment
-        let assignment_idx = self.current_assignments.iter()
-            .position(|a| a.chunk_hash == chunk_hash)?;
+        // Find the current assignment using O(1) index lookup
+        let assignment_idx = *self.assignment_index.get(&chunk_hash)?;
 
         // Update the source edges
         let mut assignment = self.current_assignments[assignment_idx].clone();
@@ -317,7 +320,9 @@ impl CpuChunkScheduler {
                             estimated_duration_ms: 100,
                         };
                         assignments.push(assignment.clone());
-                        // Track for reoptimization
+                        // Track for reoptimization - add to index for O(1) lookups
+                        let idx = self.current_assignments.len();
+                        self.assignment_index.insert(assignment.chunk_hash, idx);
                         self.current_assignments.push(assignment);
                     }
                 }
