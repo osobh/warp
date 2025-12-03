@@ -169,9 +169,9 @@
 - [x] Error handling - auth.rs tracing improvements, 17 production panic fixes
 - [x] Logging/tracing - warp-telemetry crate (104 tests)
 - [x] Configuration management - warp-config crate (61 tests)
-- [ ] Security audit
+- [x] Security audit - Fixed nonce reuse (CRITICAL), standardized OsRng (HIGH), NaN panics
 - [x] Performance profiling - O(n)→O(1) hot path optimizations, warp-sched benchmarks
-- [ ] Stress testing
+- [x] Stress testing - warp-sched (7 tests), warp-orch (5 tests)
 - [ ] Documentation
 
 ---
