@@ -1,0 +1,20 @@
+[package]
+name = "warp-hash"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "Hashing and Merkle tree for warp"
+
+[dependencies]
+blake3 = { workspace = true }
+rayon.workspace = true
+thiserror.workspace = true
+
+[dev-dependencies]
+criterion.workspace = true
+rand.workspace = true
+
+[[bench]]
+name = "hashing"
+harness = false

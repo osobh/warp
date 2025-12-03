@@ -1,0 +1,28 @@
+[package]
+name = "warp-compress"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "Compression algorithms for warp (CPU and GPU)"
+
+[features]
+default = []
+gpu = ["dep:cudarc", "cudarc?/cuda-12060"]
+
+[dependencies]
+zstd.workspace = true
+lz4_flex.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+
+# GPU support (optional)
+cudarc = { workspace = true, optional = true }
+
+[dev-dependencies]
+criterion.workspace = true
+rand.workspace = true
+
+[[bench]]
+name = "compression"
+harness = false

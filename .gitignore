@@ -1,0 +1,86 @@
+# Build artifacts
+/target/
+**/*.rs.bk
+# Note: Cargo.lock is committed for reproducible builds (this is a binary crate)
+
+# IDE and editors
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.*.sw?
+\#*\#
+.#*
+
+# OS files
+.DS_Store
+.DS_Store?
+._*
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+
+# Test artifacts
+*.profraw
+*.profdata
+lcov.info
+coverage/
+tarpaulin-report.html
+cobertura.xml
+
+# Benchmarks
+/bench-results/
+criterion/
+*.bench
+
+# Documentation builds
+/doc/
+/docs/
+
+# Local configuration
+.env
+.env.*
+!.env.example
+config.local.toml
+*.local.toml
+
+# Warp-specific
+*.warp
+/sessions/
+~/.warp/
+
+# Logs
+*.log
+logs/
+
+# Temporary files
+*.tmp
+*.temp
+*.bak
+*.orig
+
+# Debug files
+*.pdb
+*.dSYM/
+
+# Release artifacts
+*.tar.gz
+*.zip
+*.deb
+*.rpm
+*.exe
+*.msi
+
+# GPU/CUDA artifacts
+*.ptx
+*.cubin
+*.fatbin
+
+# Credential files (security)
+*.pem
+*.key
+*.crt
+*.p12
+credentials.json
+secrets.toml

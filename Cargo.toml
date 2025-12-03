@@ -1,0 +1,105 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/warp-cli",
+    "crates/warp-core",
+    "crates/warp-format",
+    "crates/warp-net",
+    "crates/warp-compress",
+    "crates/warp-hash",
+    "crates/warp-crypto",
+    "crates/warp-io",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.85"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/yourusername/warp"
+authors = ["Your Name <your@email.com>"]
+
+[workspace.dependencies]
+# Internal crates
+warp-core = { path = "crates/warp-core" }
+warp-format = { path = "crates/warp-format" }
+warp-net = { path = "crates/warp-net" }
+warp-compress = { path = "crates/warp-compress" }
+warp-hash = { path = "crates/warp-hash" }
+warp-crypto = { path = "crates/warp-crypto" }
+warp-io = { path = "crates/warp-io" }
+
+# Async runtime
+tokio = { version = "1.48", features = ["full"] }
+tokio-util = { version = "0.7", features = ["codec", "io"] }
+
+# QUIC transport
+quinn = "0.11"
+rustls = { version = "0.23", default-features = false, features = ["ring", "std"] }
+
+# Compression
+zstd = "0.13"
+lz4_flex = "0.11"
+
+# Hashing
+blake3 = { version = "1.8", features = ["rayon", "mmap"] }
+
+# Cryptography
+chacha20poly1305 = "0.10"
+ed25519-dalek = { version = "2.1", features = ["rand_core"] }
+x25519-dalek = { version = "2.0", features = ["static_secrets"] }
+argon2 = "0.5"
+rand = "0.8"
+
+# Serialization
+serde = { version = "1.0", features = ["derive"] }
+rmp-serde = "1.3"
+
+# Parallelism
+rayon = "1.11"
+dashmap = "6.1"
+
+# CLI
+clap = { version = "4.5", features = ["derive", "env", "wrap_help"] }
+indicatif = { version = "0.17", features = ["rayon"] }
+console = "0.15"
+
+# Error handling
+thiserror = "2.0"
+anyhow = "1.0"
+
+# Utilities
+bytes = "1.7"
+memmap2 = "0.9"
+walkdir = "2.5"
+tempfile = "3.14"
+filetime = "0.2"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+dirs = "5.0"
+
+# GPU (optional)
+cudarc = { version = "0.12" }
+
+# Testing
+criterion = { version = "0.5", features = ["html_reports"] }
+proptest = "1.5"
+test-case = "3.3"
+
+[workspace.lints.rust]
+unsafe_code = "warn"
+missing_docs = "warn"
+
+[workspace.lints.clippy]
+all = "warn"
+pedantic = "warn"
+nursery = "warn"
+
+[profile.release]
+lto = "thin"
+codegen-units = 1
+strip = true
+
+[profile.bench]
+inherits = "release"
+debug = true

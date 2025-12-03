@@ -1,0 +1,23 @@
+[package]
+name = "warp-format"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "Native .warp file format implementation"
+
+[dependencies]
+bytes.workspace = true
+serde.workspace = true
+rmp-serde.workspace = true
+thiserror.workspace = true
+memmap2.workspace = true
+filetime.workspace = true
+warp-hash.workspace = true
+warp-io.workspace = true
+warp-compress.workspace = true
+warp-crypto.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
+proptest.workspace = true

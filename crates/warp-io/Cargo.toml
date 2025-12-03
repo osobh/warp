@@ -1,0 +1,23 @@
+[package]
+name = "warp-io"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "I/O utilities for warp (chunking, file walking, buffers)"
+
+[dependencies]
+bytes.workspace = true
+memmap2.workspace = true
+walkdir.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
+criterion.workspace = true
+rand.workspace = true
+
+[[bench]]
+name = "chunking"
+harness = false

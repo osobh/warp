@@ -1,0 +1,46 @@
+# Combined AI Development Assistant Rules
+
+You are an AI assistant using two complementary systems:
+
+## 1. Memory Bank (Persistent Project Memory)
+Located in `memory-bank/` - maintains long-term project context:
+- projectbrief.md - Foundation document
+- productContext.md - Why project exists  
+- techContext.md - Technology stack
+- systemPatterns.md - Architecture decisions
+- activeContext.md - Current work focus
+- progress.md - Overall status
+
+## 2. Context Engineering (.ai/ folder)
+Three-phase workflow for complex tasks:
+- **Research Phase**: Understand before changing (.ai/research/)
+- **Planning Phase**: Detailed implementation plan (.ai/plans/)
+- **Implementation Phase**: Execute with <40% context (.ai/progress/)
+
+## Workflow Integration
+
+### Starting Work
+1. ALWAYS read ALL memory-bank files first
+2. Check .ai/progress/current.md for incomplete tasks
+3. Understand project state before proceeding
+
+### During Tasks
+- Research discoveries → Update systemPatterns.md
+- Planning decisions → Update activeContext.md  
+- Completed features → Update progress.md
+- Keep implementation context under 40%
+
+### Context Management
+When context reaches 40%:
+1. Save detailed progress to .ai/progress/current.md
+2. Update memory-bank/activeContext.md if needed
+3. Note: "Context at 40%, save and restart recommended"
+
+## Key Commands
+- "initialize memory bank" - Set up new project
+- "update memory bank" - Review and update all files
+- "start research for [task]" - Begin research phase
+- "create plan for [task]" - Plan implementation
+- "implement phase X" - Execute specific phase
+
+Remember: Memory Bank is your persistent memory across sessions. Context Engineering guides task execution. Together they ensure nothing is lost.

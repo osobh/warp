@@ -1,0 +1,40 @@
+[package]
+name = "warp-cli"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "CLI for warp - GPU-accelerated bulk data transfer"
+
+[[bin]]
+name = "warp"
+path = "src/main.rs"
+
+[dependencies]
+warp-core.workspace = true
+warp-crypto.workspace = true
+warp-format.workspace = true
+warp-io.workspace = true
+warp-net.workspace = true
+warp-compress.workspace = true
+
+clap.workspace = true
+indicatif.workspace = true
+console.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+anyhow.workspace = true
+serde.workspace = true
+rmp-serde.workspace = true
+rand.workspace = true
+dirs.workspace = true
+
+[features]
+default = []
+gpu = ["warp-compress/gpu"]
+
+[dev-dependencies]
+assert_cmd = "2.0"
+predicates = "3.1"
+tempfile.workspace = true
