@@ -110,7 +110,7 @@ struct HistogramInner {
 impl Histogram {
     pub fn new(name: &str, description: &str, buckets: Vec<f64>) -> Self {
         let mut sorted_buckets = buckets;
-        sorted_buckets.sort_by(|a, b| a.partial_cmp(b).unwrap());
+        sorted_buckets.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
         let bucket_counts: Vec<AtomicU64> = sorted_buckets.iter().map(|_| AtomicU64::new(0)).collect();
         Self {
             name: name.to_string(),
@@ -148,7 +148,7 @@ impl Histogram {
         let inner = self.inner.read();
         if inner.samples.is_empty() { return 0.0; }
         let mut sorted = inner.samples.clone();
-        sorted.sort_by(|a, b| a.partial_cmp(b).unwrap());
+        sorted.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
         let index = (p / 100.0 * (sorted.len() - 1) as f64).round() as usize;
         sorted[index.min(sorted.len() - 1)]
     }
