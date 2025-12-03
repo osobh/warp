@@ -52,5 +52,9 @@ serde_json = "1.0"
 default = []
 gpu = ["cudarc"]
 
+[[bench]]
+name = "scheduler"
+harness = false
+
 [lints]
 workspace = true

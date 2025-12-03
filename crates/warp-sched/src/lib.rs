@@ -30,7 +30,7 @@ pub use types::{
 };
 pub use state::{GpuStateBuffers, CpuStateBuffers, StateSnapshot};
 pub use cost::{CostMatrix, CpuCostMatrix, CostConfig};
-pub use paths::{PathSelector, CpuPathSelector, PathSelection};
+pub use paths::{PathSelector, CpuPathSelector, PathSelection, PathConfig};
 pub use failover::{FailoverManager, CpuFailoverManager, FailoverDecision, FailoverAction};
 pub use balance::{LoadBalancer, CpuLoadBalancer, LoadBalanceConfig, RebalanceOp, RebalancePlan, LoadMetrics};
 pub use dispatch::DispatchQueue;

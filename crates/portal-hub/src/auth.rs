@@ -26,6 +26,7 @@ use chrono::{DateTime, Duration, Utc};
 use ed25519_dalek::{Signature, Signer, Verifier, VerifyingKey};
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
+use tracing::{debug, warn};
 use uuid::Uuid;
 
 /// Authentication token expiration window (5 minutes)
@@ -82,14 +83,16 @@ impl AuthToken {
     pub fn verify(&self, public_key: &VerifyingKey) -> Result<()> {
         // Check expiration
         if Utc::now() >= self.expires_at {
+            debug!(edge_id = %self.edge_id, expires_at = %self.expires_at, "Auth token expired");
             return Err(Error::AuthFailed);
         }
 
         // Verify signature
         let message = Self::canonical_message(self.edge_id, self.expires_at);
-        public_key
-            .verify(&message, &self.signature)
-            .map_err(|_| Error::InvalidSignature)?;
+        public_key.verify(&message, &self.signature).map_err(|e| {
+            debug!(edge_id = %self.edge_id, error = %e, "Signature verification failed");
+            Error::InvalidSignature
+        })?;
 
         Ok(())
     }
@@ -127,7 +130,10 @@ impl AuthenticatedEdge {
             .get("Authorization")
             .ok_or(AuthError::MissingToken)?
             .to_str()
-            .map_err(|_| AuthError::InvalidToken)?;
+            .map_err(|e| {
+                debug!("Invalid Authorization header encoding: {}", e);
+                AuthError::InvalidToken
+            })?;
 
         // Parse "Bearer <base64-encoded-token>"
         let token_str = auth_header
@@ -135,16 +141,22 @@ impl AuthenticatedEdge {
             .ok_or(AuthError::InvalidToken)?;
 
         // Decode base64 token
-        let token_bytes = base64_decode(token_str).map_err(|_| AuthError::InvalidToken)?;
+        let token_bytes = base64_decode(token_str).map_err(|e| {
+            debug!("Failed to decode base64 token: {}", e);
+            AuthError::InvalidToken
+        })?;
 
         // Deserialize token
-        let token: AuthToken =
-            serde_json::from_slice(&token_bytes).map_err(|_| AuthError::InvalidToken)?;
+        let token: AuthToken = serde_json::from_slice(&token_bytes).map_err(|e| {
+            debug!("Failed to deserialize auth token: {}", e);
+            AuthError::InvalidToken
+        })?;
 
         // Get edge from storage
-        let edge = storage
-            .get_edge(&token.edge_id)
-            .map_err(|_| AuthError::EdgeNotFound)?;
+        let edge = storage.get_edge(&token.edge_id).map_err(|e| {
+            warn!(edge_id = %token.edge_id, error = %e, "Edge lookup failed during auth");
+            AuthError::EdgeNotFound
+        })?;
 
         // Verify token
         token.verify(&edge.public_key)?;
