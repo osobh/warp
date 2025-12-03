@@ -21,7 +21,7 @@
 | 8 | GPU Scheduler | COMPLETE | 2025-12-03 | 2025-12-03 |
 | **M2** | **Portal MVP** | **COMPLETE** | | 2025-12-03 |
 | 9 | Orchestration | COMPLETE | 2025-12-03 | 2025-12-03 |
-| 10 | Auto-Reconciliation | PARTIAL | 2025-12-03 | |
+| 10 | Auto-Reconciliation | COMPLETE | 2025-12-03 | 2025-12-03 |
 | **M3** | **Portal Complete** | IN PROGRESS | | |
 | 11 | Production | PARTIAL | 2025-12-03 | |
 | 12 | Ecosystem | PARTIAL | 2025-12-03 | |
@@ -153,24 +153,24 @@
 
 ---
 
-## Phase 10: Auto-Reconciliation - PARTIAL (in warp-orch)
+## Phase 10: Auto-Reconciliation - COMPLETE (in warp-orch/warp-sched)
 
-- [x] Drift detection (reconcile.rs)
-- [ ] Reoptimization triggers
-- [ ] Incremental rescheduling
-- [ ] Predictive pre-positioning
-- [ ] Time-aware scheduling
-- [ ] Cost/power-aware routing
+- [x] Drift detection (reconcile.rs - EMA-based)
+- [x] Reoptimization triggers (triggers.rs - 725 lines, ~30 tests)
+- [x] Incremental rescheduling (scheduler.rs - request_reopt(), pending plan execution)
+- [x] Predictive pre-positioning (preposition.rs - 900 lines, ~30 tests)
+- [x] Time-aware scheduling (constraints.rs integration with scheduler)
+- [x] Cost/power-aware routing (cost.rs - set_cost(), invalidate(), constraint multipliers)
 
 ---
 
 ## Phase 11: Production Hardening - PARTIAL
 
-- [ ] Error handling (comprehensive audit needed)
+- [x] Error handling - auth.rs tracing improvements, 17 production panic fixes
 - [x] Logging/tracing - warp-telemetry crate (104 tests)
 - [x] Configuration management - warp-config crate (61 tests)
 - [ ] Security audit
-- [ ] Performance profiling
+- [x] Performance profiling - O(n)→O(1) hot path optimizations, warp-sched benchmarks
 - [ ] Stress testing
 - [ ] Documentation
 
