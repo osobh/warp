@@ -13,6 +13,7 @@
 //! - **Orchestrator**: High-level transfer coordination
 //! - **Reconcile**: Drift detection and reoptimization triggers
 //! - **Predict**: Predictive pre-positioning and access patterns
+//! - **Preposition**: Predictive pre-positioning execution
 
 pub mod types;
 pub mod pool;
@@ -22,6 +23,8 @@ pub mod upload;
 pub mod orchestrator;
 pub mod reconcile;
 pub mod predict;
+pub mod triggers;
+pub mod preposition;
 
 pub use types::{
     TransferId, TransferState, TransferStatus, TransferDirection,
@@ -39,6 +42,11 @@ pub use reconcile::{
 pub use predict::{
     AccessAnalytics, AccessPattern, AccessRecord, PatternConfig, PatternDetector,
     PrepositionPriority, PrepositionRequest, Predictor, PredictorConfig,
+};
+pub use triggers::{TriggerConfig, TriggerGenerator};
+pub use preposition::{
+    PrepositionConfig, PrepositionOp, PrepositionStatus, PrepositionMetrics,
+    EdgeInfo, PrepositionPlanner, PrepositionExecutor, PrepositionManager,
 };
 
 use thiserror::Error;

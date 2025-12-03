@@ -1,92 +1,102 @@
 # Active Context
 
 ## Current Focus
-**Portal Core Complete - Ready for Network Layer** - Completed Phase 5 (Portal Core) with zero-knowledge encryption, key hierarchy, and Hub server. Ready to begin Phase 6 (Network Layer).
+**Phase 10 Complete - Ready for Production Hardening** - Completed Phase 10 (Auto-Reconciliation) with all 6 features. Ready to begin Phase 11 (Production Hardening) or continue Phase 12 (Ecosystem).
 
-### Milestone Achieved: Portal Core Complete (2025-12-02)
-- **Phase 5**: Portal Core complete (portal-core and portal-hub crates)
-  - BIP-39 key hierarchy with HKDF derivation
-  - Convergent encryption for content-addressed deduplication
-  - Portal lifecycle state machine (Created → Active → Expired → Archived)
-  - Access control with ACLs, conditions, and link-based sharing
-  - Axum 0.8 HTTP server with Ed25519 authentication
+### Milestone Achieved: Auto-Reconciliation Complete (2025-12-03)
+- **Phase 10**: Auto-Reconciliation complete
+  - Drift detection with EMA-based tracking
+  - Reoptimization triggers (TriggerGenerator)
+  - Incremental rescheduling (request_reopt in scheduler)
+  - Predictive pre-positioning (PrepositionManager)
+  - Time-aware scheduling (ConstraintEvaluator integration)
+  - Cost/power-aware routing (constraint multipliers)
 
 ### Confirmed Strategy
 - **Approach**: Sequential (complete Warp Engine before Portal) ✓
-- **MVP**: Full system through GPU Chunk Scheduler (Phase 8)
+- **MVP**: Full system through GPU Chunk Scheduler (Phase 8) ✓
 - **Team**: Solo development
 - **Extensions**: After Phase 12 completion
 
-### Next Priority: Phases 6-10
-1. ~~Portal Core (zero-knowledge, key hierarchy, lifecycle)~~ ✓
-2. WireGuard P2P mesh networking (Phase 6)
-3. Edge Intelligence (health, bandwidth estimation) (Phase 7)
-4. GPU Chunk Scheduler (10M chunks in <10ms) (Phase 8)
-5. Transfer Orchestration (swarm downloads) (Phase 9)
-6. Auto-Reconciliation (self-healing) (Phase 10)
+### Next Priority: Phases 11-12
+1. ~~Auto-Reconciliation (self-healing)~~ ✓ (Phase 10)
+2. Production Hardening (Phase 11)
+   - Error handling audit
+   - Security audit
+   - Performance profiling
+   - Stress testing
+   - Documentation
+3. Ecosystem & Tools (Phase 12)
+   - API documentation (OpenAPI)
+   - Integration examples
+   - Packaging (deb, rpm, brew, Docker)
 
-## Recent Accomplishments (2025-12-02)
+## Recent Accomplishments (2025-12-03)
 
-### portal-core Crate - NEW (Phase 5)
-- BIP-39 key hierarchy with HKDF (keys.rs - 863 lines)
-- Convergent encryption for deduplication (encryption.rs - 810 lines)
-- Portal lifecycle state machine (portal.rs - 771 lines)
-- Access control with ACLs (access.rs - 837 lines)
-- 74 tests passing
+### Phase 10: Auto-Reconciliation - COMPLETE
+- **triggers.rs** (warp-orch) - ~725 lines
+  - TriggerConfig for configurable thresholds
+  - TriggerGenerator monitors progress, health, load
+  - Generates ReoptTrigger events for reconciliation loop
+  - ~30 tests
 
-### portal-hub Crate - NEW (Phase 5)
-- Axum 0.8 HTTP server (server.rs - 556 lines)
-- Ed25519 authentication (auth.rs - 446 lines)
-- In-memory storage with DashMap (storage.rs - 839 lines)
-- REST API endpoints (routes.rs - 734 lines)
-- 71 tests passing
+- **scheduler.rs** modifications (warp-sched)
+  - Added request_reopt() method
+  - Pending reopt plan tracking
+  - Reopt step execution in tick loop
+  - Current assignments tracking for reoptimization
 
-### warp-gpu Crate (Phase 3)
-- CUDA context management with cudarc 0.18.1
-- GPU BLAKE3 kernel (blake3.rs - 885 lines)
-- GPU ChaCha20 kernel (chacha20.rs - 885 lines)
-- Pinned memory pool with buffer reuse
-- 65 tests passing
+- **preposition.rs** (warp-orch) - ~900 lines
+  - PrepositionConfig with rate limiting
+  - PrepositionPlanner for demand prediction
+  - PrepositionExecutor with concurrent transfer management
+  - PrepositionManager coordinates planning/execution
+  - ~30 tests
 
-### warp-stream Crate (Phase 4)
-- Triple-buffer pipeline for <5ms latency
-- GPU crypto integration with CPU fallback
-- Backpressure handling with flow control
-- 61 tests passing
+- **cost.rs** modifications (warp-sched)
+  - Added set_cost() and invalidate() methods
+  - ConstraintEvaluator integration
 
 ### Test Coverage
-- 545 tests passing workspace-wide
-- 12-crate workspace
+- warp-sched: 249 tests passing
+- warp-orch: 271 tests passing
+- ~1,500+ tests workspace-wide
+- 20-crate workspace
 - All files under 900 lines
 
 ## Next Steps
 
-### Phase 5: Portal Core - COMPLETE
-- [x] Create portal-core crate (74 tests)
-- [x] Key hierarchy with BIP-39
-- [x] Convergent encryption
-- [x] Portal lifecycle state machine
-- [x] Access control with ACLs
-- [x] Create portal-hub crate (71 tests)
+### Phase 11: Production Hardening (PARTIAL)
+Already completed:
+- [x] Logging/tracing (warp-telemetry, 104 tests)
+- [x] Configuration management (warp-config, 61 tests)
 
-### Phase 6 (Next): Network Layer
-- [ ] WireGuard interface management (boringtun)
-- [ ] Peer configuration and discovery
-- [ ] Virtual IP allocation (10.portal.0.0/16)
-- [ ] mDNS discovery for LAN peers
-- [ ] Hub relay fallback
-- [ ] Roaming support
+Remaining:
+- [ ] Error handling audit
+- [ ] Security audit
+- [ ] Performance profiling
+- [ ] Stress testing
+- [ ] Documentation
+
+### Phase 12: Ecosystem & Tools (PARTIAL)
+Already completed:
+- [x] CLI polish (stream commands)
+- [x] Web dashboard (warp-dashboard, 86 tests)
+- [x] API server (warp-api, 55 tests)
+
+Remaining:
+- [ ] Mobile companion
+- [ ] API documentation (OpenAPI)
+- [ ] Integration examples
+- [ ] Packaging (deb, rpm, brew, Docker)
 
 ## Active Decisions
 
-### Decision Needed: Chunk Size Strategy
-**Context**: Current default is 4MB target, 1MB min, 16MB max.
-- Larger chunks: Better compression ratio, less overhead, worse dedup
-- Smaller chunks: Better dedup, more overhead, harder to saturate GPU
+### Decision Needed: Next Priority
 **Options**:
-1. Keep 4MB target (balanced)
-2. Increase to 8MB (favor throughput)
-3. Make adaptive based on payload size
+1. **Production Hardening First**: Error handling, security audit, stress testing
+2. **Ecosystem First**: API docs, packaging, integration examples
+3. **Core Stubs First**: Complete WarpWriter/Reader, network integration
 
 ### Decision Made: Binary Protocol over JSON
 **Decided**: Use MessagePack (rmp-serde) for wire protocol
@@ -128,22 +138,27 @@ pub enum Error {
 - Integration tests in /tests directory
 - Benchmarks with Criterion, report throughput in bytes/sec
 
-## Project Insights
-
-### Performance Discovery
-BLAKE3 with rayon achieves 10GB/s+ on modern CPUs when:
-- Data is >1MB (amortizes setup)
-- Using mmap for file access
-- Thread pool warmed up
-
-### Chunking Insight
-Buzhash window size of 48 bytes provides good boundary distribution without excessive CPU cost. Smaller windows (32) have more collisions, larger (64) waste cycles.
-
-### Compression Insight
-Entropy sampling first 4KB accurately predicts compressibility for most files. High-entropy files (>0.95) should skip compression entirely.
-
 ## Blocked Items
 - **GPU Testing on Hardware**: Tests pass but actual GPU hardware needed for performance validation
 - **Network Integration Tests**: Need test certificate infrastructure for QUIC
 - **Large-scale Benchmarks**: Need multi-TB test dataset generation
-- **WireGuard Integration**: Phase 6 - Need boringtun crate integration
+
+## Known Technical Debt
+
+1. **Merkle hash_pair uses placeholder XOR**
+   - Location: `warp-format/src/merkle.rs:76-88`
+   - Impact: Merkle verification will be incorrect
+   - Fix: Replace XOR with `warp_hash::hash()`
+
+2. **WarpReader/Writer are stubs**
+   - Location: `warp-format/src/reader.rs`, `writer.rs`
+   - Impact: Cannot create or read .warp archives
+   - Fix: Implement full functionality
+
+3. **Chunker window removal is O(n)**
+   - Location: `warp-io/src/chunker.rs:74`
+   - Fix: Use VecDeque or ring buffer
+
+4. **Integration tests empty**
+   - Location: `tests/integration.rs`
+   - Fix: Add comprehensive end-to-end tests

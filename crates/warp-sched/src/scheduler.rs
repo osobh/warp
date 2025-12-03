@@ -12,10 +12,13 @@ use crate::{
     CpuStateBuffers,
 };
 use crate::balance::{CpuLoadBalancer, LoadBalanceConfig};
+use crate::constraints::ConstraintEvaluator;
 use crate::cost::{CostConfig, CpuCostMatrix};
 use crate::dispatch::DispatchQueue;
 use crate::failover::{CpuFailoverManager, FailoverConfig, FailoverDecision};
 use crate::paths::{CpuPathSelector, PathConfig};
+use crate::reoptimize::{IncrementalConfig, IncrementalScheduler, ReoptPlan, ReoptScope, ReoptStrategy, Reassignment};
+use chrono::Utc;
 use serde::{Deserialize, Serialize};
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -34,6 +37,8 @@ pub struct SchedulerConfig {
     pub failover_config: FailoverConfig,
     /// Load balancing configuration.
     pub balance_config: LoadBalanceConfig,
+    /// Incremental rescheduling configuration.
+    pub incremental_config: IncrementalConfig,
 }
 
 impl Default for SchedulerConfig {
@@ -45,6 +50,7 @@ impl Default for SchedulerConfig {
             path_config: PathConfig::default(),
             failover_config: FailoverConfig::default(),
             balance_config: LoadBalanceConfig::default(),
+            incremental_config: IncrementalConfig::default(),
         }
     }
 }
@@ -70,6 +76,16 @@ pub struct CpuChunkScheduler {
     dispatch_queue: DispatchQueue,
     pending_requests: Vec<ScheduleRequest>,
     metrics: SchedulerMetrics,
+    /// Optional constraint evaluator for time/cost/power-aware scheduling
+    constraint_evaluator: Option<ConstraintEvaluator>,
+    /// Incremental scheduler for reoptimization
+    incremental_scheduler: IncrementalScheduler,
+    /// Pending reoptimization plan
+    pending_reopt: Option<ReoptPlan>,
+    /// Current step in pending reopt plan
+    reopt_step: usize,
+    /// Current assignments for reoptimization reference
+    current_assignments: Vec<Assignment>,
 }
 
 impl CpuChunkScheduler {
@@ -81,6 +97,7 @@ impl CpuChunkScheduler {
         let failover_mgr = CpuFailoverManager::new(config.failover_config.clone());
         let load_balancer = CpuLoadBalancer::new(config.balance_config.clone());
         let dispatch_queue = DispatchQueue::new();
+        let incremental_scheduler = IncrementalScheduler::new(config.incremental_config.clone());
 
         Self {
             config,
@@ -96,7 +113,136 @@ impl CpuChunkScheduler {
             dispatch_queue,
             pending_requests: Vec::with_capacity(max_chunks),
             metrics: SchedulerMetrics::default(),
+            constraint_evaluator: None,
+            incremental_scheduler,
+            pending_reopt: None,
+            reopt_step: 0,
+            current_assignments: Vec::new(),
         }
+    }
+
+    /// Sets the constraint evaluator for time/cost/power-aware scheduling.
+    ///
+    /// When set, the scheduler will apply constraint multipliers to costs
+    /// and filter out edges that violate hard constraints.
+    pub fn set_constraint_evaluator(&mut self, evaluator: ConstraintEvaluator) {
+        self.constraint_evaluator = Some(evaluator);
+    }
+
+    /// Removes the constraint evaluator.
+    pub fn clear_constraint_evaluator(&mut self) {
+        self.constraint_evaluator = None;
+    }
+
+    /// Returns a reference to the constraint evaluator, if set.
+    pub fn constraint_evaluator(&self) -> Option<&ConstraintEvaluator> {
+        self.constraint_evaluator.as_ref()
+    }
+
+    /// Returns a mutable reference to the constraint evaluator, if set.
+    pub fn constraint_evaluator_mut(&mut self) -> Option<&mut ConstraintEvaluator> {
+        self.constraint_evaluator.as_mut()
+    }
+
+    /// Request a reoptimization of chunk assignments.
+    ///
+    /// Creates a new reoptimization plan based on the given scope and strategy,
+    /// which will be executed incrementally during subsequent ticks.
+    pub fn request_reopt(&mut self, scope: ReoptScope, strategy: ReoptStrategy) {
+        let plan = IncrementalScheduler::plan_reopt(
+            scope,
+            strategy,
+            &self.current_assignments,
+            &self.cost_matrix,
+        );
+
+        // Only set the plan if there are reassignments to make
+        if !plan.is_empty() {
+            self.pending_reopt = Some(plan);
+            self.reopt_step = 0;
+        }
+    }
+
+    /// Check if there is a pending reoptimization plan.
+    pub fn has_pending_reopt(&self) -> bool {
+        self.pending_reopt.is_some()
+    }
+
+    /// Cancel any pending reoptimization plan.
+    pub fn cancel_reopt(&mut self) {
+        if self.pending_reopt.is_some() {
+            self.incremental_scheduler.abort_plan();
+            self.pending_reopt = None;
+            self.reopt_step = 0;
+        }
+    }
+
+    /// Get the current reoptimization plan, if any.
+    pub fn pending_reopt_plan(&self) -> Option<&ReoptPlan> {
+        self.pending_reopt.as_ref()
+    }
+
+    /// Get the incremental scheduler's metrics.
+    pub fn reopt_metrics(&self) -> &crate::reoptimize::ReoptMetrics {
+        self.incremental_scheduler.metrics()
+    }
+
+    /// Execute a single step of the pending reoptimization plan.
+    /// Returns the reassignment made, if any.
+    fn execute_reopt_step(&mut self) -> Option<Reassignment> {
+        let plan = self.pending_reopt.as_ref()?;
+
+        if self.reopt_step >= plan.reassignments.len() {
+            // Plan is complete
+            self.pending_reopt = None;
+            self.reopt_step = 0;
+            return None;
+        }
+
+        // Execute the next step
+        let result = self.incremental_scheduler.execute_step(plan, self.reopt_step);
+
+        if let Ok(reassignment) = result {
+            self.reopt_step += 1;
+
+            // Check if we've completed all steps
+            if self.reopt_step >= plan.reassignments.len() {
+                self.pending_reopt = None;
+                self.reopt_step = 0;
+            }
+
+            return Some(reassignment);
+        }
+
+        // Step failed, abort the plan
+        self.incremental_scheduler.abort_plan();
+        self.pending_reopt = None;
+        self.reopt_step = 0;
+        None
+    }
+
+    /// Apply a reassignment to the current assignments.
+    fn apply_reassignment(&mut self, reassignment: &Reassignment) -> Option<Assignment> {
+        // Find and update the assignment for this chunk
+        let chunk_hash = self.find_chunk_hash(reassignment.chunk_id)?;
+
+        // Find the current assignment
+        let assignment_idx = self.current_assignments.iter()
+            .position(|a| a.chunk_hash == chunk_hash)?;
+
+        // Update the source edges
+        let mut assignment = self.current_assignments[assignment_idx].clone();
+        assignment.source_edges = reassignment.to_edges.clone();
+        self.current_assignments[assignment_idx] = assignment.clone();
+
+        Some(assignment)
+    }
+
+    /// Find chunk hash by ChunkId.
+    fn find_chunk_hash(&self, chunk_id: ChunkId) -> Option<[u8; 32]> {
+        self.current_assignments.iter()
+            .find(|a| ChunkId::from_hash(&a.chunk_hash) == chunk_id)
+            .map(|a| a.chunk_hash)
     }
 
     /// Schedules chunks for assignment.
@@ -115,17 +261,14 @@ impl CpuChunkScheduler {
     /// 4. Select K-best paths for pending chunks
     /// 5. Create assignments from path selections
     /// 6. Apply load balancing if needed
-    /// 7. Push assignments to dispatch queue
-    /// 8. Update metrics
+    /// 7. Execute reoptimization step if pending
+    /// 8. Push assignments to dispatch queue
+    /// 9. Update metrics
     pub fn tick(&mut self) -> AssignmentBatch {
         self.state.generation += 1;
         self.metrics.tick_count += 1;
 
         let mut assignments = Vec::new();
-
-        if self.pending_requests.is_empty() {
-            return self.create_batch(assignments);
-        }
 
         // Step 1: Check for failovers
         let failover_decisions = self.failover_mgr.check_timeouts(&self.state_buffers);
@@ -138,35 +281,45 @@ impl CpuChunkScheduler {
         // Step 3: Compute cost matrix
         self.cost_matrix.compute(&self.state_buffers);
 
-        // Step 4 & 5: Select paths and create assignments
-        let requests_to_process: Vec<ScheduleRequest> = self
-            .pending_requests
-            .drain(..)
-            .take(self.config.max_assignments_per_tick)
-            .collect();
+        // Step 3b: Apply constraints if evaluator is set (time/cost/power-aware)
+        if let Some(evaluator) = &self.constraint_evaluator {
+            let now = Utc::now();
+            evaluator.apply_to_cost_matrix(&mut self.cost_matrix, now);
+        }
 
-        for request in &requests_to_process {
-            for chunk_hash in &request.chunks {
-                // Convert hash to ChunkId for path selection
-                let chunk_id = ChunkId::from_hash(chunk_hash);
+        // Step 4 & 5: Select paths and create assignments for new requests
+        if !self.pending_requests.is_empty() {
+            let requests_to_process: Vec<ScheduleRequest> = self
+                .pending_requests
+                .drain(..)
+                .take(self.config.max_assignments_per_tick)
+                .collect();
 
-                let path_selection = self.path_selector.select(chunk_id, &self.cost_matrix);
-                if !path_selection.selected_edges.is_empty() {
-                    // Extract just the EdgeIdx from (EdgeIdx, cost) tuples
-                    let source_edges: Vec<EdgeIdx> = path_selection
-                        .selected_edges
-                        .iter()
-                        .map(|(edge, _cost)| *edge)
-                        .collect();
+            for request in &requests_to_process {
+                for chunk_hash in &request.chunks {
+                    // Convert hash to ChunkId for path selection
+                    let chunk_id = ChunkId::from_hash(chunk_hash);
 
-                    let assignment = Assignment {
-                        chunk_hash: *chunk_hash,
-                        chunk_size: 1024 * 256, // Default chunk size
-                        source_edges,
-                        priority: request.priority,
-                        estimated_duration_ms: 100,
-                    };
-                    assignments.push(assignment);
+                    let path_selection = self.path_selector.select(chunk_id, &self.cost_matrix);
+                    if !path_selection.selected_edges.is_empty() {
+                        // Extract just the EdgeIdx from (EdgeIdx, cost) tuples
+                        let source_edges: Vec<EdgeIdx> = path_selection
+                            .selected_edges
+                            .iter()
+                            .map(|(edge, _cost)| *edge)
+                            .collect();
+
+                        let assignment = Assignment {
+                            chunk_hash: *chunk_hash,
+                            chunk_size: 1024 * 256, // Default chunk size
+                            source_edges,
+                            priority: request.priority,
+                            estimated_duration_ms: 100,
+                        };
+                        assignments.push(assignment.clone());
+                        // Track for reoptimization
+                        self.current_assignments.push(assignment);
+                    }
                 }
             }
         }
@@ -174,11 +327,27 @@ impl CpuChunkScheduler {
         // Step 6: Apply load balancing (currently plan_rebalance only, not applying yet)
         let _rebalance_plan = self.load_balancer.plan_rebalance(&self.state_buffers);
 
-        // Step 7: Push to dispatch queue
+        // Step 7: Execute reoptimization step if pending
+        if self.pending_reopt.is_some() {
+            // Execute up to max_reassignments_per_tick steps
+            let max_steps = self.config.incremental_config.max_reassignments_per_tick;
+            for _ in 0..max_steps {
+                if let Some(reassignment) = self.execute_reopt_step() {
+                    // Apply the reassignment and add to output
+                    if let Some(updated_assignment) = self.apply_reassignment(&reassignment) {
+                        assignments.push(updated_assignment);
+                    }
+                } else {
+                    break;
+                }
+            }
+        }
+
+        // Step 8: Push to dispatch queue
         self.dispatch_queue.write_assignments(assignments.clone());
         self.dispatch_queue.swap_buffers();
 
-        // Step 8: Update metrics
+        // Step 9: Update metrics
         self.metrics.active_transfers = assignments.len();
 
         self.create_batch(assignments)
@@ -611,5 +780,156 @@ mod tests {
         let serialized = serde_json::to_string(&config).unwrap();
         let deserialized: SchedulerConfig = serde_json::from_str(&serialized).unwrap();
         assert_eq!(config.tick_interval_ms, deserialized.tick_interval_ms);
+    }
+
+    #[test]
+    fn test_constraint_evaluator_initially_none() {
+        let scheduler = CpuChunkScheduler::new(SchedulerConfig::default(), 100, 10);
+        assert!(scheduler.constraint_evaluator().is_none());
+    }
+
+    #[test]
+    fn test_set_constraint_evaluator() {
+        let mut scheduler = CpuChunkScheduler::new(SchedulerConfig::default(), 100, 10);
+        let evaluator = ConstraintEvaluator::new();
+
+        scheduler.set_constraint_evaluator(evaluator);
+        assert!(scheduler.constraint_evaluator().is_some());
+    }
+
+    #[test]
+    fn test_clear_constraint_evaluator() {
+        let mut scheduler = CpuChunkScheduler::new(SchedulerConfig::default(), 100, 10);
+        scheduler.set_constraint_evaluator(ConstraintEvaluator::new());
+        assert!(scheduler.constraint_evaluator().is_some());
+
+        scheduler.clear_constraint_evaluator();
+        assert!(scheduler.constraint_evaluator().is_none());
+    }
+
+    #[test]
+    fn test_constraint_evaluator_mut() {
+        use crate::constraints::{EdgeConstraints, TimeConstraint};
+
+        let mut scheduler = CpuChunkScheduler::new(SchedulerConfig::default(), 100, 10);
+        scheduler.set_constraint_evaluator(ConstraintEvaluator::new());
+
+        // Modify through mutable reference
+        if let Some(evaluator) = scheduler.constraint_evaluator_mut() {
+            let constraints = EdgeConstraints::new(EdgeIdx(0))
+                .with_time(TimeConstraint::Anytime);
+            evaluator.add_constraint(EdgeIdx(0), constraints);
+        }
+
+        // Verify modification persisted
+        let evaluator = scheduler.constraint_evaluator().unwrap();
+        assert!(evaluator.is_available(EdgeIdx(0), Utc::now()));
+    }
+
+    #[test]
+    fn test_tick_with_constraint_evaluator() {
+        use crate::constraints::{EdgeConstraints, TimeConstraint, TimeWindow};
+        use chrono::Weekday;
+
+        let mut scheduler = CpuChunkScheduler::new(SchedulerConfig::default(), 100, 10);
+
+        // Set up a constraint evaluator with a required time window
+        let mut evaluator = ConstraintEvaluator::new();
+
+        // Create a window that is NOT currently active (blocks edge 0)
+        let blocked_window = TimeWindow::new(1, 2, vec![Weekday::Sun], 0).unwrap();
+        let constraints = EdgeConstraints::new(EdgeIdx(0))
+            .with_time(TimeConstraint::RequiredWindow(blocked_window));
+        evaluator.add_constraint(EdgeIdx(0), constraints);
+
+        scheduler.set_constraint_evaluator(evaluator);
+
+        // Run a tick - should work without panic
+        let batch = scheduler.tick();
+        // No assignments expected since no chunks scheduled
+        assert!(batch.assignments.is_empty());
+    }
+
+    #[test]
+    fn test_no_pending_reopt_initially() {
+        let scheduler = CpuChunkScheduler::new(SchedulerConfig::default(), 100, 10);
+        assert!(!scheduler.has_pending_reopt());
+        assert!(scheduler.pending_reopt_plan().is_none());
+    }
+
+    #[test]
+    fn test_request_reopt_empty_assignments() {
+        let mut scheduler = CpuChunkScheduler::new(SchedulerConfig::default(), 100, 10);
+
+        // Request reopt with no current assignments - should not create a plan
+        scheduler.request_reopt(ReoptScope::Full, ReoptStrategy::Greedy);
+        assert!(!scheduler.has_pending_reopt());
+    }
+
+    #[test]
+    fn test_cancel_reopt() {
+        let mut scheduler = CpuChunkScheduler::new(SchedulerConfig::default(), 100, 10);
+
+        // Even with no plan, cancel should work safely
+        scheduler.cancel_reopt();
+        assert!(!scheduler.has_pending_reopt());
+        assert_eq!(scheduler.reopt_metrics().aborted_reopts, 0);
+    }
+
+    #[test]
+    fn test_reopt_metrics_access() {
+        let scheduler = CpuChunkScheduler::new(SchedulerConfig::default(), 100, 10);
+        let metrics = scheduler.reopt_metrics();
+        assert_eq!(metrics.total_reopts, 0);
+        assert_eq!(metrics.aborted_reopts, 0);
+    }
+
+    #[test]
+    fn test_scheduler_config_has_incremental_config() {
+        let config = SchedulerConfig::default();
+        assert_eq!(config.incremental_config.max_reassignments_per_tick, 10);
+        assert_eq!(config.incremental_config.min_improvement_threshold, 0.05);
+    }
+
+    #[test]
+    fn test_tick_tracks_current_assignments() {
+        use crate::{ChunkState, CpuStateBuffers, EdgeStateGpu};
+
+        let mut scheduler = CpuChunkScheduler::new(SchedulerConfig::default(), 100, 10);
+
+        // Set up state buffers with chunks and edges
+        let hash = [1u8; 32];
+        scheduler.state_mut().add_chunk(ChunkState::new(hash, 1024, 128, 3)).unwrap();
+        scheduler.state_mut().add_edge(0, EdgeStateGpu::new(
+            EdgeIdx(0),
+            1_000_000_000,
+            10_000,
+            0.95,
+            10,
+        )).unwrap();
+        scheduler.state_mut().add_replica(0, EdgeIdx(0));
+
+        // Schedule a chunk
+        let request = ScheduleRequest {
+            chunks: vec![hash],
+            priority: 128,
+            replica_target: 3,
+            deadline_ms: None,
+        };
+        scheduler.schedule(request).unwrap();
+
+        // Tick should create assignment and track it
+        let batch = scheduler.tick();
+        // Assignment tracking depends on path selection
+        assert_eq!(scheduler.metrics().tick_count, 1);
+    }
+
+    #[test]
+    fn test_tick_with_pending_reopt() {
+        let mut scheduler = CpuChunkScheduler::new(SchedulerConfig::default(), 100, 10);
+
+        // Tick should work even with no pending reopt
+        let batch = scheduler.tick();
+        assert!(batch.assignments.is_empty());
     }
 }

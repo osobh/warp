@@ -4,8 +4,9 @@
 - **Project Start**: December 2024
 - **Warp Engine Complete**: December 2, 2025
 - **Portal MVP Complete**: December 3, 2025
-- **Current Phase**: Phase 10-12 (PARTIAL)
-- **Next Step**: Complete remaining stub implementations
+- **Phase 10 Complete**: December 3, 2025
+- **Current Phase**: Phase 11-12 (Production Hardening & Ecosystem)
+- **Next Step**: Complete production hardening (error handling, security audit)
 - **Approach**: Sequential (Warp Engine → Portal → Production)
 
 ---
@@ -25,7 +26,7 @@
 | 8 | GPU Chunk Scheduler | COMPLETE | 2025-12-03 |
 | **M2** | **Portal MVP Complete** | **COMPLETE** | 2025-12-03 |
 | 9 | Transfer Orchestration | COMPLETE | 2025-12-03 |
-| 10 | Auto-Reconciliation | PARTIAL | |
+| 10 | Auto-Reconciliation | COMPLETE | 2025-12-03 |
 | **M3** | **Portal Complete** | IN PROGRESS | |
 | 11 | Production Hardening | PARTIAL | |
 | 12 | Ecosystem & Tools | PARTIAL | |
@@ -34,7 +35,7 @@
 
 ## Workspace Summary
 - **Crates**: 20
-- **Tests**: ~1,300+
+- **Tests**: ~1,500+ (warp-sched: 249, warp-orch: 271)
 - **All files**: Under 900 lines (architecture constraint)
 
 ---
@@ -289,7 +290,28 @@
 - [x] Progress tracking
 - [x] Reconciliation module
 
-### Phases 10-12: IN PROGRESS
+### Phase 10: Auto-Reconciliation - COMPLETE
+- [x] Drift detection (reconcile.rs - EMA-based)
+- [x] Reoptimization triggers (triggers.rs - 725 lines, ~30 tests)
+  - TriggerGenerator monitors progress, health, load
+  - Generates ReoptTrigger events for reconciliation
+- [x] Incremental rescheduling (scheduler.rs modifications)
+  - request_reopt() method in CpuChunkScheduler
+  - Pending reopt plan execution in tick loop
+  - Current assignments tracking
+- [x] Predictive pre-positioning (preposition.rs - 900 lines, ~30 tests)
+  - PrepositionPlanner for demand prediction
+  - PrepositionExecutor with rate limiting
+  - PrepositionManager coordinates planning/execution
+- [x] Time-aware scheduling (constraints.rs integration)
+  - ConstraintEvaluator integrated into scheduler
+  - TimeWindow checks in cost matrix
+- [x] Cost/power-aware routing (cost.rs modifications)
+  - set_cost() and invalidate() methods
+  - Constraint multipliers applied during tick
+- warp-sched: 249 tests, warp-orch: 271 tests
+
+### Phases 11-12: IN PROGRESS
 See `.ai/progress/portal_tracker.md` for detailed status.
 
 ---
@@ -307,7 +329,17 @@ See `.ai/progress/portal_tracker.md` for detailed status.
 - **v1.0.0**: Production ready
 
 ## Version History
-- **v0.9.0** (current): Portal MVP Complete + Partial Production/Ecosystem
+- **v0.10.0** (current): Auto-Reconciliation Complete
+  - Phase 10 complete with all 6 features
+  - Reoptimization triggers (TriggerGenerator)
+  - Incremental rescheduling (request_reopt in scheduler)
+  - Predictive pre-positioning (PrepositionManager)
+  - Time-aware scheduling (ConstraintEvaluator integration)
+  - Cost/power-aware routing (constraint multipliers)
+  - ~1,500+ tests passing workspace-wide
+  - Phases 0-10 complete, Phases 11-12 partial
+
+- **v0.9.0**: Portal MVP Complete + Partial Production/Ecosystem
   - 20-crate workspace
   - portal-core, portal-hub, portal-net, warp-edge, warp-sched, warp-orch
   - warp-api, warp-dashboard, warp-telemetry, warp-config

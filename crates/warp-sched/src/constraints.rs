@@ -377,6 +377,9 @@ impl ConstraintEvaluator {
     }
 
     /// Apply constraints to cost matrix
+    ///
+    /// Modifies costs in-place based on time, cost, and power constraints.
+    /// Edges that are blocked by constraints are invalidated.
     pub fn apply_to_cost_matrix(&self, costs: &mut CpuCostMatrix, now: DateTime<Utc>) {
         let (num_chunks, num_edges) = costs.dimensions();
 
@@ -384,17 +387,26 @@ impl ConstraintEvaluator {
             for edge_idx in 0..num_edges {
                 let edge = EdgeIdx::new(edge_idx as u32);
 
+                // First check if edge is available at all
+                if !self.is_available(edge, now) {
+                    // Edge is blocked by hard constraints - invalidate
+                    costs.invalidate(chunk_idx, edge_idx);
+                    continue;
+                }
+
                 // Assume average chunk size for multiplier calculation
                 let multiplier = self.cost_multiplier(edge, now, 1_000_000);
 
                 // Get current cost if valid
                 if let Some(current_cost) = costs.get_cost(crate::ChunkId::new(chunk_idx as u64), edge) {
-                    // Apply multiplier by updating internal costs
-                    let new_cost = (current_cost as f64 * multiplier) as f32;
-                    // Note: CpuCostMatrix doesn't expose a way to set individual costs,
-                    // so we'd need to recompute or add that method
-                    // For now, this is the interface we need
-                    let _ = new_cost; // Placeholder
+                    if multiplier.is_infinite() {
+                        // Infinite multiplier means blocked
+                        costs.invalidate(chunk_idx, edge_idx);
+                    } else {
+                        // Apply multiplier to adjust cost
+                        let new_cost = (current_cost as f64 * multiplier) as f32;
+                        costs.set_cost(chunk_idx, edge_idx, new_cost);
+                    }
                 }
             }
         }

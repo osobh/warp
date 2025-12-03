@@ -295,6 +295,35 @@ impl CpuCostMatrix {
         &self.config
     }
 
+    /// Set cost for a specific (chunk, edge) pair
+    ///
+    /// Used by ConstraintEvaluator to apply multipliers after initial compute.
+    /// Returns false if the pair is out of bounds or was invalid.
+    pub fn set_cost(&mut self, chunk_idx: usize, edge_idx: usize, new_cost: f32) -> bool {
+        if chunk_idx >= self.num_chunks || edge_idx >= self.num_edges {
+            return false;
+        }
+        let index = self.index(chunk_idx, edge_idx);
+        if !self.valid_mask[index] {
+            return false;
+        }
+        self.costs[index] = new_cost;
+        true
+    }
+
+    /// Mark a (chunk, edge) pair as invalid
+    ///
+    /// Used when constraints block an edge entirely.
+    pub fn invalidate(&mut self, chunk_idx: usize, edge_idx: usize) -> bool {
+        if chunk_idx >= self.num_chunks || edge_idx >= self.num_edges {
+            return false;
+        }
+        let index = self.index(chunk_idx, edge_idx);
+        self.valid_mask[index] = false;
+        self.costs[index] = f32::INFINITY;
+        true
+    }
+
     /// Calculate flat index from 2D coordinates
     #[inline]
     fn index(&self, chunk_idx: usize, edge_idx: usize) -> usize {
@@ -350,6 +379,16 @@ impl CostMatrix {
     /// Get configuration
     pub fn config(&self) -> &CostConfig {
         self.inner.config()
+    }
+
+    /// Set cost for a specific (chunk, edge) pair
+    pub fn set_cost(&mut self, chunk_idx: usize, edge_idx: usize, new_cost: f32) -> bool {
+        self.inner.set_cost(chunk_idx, edge_idx, new_cost)
+    }
+
+    /// Mark a (chunk, edge) pair as invalid
+    pub fn invalidate(&mut self, chunk_idx: usize, edge_idx: usize) -> bool {
+        self.inner.invalidate(chunk_idx, edge_idx)
     }
 }
 
@@ -740,5 +779,102 @@ mod tests {
         let config = CostConfig::latency_priority();
         let matrix = CostMatrix::new(2, 2, config);
         assert_eq!(matrix.config().rtt_weight, 0.6);
+    }
+
+    #[test]
+    fn test_set_cost() {
+        let config = CostConfig::default();
+        let mut matrix = CpuCostMatrix::new(2, 2, config);
+        let mut state = make_test_state(2, 2);
+
+        state.add_replica(0, EdgeIdx(0));
+        matrix.compute(&state);
+
+        // Get original cost
+        let original = matrix.get_cost(ChunkId(0), EdgeIdx(0)).unwrap();
+
+        // Set new cost
+        assert!(matrix.set_cost(0, 0, 0.5));
+        let new_cost = matrix.get_cost(ChunkId(0), EdgeIdx(0)).unwrap();
+        assert!((new_cost - 0.5).abs() < 0.01);
+        assert!(new_cost != original);
+    }
+
+    #[test]
+    fn test_set_cost_invalid_pair() {
+        let config = CostConfig::default();
+        let mut matrix = CpuCostMatrix::new(2, 2, config);
+        let state = make_test_state(2, 2);
+
+        matrix.compute(&state);
+
+        // No replica, so pair is invalid - set_cost should return false
+        assert!(!matrix.set_cost(0, 0, 0.5));
+    }
+
+    #[test]
+    fn test_set_cost_out_of_bounds() {
+        let config = CostConfig::default();
+        let mut matrix = CpuCostMatrix::new(2, 2, config);
+
+        assert!(!matrix.set_cost(10, 0, 0.5));
+        assert!(!matrix.set_cost(0, 10, 0.5));
+    }
+
+    #[test]
+    fn test_invalidate() {
+        let config = CostConfig::default();
+        let mut matrix = CpuCostMatrix::new(2, 2, config);
+        let mut state = make_test_state(2, 2);
+
+        state.add_replica(0, EdgeIdx(0));
+        matrix.compute(&state);
+
+        // Initially valid
+        assert!(matrix.is_valid(ChunkId(0), EdgeIdx(0)));
+
+        // Invalidate
+        assert!(matrix.invalidate(0, 0));
+
+        // Now invalid
+        assert!(!matrix.is_valid(ChunkId(0), EdgeIdx(0)));
+        assert!(matrix.get_cost(ChunkId(0), EdgeIdx(0)).is_none());
+    }
+
+    #[test]
+    fn test_invalidate_out_of_bounds() {
+        let config = CostConfig::default();
+        let mut matrix = CpuCostMatrix::new(2, 2, config);
+
+        assert!(!matrix.invalidate(10, 0));
+        assert!(!matrix.invalidate(0, 10));
+    }
+
+    #[test]
+    fn test_gpu_matrix_set_cost() {
+        let config = CostConfig::default();
+        let mut matrix = CostMatrix::new(2, 2, config);
+        let mut state = make_test_state(2, 2);
+
+        state.add_replica(0, EdgeIdx(0));
+        matrix.compute(&state);
+
+        assert!(matrix.set_cost(0, 0, 0.75));
+        let cost = matrix.get_cost(ChunkId(0), EdgeIdx(0)).unwrap();
+        assert!((cost - 0.75).abs() < 0.01);
+    }
+
+    #[test]
+    fn test_gpu_matrix_invalidate() {
+        let config = CostConfig::default();
+        let mut matrix = CostMatrix::new(2, 2, config);
+        let mut state = make_test_state(2, 2);
+
+        state.add_replica(0, EdgeIdx(0));
+        matrix.compute(&state);
+
+        assert!(matrix.is_valid(ChunkId(0), EdgeIdx(0)));
+        assert!(matrix.invalidate(0, 0));
+        assert!(!matrix.is_valid(ChunkId(0), EdgeIdx(0)));
     }
 }
