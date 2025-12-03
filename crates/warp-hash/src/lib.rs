@@ -1,10 +1,30 @@
 //! warp-hash: BLAKE3 hashing and Merkle tree
 //!
 //! High-performance parallel hashing using BLAKE3 with rayon.
+//!
+//! # Features
+//! - Single-shot and incremental hashing
+//! - Parallel multi-chunk hashing
+//! - File hashing with progress callbacks
+//! - Bounded memory usage for large files
 
 #![warn(missing_docs)]
 
 use rayon::prelude::*;
+
+mod file;
+pub use file::{hash_file, hash_file_with_buffer, hash_file_with_progress, hash_reader, hash_reader_with_progress};
+
+/// Error type for hashing operations
+#[derive(Debug, thiserror::Error)]
+pub enum Error {
+    /// I/O error during file operations
+    #[error("I/O error: {0}")]
+    Io(#[from] std::io::Error),
+}
+
+/// Result type for hashing operations
+pub type Result<T> = std::result::Result<T, Error>;
 
 /// Hash output (32 bytes)
 pub type Hash = [u8; 32];

@@ -1,0 +1,145 @@
+# Docker Compose configuration for warp services
+# Supports both CPU-only and GPU-accelerated containers
+
+version: '3.8'
+
+services:
+  # ========================================================================
+  # CPU-only warp service (default)
+  # ========================================================================
+  warp:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: warp:latest
+    container_name: warp
+    ports:
+      - "9999:9999"
+    volumes:
+      - ./data:/data
+      - warp-config:/home/warp/.config/warp
+    environment:
+      - RUST_LOG=${RUST_LOG:-info}
+      - RUST_BACKTRACE=${RUST_BACKTRACE:-0}
+    restart: unless-stopped
+    networks:
+      - warp-network
+    healthcheck:
+      test: ["CMD", "warp", "--version"]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+      start_period: 5s
+
+  # ========================================================================
+  # GPU-accelerated warp service (requires NVIDIA runtime)
+  # ========================================================================
+  warp-gpu:
+    build:
+      context: .
+      dockerfile: Dockerfile.gpu
+    image: warp:latest-cuda
+    container_name: warp-gpu
+    ports:
+      - "9998:9999"
+    volumes:
+      - ./data:/data
+      - warp-gpu-config:/home/warp/.config/warp
+    environment:
+      - RUST_LOG=${RUST_LOG:-info}
+      - RUST_BACKTRACE=${RUST_BACKTRACE:-0}
+      - CUDA_VISIBLE_DEVICES=${CUDA_VISIBLE_DEVICES:-0}
+    restart: unless-stopped
+    networks:
+      - warp-network
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: ${GPU_COUNT:-1}
+              capabilities: [gpu, compute, utility]
+    healthcheck:
+      test: ["CMD", "warp", "--version"]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+      start_period: 10s
+    profiles:
+      - gpu
+
+  # ========================================================================
+  # Warp listener service (always listening for transfers)
+  # ========================================================================
+  warp-listener:
+    image: warp:latest
+    container_name: warp-listener
+    command: ["listen", "--port", "9999", "--bind", "0.0.0.0"]
+    ports:
+      - "10000:9999"
+    volumes:
+      - ./data/incoming:/data
+      - warp-listener-config:/home/warp/.config/warp
+    environment:
+      - RUST_LOG=${RUST_LOG:-info}
+    restart: unless-stopped
+    networks:
+      - warp-network
+    depends_on:
+      warp:
+        condition: service_healthy
+    profiles:
+      - listener
+
+  # ========================================================================
+  # Warp portal hub (for multi-node coordination)
+  # ========================================================================
+  warp-portal:
+    image: warp:latest
+    container_name: warp-portal
+    command: ["portal", "hub", "--port", "8080"]
+    ports:
+      - "8080:8080"
+    volumes:
+      - warp-portal-data:/data
+      - warp-portal-config:/home/warp/.config/warp
+    environment:
+      - RUST_LOG=${RUST_LOG:-info}
+      - WARP_PORTAL_HUB_ADDR=0.0.0.0:8080
+    restart: unless-stopped
+    networks:
+      - warp-network
+    healthcheck:
+      test: ["CMD", "warp", "--version"]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+      start_period: 5s
+    profiles:
+      - portal
+
+# ============================================================================
+# Network configuration
+# ============================================================================
+networks:
+  warp-network:
+    driver: bridge
+    ipam:
+      driver: default
+      config:
+        - subnet: 172.28.0.0/16
+
+# ============================================================================
+# Volume configuration for persistent data
+# ============================================================================
+volumes:
+  warp-config:
+    driver: local
+  warp-gpu-config:
+    driver: local
+  warp-listener-config:
+    driver: local
+  warp-portal-data:
+    driver: local
+  warp-portal-config:
+    driver: local

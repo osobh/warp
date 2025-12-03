@@ -9,6 +9,18 @@ members = [
     "crates/warp-hash",
     "crates/warp-crypto",
     "crates/warp-io",
+    "crates/warp-gpu",
+    "crates/warp-stream",
+    "crates/portal-core",
+    "crates/portal-hub",
+    "crates/portal-net",
+    "crates/warp-edge",
+    "crates/warp-sched",
+    "crates/warp-orch",
+    "crates/warp-telemetry",
+    "crates/warp-config",
+    "crates/warp-api",
+    "crates/warp-dashboard",
 ]
 
 [workspace.package]
@@ -28,6 +40,18 @@ warp-compress = { path = "crates/warp-compress" }
 warp-hash = { path = "crates/warp-hash" }
 warp-crypto = { path = "crates/warp-crypto" }
 warp-io = { path = "crates/warp-io" }
+warp-gpu = { path = "crates/warp-gpu" }
+warp-stream = { path = "crates/warp-stream" }
+portal-core = { path = "crates/portal-core" }
+portal-hub = { path = "crates/portal-hub" }
+portal-net = { path = "crates/portal-net" }
+warp-edge = { path = "crates/warp-edge" }
+warp-sched = { path = "crates/warp-sched" }
+warp-orch = { path = "crates/warp-orch" }
+warp-telemetry = { path = "crates/warp-telemetry" }
+warp-config = { path = "crates/warp-config" }
+warp-api = { path = "crates/warp-api" }
+warp-dashboard = { path = "crates/warp-dashboard" }
 
 # Async runtime
 tokio = { version = "1.48", features = ["full"] }
@@ -46,7 +70,7 @@ blake3 = { version = "1.8", features = ["rayon", "mmap"] }
 
 # Cryptography
 chacha20poly1305 = "0.10"
-ed25519-dalek = { version = "2.1", features = ["rand_core"] }
+ed25519-dalek = { version = "2.1", features = ["rand_core", "serde"] }
 x25519-dalek = { version = "2.0", features = ["static_secrets"] }
 argon2 = "0.5"
 rand = "0.8"
@@ -78,8 +102,8 @@ tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 dirs = "5.0"
 
-# GPU (optional)
-cudarc = { version = "0.12" }
+# GPU (optional) - cudarc 0.18+ uses CudaContext instead of CudaDevice
+cudarc = { version = "0.18", default-features = false, features = ["driver", "nvrtc"] }
 
 # Testing
 criterion = { version = "0.5", features = ["html_reports"] }

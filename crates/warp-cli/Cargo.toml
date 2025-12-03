@@ -6,6 +6,10 @@ rust-version.workspace = true
 license.workspace = true
 description = "CLI for warp - GPU-accelerated bulk data transfer"
 
+[lib]
+name = "warp_cli"
+path = "src/lib.rs"
+
 [[bin]]
 name = "warp"
 path = "src/main.rs"
@@ -19,6 +23,7 @@ warp-net.workspace = true
 warp-compress.workspace = true
 
 clap.workspace = true
+clap_complete = "4.5"
 indicatif.workspace = true
 console.workspace = true
 tokio.workspace = true

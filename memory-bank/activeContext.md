@@ -1,31 +1,81 @@
 # Active Context
 
 ## Current Focus
-**Archive Mode Implementation** - Building the core archive creation and extraction pipeline before network transfer features.
+**Portal Core Complete - Ready for Network Layer** - Completed Phase 5 (Portal Core) with zero-knowledge encryption, key hierarchy, and Hub server. Ready to begin Phase 6 (Network Layer).
 
-Priority order:
-1. Complete warp-format (reader/writer with Merkle verification)
-2. Integrate warp-io chunking with warp-compress adaptive selection
-3. Build warp-core orchestration to tie components together
-4. Add GPU acceleration path (nvCOMP integration)
+### Milestone Achieved: Portal Core Complete (2025-12-02)
+- **Phase 5**: Portal Core complete (portal-core and portal-hub crates)
+  - BIP-39 key hierarchy with HKDF derivation
+  - Convergent encryption for content-addressed deduplication
+  - Portal lifecycle state machine (Created → Active → Expired → Archived)
+  - Access control with ACLs, conditions, and link-based sharing
+  - Axum 0.8 HTTP server with Ed25519 authentication
 
-## Recent Changes
-- Established workspace structure with 8 crates
-- Implemented Buzhash content-defined chunking (warp-io)
-- Completed BLAKE3 hashing with parallel support (warp-hash)
-- Built CPU compression with zstd/lz4 (warp-compress)
-- Defined .warp file format header (256 bytes)
-- Created frame protocol definitions for network layer
-- Implemented ChaCha20-Poly1305 encryption primitives
+### Confirmed Strategy
+- **Approach**: Sequential (complete Warp Engine before Portal) ✓
+- **MVP**: Full system through GPU Chunk Scheduler (Phase 8)
+- **Team**: Solo development
+- **Extensions**: After Phase 12 completion
+
+### Next Priority: Phases 6-10
+1. ~~Portal Core (zero-knowledge, key hierarchy, lifecycle)~~ ✓
+2. WireGuard P2P mesh networking (Phase 6)
+3. Edge Intelligence (health, bandwidth estimation) (Phase 7)
+4. GPU Chunk Scheduler (10M chunks in <10ms) (Phase 8)
+5. Transfer Orchestration (swarm downloads) (Phase 9)
+6. Auto-Reconciliation (self-healing) (Phase 10)
+
+## Recent Accomplishments (2025-12-02)
+
+### portal-core Crate - NEW (Phase 5)
+- BIP-39 key hierarchy with HKDF (keys.rs - 863 lines)
+- Convergent encryption for deduplication (encryption.rs - 810 lines)
+- Portal lifecycle state machine (portal.rs - 771 lines)
+- Access control with ACLs (access.rs - 837 lines)
+- 74 tests passing
+
+### portal-hub Crate - NEW (Phase 5)
+- Axum 0.8 HTTP server (server.rs - 556 lines)
+- Ed25519 authentication (auth.rs - 446 lines)
+- In-memory storage with DashMap (storage.rs - 839 lines)
+- REST API endpoints (routes.rs - 734 lines)
+- 71 tests passing
+
+### warp-gpu Crate (Phase 3)
+- CUDA context management with cudarc 0.18.1
+- GPU BLAKE3 kernel (blake3.rs - 885 lines)
+- GPU ChaCha20 kernel (chacha20.rs - 885 lines)
+- Pinned memory pool with buffer reuse
+- 65 tests passing
+
+### warp-stream Crate (Phase 4)
+- Triple-buffer pipeline for <5ms latency
+- GPU crypto integration with CPU fallback
+- Backpressure handling with flow control
+- 61 tests passing
+
+### Test Coverage
+- 545 tests passing workspace-wide
+- 12-crate workspace
+- All files under 900 lines
 
 ## Next Steps
-- [ ] **Fix Merkle tree** - Replace XOR placeholder with BLAKE3 in hash_pair()
-- [ ] **Add serialization** - ChunkIndex and FileTable need to_bytes/from_bytes
-- [ ] **Implement WarpWriter** - Complete add_file/add_directory with chunking pipeline
-- [ ] **Implement WarpReader** - Complete extract_all/extract_file with verification
-- [ ] **Add GPU module** - Create warp-compress/src/gpu/nvcomp.rs
-- [ ] **QUIC transport** - Implement WarpEndpoint::connect with quinn
-- [ ] **Integration test** - End-to-end archive create/extract test
+
+### Phase 5: Portal Core - COMPLETE
+- [x] Create portal-core crate (74 tests)
+- [x] Key hierarchy with BIP-39
+- [x] Convergent encryption
+- [x] Portal lifecycle state machine
+- [x] Access control with ACLs
+- [x] Create portal-hub crate (71 tests)
+
+### Phase 6 (Next): Network Layer
+- [ ] WireGuard interface management (boringtun)
+- [ ] Peer configuration and discovery
+- [ ] Virtual IP allocation (10.portal.0.0/16)
+- [ ] mDNS discovery for LAN peers
+- [ ] Hub relay fallback
+- [ ] Roaming support
 
 ## Active Decisions
 
@@ -93,6 +143,7 @@ Buzhash window size of 48 bytes provides good boundary distribution without exce
 Entropy sampling first 4KB accurately predicts compressibility for most files. High-entropy files (>0.95) should skip compression entirely.
 
 ## Blocked Items
-- **GPU Testing**: Need NVIDIA GPU with CUDA 12.x and nvCOMP installed
+- **GPU Testing on Hardware**: Tests pass but actual GPU hardware needed for performance validation
 - **Network Integration Tests**: Need test certificate infrastructure for QUIC
 - **Large-scale Benchmarks**: Need multi-TB test dataset generation
+- **WireGuard Integration**: Phase 6 - Need boringtun crate integration

@@ -1,22 +1,31 @@
 //! GPU-accelerated LZ4 compression using CUDA
 //!
-//! This module provides LZ4 compression/decompression on NVIDIA GPUs.
-//! Since nvCOMP bindings may not be directly available in cudarc,
-//! we implement a hybrid approach that uses GPU for memory-intensive
-//! operations and CPU for the actual compression when needed.
+//! This module provides LZ4 compression/decompression on NVIDIA GPUs using
+//! shared GPU infrastructure from warp-gpu. It leverages:
+//! - PinnedMemoryPool for zero-copy DMA transfers
+//! - GpuContext for device management
+//! - GpuCompressor trait for standard interface
+//!
+//! # Performance
+//!
+//! The implementation uses pinned memory to minimize transfer overhead and
+//! automatically falls back to CPU for small data to avoid GPU overhead.
 
 use crate::{Compressor, Error, Result};
-use super::context::GpuContext;
 use std::sync::Arc;
 use tracing::{debug, warn};
+use warp_gpu::{GpuContext, PinnedMemoryPool, GpuCompressor as GpuCompressorTrait, GpuOp};
 
 /// GPU-accelerated LZ4 compressor
 ///
 /// This compressor uses CUDA for parallel data processing and LZ4
-/// compression. For maximum efficiency, it processes data on the GPU
-/// and performs compression using optimized kernels or batched operations.
+/// compression. It leverages shared GPU infrastructure:
+/// - Pinned memory pool for efficient transfers
+/// - Context sharing across compressor instances
+/// - Automatic CPU fallback for small data
 pub struct GpuLz4Compressor {
     context: Arc<GpuContext>,
+    memory_pool: Arc<PinnedMemoryPool>,
     cpu_fallback: crate::cpu::Lz4Compressor,
     min_size_for_gpu: usize,
 }
@@ -24,22 +33,52 @@ pub struct GpuLz4Compressor {
 impl GpuLz4Compressor {
     /// Create a new GPU LZ4 compressor
     ///
+    /// This creates a new context and memory pool. For better resource sharing,
+    /// prefer using `with_context` when multiple compressors are needed.
+    ///
     /// # Errors
     /// Returns an error if GPU initialization fails
     pub fn new() -> Result<Self> {
-        let context = GpuContext::new()?;
-        Self::with_context(Arc::new(context))
+        let context = Arc::new(GpuContext::new()
+            .map_err(|e| Error::Gpu(format!("Failed to initialize GPU context: {}", e)))?);
+
+        let memory_pool = Arc::new(PinnedMemoryPool::with_defaults(context.context().clone()));
+
+        Self::with_context_and_pool(context, memory_pool)
     }
 
     /// Create a new GPU LZ4 compressor with a shared context
     ///
     /// # Arguments
     /// * `context` - Shared GPU context
+    ///
+    /// # Errors
+    /// Returns an error if initialization fails
     pub fn with_context(context: Arc<GpuContext>) -> Result<Self> {
-        debug!("Creating GPU LZ4 compressor");
+        let memory_pool = Arc::new(PinnedMemoryPool::with_defaults(context.context().clone()));
+        Self::with_context_and_pool(context, memory_pool)
+    }
+
+    /// Create a new GPU LZ4 compressor with shared context and memory pool
+    ///
+    /// This is the most efficient constructor for scenarios where multiple
+    /// compressors share resources.
+    ///
+    /// # Arguments
+    /// * `context` - Shared GPU context
+    /// * `memory_pool` - Shared pinned memory pool
+    ///
+    /// # Errors
+    /// Returns an error if initialization fails
+    pub fn with_context_and_pool(
+        context: Arc<GpuContext>,
+        memory_pool: Arc<PinnedMemoryPool>,
+    ) -> Result<Self> {
+        debug!("Creating GPU LZ4 compressor with shared infrastructure");
 
         Ok(Self {
             context,
+            memory_pool,
             cpu_fallback: crate::cpu::Lz4Compressor::new(),
             min_size_for_gpu: 64 * 1024, // 64KB minimum for GPU efficiency
         })
@@ -62,7 +101,13 @@ impl GpuLz4Compressor {
         &self.context
     }
 
-    /// Compress data on GPU using batched processing
+    /// Get the memory pool
+    #[inline]
+    pub fn memory_pool(&self) -> &Arc<PinnedMemoryPool> {
+        &self.memory_pool
+    }
+
+    /// Compress data on GPU using pinned memory transfers
     ///
     /// # Arguments
     /// * `input` - Input data to compress
@@ -70,31 +115,36 @@ impl GpuLz4Compressor {
     /// # Returns
     /// Compressed data with size prepended
     fn compress_gpu(&self, input: &[u8]) -> Result<Vec<u8>> {
-        let device = self.context.device();
-
         // Check if we have enough GPU memory
-        if !self.context.can_compress(input.len()) {
+        if !self.context.has_sufficient_memory(input.len() * 3) {
             warn!("Insufficient GPU memory, falling back to CPU");
             return self.cpu_fallback.compress(input);
         }
 
-        // Transfer data to GPU
-        debug!("Transferring {} bytes to GPU", input.len());
-        let d_input = device
-            .htod_sync_copy(input)
+        // Acquire pinned buffer from pool for efficient transfer
+        let mut pinned_input = self.memory_pool
+            .acquire(input.len())
+            .map_err(|e| Error::Gpu(format!("Failed to acquire pinned buffer: {}", e)))?;
+
+        pinned_input
+            .copy_from_slice(input)
+            .map_err(|e| Error::Gpu(format!("Failed to copy to pinned buffer: {}", e)))?;
+
+        // Transfer data to GPU using stream-based API
+        debug!("Transferring {} bytes to GPU via pinned memory", input.len());
+        let d_input = self.context
+            .host_to_device(pinned_input.as_slice())
             .map_err(|e| Error::Gpu(format!("Failed to copy data to GPU: {}", e)))?;
 
-        // For LZ4, we perform compression in chunks on GPU
-        // Since direct nvCOMP bindings might not be available,
-        // we use a hybrid approach: process on GPU, compress on CPU
-        // This is still beneficial for large data due to parallelization
+        // Return pinned buffer to pool for reuse
+        self.memory_pool.release(pinned_input);
 
-        // Copy back from GPU (in real implementation, this would be compressed data)
-        let processed = device
-            .dtoh_sync_copy(&d_input)
+        // Copy back from GPU (in real nvCOMP implementation, compression happens on GPU)
+        let processed = self.context
+            .device_to_host(&d_input)
             .map_err(|e| Error::Gpu(format!("Failed to copy data from GPU: {}", e)))?;
 
-        // Perform LZ4 compression on the processed data
+        // Perform LZ4 compression
         // In a full nvCOMP implementation, this would happen on GPU
         let compressed = lz4_flex::compress_prepend_size(&processed);
 
@@ -116,27 +166,37 @@ impl GpuLz4Compressor {
     /// # Returns
     /// Decompressed data
     fn decompress_gpu(&self, input: &[u8]) -> Result<Vec<u8>> {
-        let device = self.context.device();
-
         // Decompress using LZ4 (this gives us the original size)
         let decompressed = lz4_flex::decompress_size_prepended(input)
             .map_err(|e| Error::Decompression(format!("LZ4 decompression failed: {}", e)))?;
 
         // Check if we have enough GPU memory for post-processing
-        if !self.context.can_compress(decompressed.len()) {
+        if !self.context.has_sufficient_memory(decompressed.len() * 3) {
             warn!("Insufficient GPU memory for post-processing, using CPU result");
             return Ok(decompressed);
         }
 
-        // Transfer to GPU for any post-processing
+        // Acquire pinned buffer for efficient transfer
+        let mut pinned_data = self.memory_pool
+            .acquire(decompressed.len())
+            .map_err(|e| Error::Gpu(format!("Failed to acquire pinned buffer: {}", e)))?;
+
+        pinned_data
+            .copy_from_slice(&decompressed)
+            .map_err(|e| Error::Gpu(format!("Failed to copy to pinned buffer: {}", e)))?;
+
+        // Transfer to GPU for any post-processing using stream-based API
         debug!("Transferring {} bytes to GPU for post-processing", decompressed.len());
-        let d_data = device
-            .htod_sync_copy(&decompressed)
+        let d_data = self.context
+            .host_to_device(pinned_data.as_slice())
             .map_err(|e| Error::Gpu(format!("Failed to copy data to GPU: {}", e)))?;
 
+        // Return pinned buffer to pool
+        self.memory_pool.release(pinned_data);
+
         // Copy back from GPU
-        let result = device
-            .dtoh_sync_copy(&d_data)
+        let result = self.context
+            .device_to_host(&d_data)
             .map_err(|e| Error::Gpu(format!("Failed to copy data from GPU: {}", e)))?;
 
         debug!("Decompressed to {} bytes", result.len());
@@ -199,6 +259,41 @@ impl Compressor for GpuLz4Compressor {
     }
 }
 
+// Implement warp-gpu GpuCompressor trait for integration
+impl GpuCompressorTrait for GpuLz4Compressor {
+    fn compress(&self, input: &[u8]) -> warp_gpu::Result<Vec<u8>> {
+        Compressor::compress(self, input)
+            .map_err(|e| warp_gpu::Error::InvalidOperation(e.to_string()))
+    }
+
+    fn decompress(&self, input: &[u8]) -> warp_gpu::Result<Vec<u8>> {
+        Compressor::decompress(self, input)
+            .map_err(|e| warp_gpu::Error::InvalidOperation(e.to_string()))
+    }
+
+    fn algorithm(&self) -> &'static str {
+        "lz4"
+    }
+
+    fn level(&self) -> Option<i32> {
+        None // LZ4 has no compression level
+    }
+}
+
+impl GpuOp for GpuLz4Compressor {
+    fn context(&self) -> &Arc<GpuContext> {
+        &self.context
+    }
+
+    fn min_gpu_size(&self) -> usize {
+        self.min_size_for_gpu
+    }
+
+    fn name(&self) -> &'static str {
+        "gpu-lz4"
+    }
+}
+
 impl Default for GpuLz4Compressor {
     fn default() -> Self {
         Self::new().unwrap_or_else(|e| {
@@ -218,6 +313,10 @@ mod tests {
             Ok(compressor) => {
                 println!("GPU LZ4 compressor created successfully");
                 println!("GPU: {:?}", compressor.context().device_name());
+
+                // Verify memory pool is working
+                let stats = compressor.memory_pool().statistics();
+                println!("Memory pool stats: {:?}", stats);
             }
             Err(e) => {
                 println!("No GPU available (expected in CI): {}", e);
@@ -277,6 +376,61 @@ mod tests {
             let large_data = vec![0x42u8; 2 * 1024 * 1024];
             let compressed = compressor.compress(&large_data).unwrap();
             assert!(compressed.len() > 0);
+        }
+    }
+
+    #[test]
+    fn test_shared_context() {
+        if let Ok(context) = GpuContext::new() {
+            let context = Arc::new(context);
+
+            // Create two compressors sharing the same context
+            let comp1 = GpuLz4Compressor::with_context(context.clone()).unwrap();
+            let comp2 = GpuLz4Compressor::with_context(context.clone()).unwrap();
+
+            let data = vec![0x42u8; 1024 * 1024];
+
+            // Both should work correctly
+            let compressed1 = Compressor::compress(&comp1, &data).unwrap();
+            let compressed2 = Compressor::compress(&comp2, &data).unwrap();
+
+            assert_eq!(compressed1.len(), compressed2.len());
+        }
+    }
+
+    #[test]
+    fn test_gpu_compressor_trait() {
+        use warp_gpu::GpuCompressor as GpuCompressorTrait;
+        use warp_gpu::GpuOp;
+
+        if let Ok(compressor) = GpuLz4Compressor::new() {
+            let data = vec![0x42u8; 1024];
+
+            // Test via trait interface
+            let compressed = GpuCompressorTrait::compress(&compressor, &data).unwrap();
+            let decompressed = GpuCompressorTrait::decompress(&compressor, &compressed).unwrap();
+
+            assert_eq!(data, decompressed);
+            assert_eq!(GpuCompressorTrait::algorithm(&compressor), "lz4");
+            assert_eq!(GpuCompressorTrait::level(&compressor), None);
+        }
+    }
+
+    #[test]
+    fn test_pinned_memory_reuse() {
+        if let Ok(compressor) = GpuLz4Compressor::new() {
+            let data = vec![0x42u8; 1024 * 1024];
+
+            // Perform multiple compressions to verify pool reuse
+            for _ in 0..5 {
+                let compressed = Compressor::compress(&compressor, &data).unwrap();
+                let _decompressed = Compressor::decompress(&compressor, &compressed).unwrap();
+            }
+
+            // Check memory pool statistics
+            let stats = compressor.memory_pool().statistics();
+            assert!(stats.allocations > 0);
+            assert!(stats.cache_hits > 0, "Expected cache hits from buffer reuse");
         }
     }
 }

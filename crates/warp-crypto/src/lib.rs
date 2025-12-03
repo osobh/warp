@@ -1,6 +1,7 @@
 //! warp-crypto: Cryptographic primitives
 //!
 //! - Encryption: ChaCha20-Poly1305 (AEAD)
+//! - Streaming encryption for real-time processing
 //! - Signatures: Ed25519
 //! - Key exchange: X25519
 //! - Key derivation: Argon2id
@@ -8,10 +9,12 @@
 #![warn(missing_docs)]
 
 pub mod encrypt;
+pub mod stream;
 pub mod sign;
 pub mod kdf;
 
-pub use encrypt::{encrypt, decrypt};
+pub use encrypt::{encrypt, decrypt, Key};
+pub use stream::{StreamCipher, StreamCipherBuilder};
 pub use sign::{sign, verify, SigningKey, VerifyingKey};
 pub use kdf::derive_key;
 

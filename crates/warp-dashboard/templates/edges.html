@@ -1,0 +1,81 @@
+{% extends "base.html" %}
+
+{% block title %}Edge Nodes - Warp Dashboard{% endblock %}
+
+{% block content %}
+<div class="card">
+    <h2>Edge Connections</h2>
+    <div class="stats">
+        <div class="stat">
+            <div class="stat-label">Total Edges</div>
+            <div class="stat-value">{{ edges.len() }}</div>
+        </div>
+        <div class="stat">
+            <div class="stat-label">Connected</div>
+            <div class="stat-value">{{ connected_count }}</div>
+        </div>
+        <div class="stat">
+            <div class="stat-label">Disconnected</div>
+            <div class="stat-value">{{ edges.len() - connected_count }}</div>
+        </div>
+        <div class="stat">
+            <div class="stat-label">Avg RTT</div>
+            <div class="stat-value">{{ average_rtt }} ms</div>
+        </div>
+    </div>
+
+    {% if edges.len() > 0 %}
+    <table>
+        <thead>
+            <tr>
+                <th>ID</th>
+                <th>Address</th>
+                <th>Status</th>
+                <th>RTT</th>
+                <th>Active Transfers</th>
+                <th>Bytes Sent</th>
+                <th>Bytes Received</th>
+                <th>Total</th>
+                <th>Uptime</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for edge in edges %}
+            <tr>
+                <td><code style="color: #94a3b8;">{{ edge.id }}</code></td>
+                <td>{{ edge.address }}</td>
+                <td>
+                    {% if edge.connected %}
+                        <span class="badge badge-active">CONNECTED</span>
+                    {% else %}
+                        <span class="badge badge-failed">DISCONNECTED</span>
+                    {% endif %}
+                </td>
+                <td>
+                    {% if edge.connected %}
+                        {{ edge.rtt_ms }} ms
+                    {% else %}
+                        -
+                    {% endif %}
+                </td>
+                <td>{{ edge.active_transfers }}</td>
+                <td>{{ edge.bytes_sent }} bytes</td>
+                <td>{{ edge.bytes_received }} bytes</td>
+                <td>{{ edge.total_bytes() }} bytes</td>
+                <td>{{ edge.uptime_seconds }}s</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    {% else %}
+    <p style="color: #64748b;">No edge connections</p>
+    {% endif %}
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+    // Auto-refresh every 5 seconds
+    setTimeout(() => window.location.reload(), 5000);
+</script>
+{% endblock %}

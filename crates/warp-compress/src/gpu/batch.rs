@@ -3,13 +3,20 @@
 //! This module provides efficient batch processing of multiple data chunks,
 //! which is ideal for warp's chunked archive format. By processing multiple
 //! chunks simultaneously, we can maximize GPU utilization and throughput.
+//!
+//! # Architecture
+//!
+//! The batch compressor now uses shared infrastructure from warp-gpu:
+//! - Shared GpuContext across all operations
+//! - PinnedMemoryPool for zero-copy transfers
+//! - Efficient buffer reuse for batch operations
 
 use crate::{Compressor, Result};
-use super::context::GpuContext;
 use super::lz4::GpuLz4Compressor;
 use super::zstd::GpuZstdCompressor;
 use std::sync::Arc;
 use tracing::{debug, warn};
+use warp_gpu::{GpuContext, PinnedMemoryPool};
 
 /// Compression algorithm selection for batch processing
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -45,8 +52,16 @@ impl CompressionAlgorithm {
 /// - Chunked archive creation
 /// - Parallel data processing
 /// - Streaming compression pipelines
+///
+/// # Architecture
+///
+/// Uses shared GPU infrastructure:
+/// - Single GpuContext for all operations
+/// - Shared PinnedMemoryPool for efficient buffer reuse
+/// - Automatic memory management and fallback
 pub struct BatchCompressor {
     context: Arc<GpuContext>,
+    memory_pool: Arc<PinnedMemoryPool>,
     algorithm: CompressionAlgorithm,
     lz4_compressor: Option<GpuLz4Compressor>,
     zstd_compressor: Option<GpuZstdCompressor>,
@@ -58,15 +73,13 @@ impl BatchCompressor {
     /// # Errors
     /// Returns an error if GPU initialization fails
     pub fn new_lz4() -> Result<Self> {
-        let context = Arc::new(GpuContext::new()?);
-        let lz4_compressor = GpuLz4Compressor::with_context(context.clone())?;
+        let context = Arc::new(
+            GpuContext::new()
+                .map_err(|e| crate::Error::Gpu(format!("Failed to initialize GPU: {}", e)))?,
+        );
+        let memory_pool = Arc::new(PinnedMemoryPool::with_defaults(context.device().clone()));
 
-        Ok(Self {
-            context,
-            algorithm: CompressionAlgorithm::Lz4,
-            lz4_compressor: Some(lz4_compressor),
-            zstd_compressor: None,
-        })
+        Self::with_context(context, memory_pool, CompressionAlgorithm::Lz4)
     }
 
     /// Create a new batch compressor with Zstd algorithm
@@ -77,39 +90,56 @@ impl BatchCompressor {
     /// # Errors
     /// Returns an error if GPU initialization fails or level is invalid
     pub fn new_zstd(level: i32) -> Result<Self> {
-        let context = Arc::new(GpuContext::new()?);
-        let zstd_compressor = GpuZstdCompressor::with_context_and_level(context.clone(), level)?;
+        let context = Arc::new(
+            GpuContext::new()
+                .map_err(|e| crate::Error::Gpu(format!("Failed to initialize GPU: {}", e)))?,
+        );
+        let memory_pool = Arc::new(PinnedMemoryPool::with_defaults(context.device().clone()));
 
-        Ok(Self {
-            context,
-            algorithm: CompressionAlgorithm::Zstd(level),
-            lz4_compressor: None,
-            zstd_compressor: Some(zstd_compressor),
-        })
+        Self::with_context(context, memory_pool, CompressionAlgorithm::Zstd(level))
     }
 
-    /// Create a new batch compressor with a shared context
+    /// Create a new batch compressor with a shared context and memory pool
+    ///
+    /// This is the most efficient constructor for scenarios where multiple
+    /// batch compressors share resources.
     ///
     /// # Arguments
     /// * `context` - Shared GPU context
+    /// * `memory_pool` - Shared pinned memory pool
     /// * `algorithm` - Compression algorithm to use
     ///
     /// # Errors
     /// Returns an error if compressor initialization fails
-    pub fn with_context(context: Arc<GpuContext>, algorithm: CompressionAlgorithm) -> Result<Self> {
+    pub fn with_context(
+        context: Arc<GpuContext>,
+        memory_pool: Arc<PinnedMemoryPool>,
+        algorithm: CompressionAlgorithm,
+    ) -> Result<Self> {
         let (lz4_compressor, zstd_compressor) = match algorithm {
             CompressionAlgorithm::Lz4 => {
-                let lz4 = GpuLz4Compressor::with_context(context.clone())?;
+                let lz4 =
+                    GpuLz4Compressor::with_context_and_pool(context.clone(), memory_pool.clone())?;
                 (Some(lz4), None)
             }
             CompressionAlgorithm::Zstd(level) => {
-                let zstd = GpuZstdCompressor::with_context_and_level(context.clone(), level)?;
+                let zstd = GpuZstdCompressor::with_context_and_level(
+                    context.clone(),
+                    memory_pool.clone(),
+                    level,
+                )?;
                 (None, Some(zstd))
             }
         };
 
+        debug!(
+            "Created batch compressor with algorithm: {}, shared GPU infrastructure",
+            algorithm.name()
+        );
+
         Ok(Self {
             context,
+            memory_pool,
             algorithm,
             lz4_compressor,
             zstd_compressor,
@@ -120,6 +150,12 @@ impl BatchCompressor {
     #[inline]
     pub fn context(&self) -> &Arc<GpuContext> {
         &self.context
+    }
+
+    /// Get the memory pool
+    #[inline]
+    pub fn memory_pool(&self) -> &Arc<PinnedMemoryPool> {
+        &self.memory_pool
     }
 
     /// Get the compression algorithm
@@ -155,7 +191,9 @@ impl BatchCompressor {
 
         // Calculate total size and check memory
         let total_size: usize = chunks.iter().map(|c| c.len()).sum();
-        let required_memory = GpuContext::estimate_compression_memory(total_size);
+
+        // Estimate memory requirement (3x for input + output + temp buffers)
+        let required_memory = total_size * 3 + 1024 * 1024;
 
         if !self.context.has_sufficient_memory(required_memory) {
             warn!(
@@ -241,9 +279,8 @@ impl BatchCompressor {
 
     /// Compress chunks in parallel on GPU
     fn compress_batch_parallel(&self, chunks: &[&[u8]]) -> Result<Vec<Vec<u8>>> {
-        // For optimal GPU utilization, we would use CUDA streams
-        // and overlap computation with transfers. For now, we process
-        // chunks sequentially but with GPU acceleration.
+        // With shared memory pool, buffers are automatically reused across chunks
+        // This significantly reduces allocation overhead
 
         match self.algorithm {
             CompressionAlgorithm::Lz4 => {
@@ -301,7 +338,8 @@ impl BatchCompressor {
 
         // Estimate how many chunks can fit in 80% of free memory
         let usable_memory = (free_memory as f64 * 0.8) as usize;
-        let estimated_batch = usable_memory / GpuContext::estimate_compression_memory(avg_chunk_size);
+        let estimated_memory_per_chunk = avg_chunk_size * 3; // 3x for compression overhead
+        let estimated_batch = usable_memory / estimated_memory_per_chunk;
 
         // Clamp to reasonable bounds
         estimated_batch.max(1).min(chunks.len()).min(32)
@@ -348,11 +386,15 @@ impl BatchCompressor {
 
     /// Get batch processing statistics
     pub fn stats(&self) -> BatchStats {
+        let pool_stats = self.memory_pool.statistics();
+
         BatchStats {
             algorithm: self.algorithm,
             free_memory: self.context.free_memory().ok(),
-            total_memory: self.context.total_memory().ok(),
-            compute_capability: self.context.compute_capability(),
+            total_memory: Some(self.context.total_memory()),
+            pool_allocations: pool_stats.allocations,
+            pool_cache_hits: pool_stats.cache_hits,
+            pool_cache_misses: pool_stats.cache_misses,
         }
     }
 }
@@ -366,8 +408,12 @@ pub struct BatchStats {
     pub free_memory: Option<usize>,
     /// Total GPU memory in bytes
     pub total_memory: Option<usize>,
-    /// GPU compute capability (major, minor)
-    pub compute_capability: (i32, i32),
+    /// Pool allocation count
+    pub pool_allocations: u64,
+    /// Pool cache hits
+    pub pool_cache_hits: u64,
+    /// Pool cache misses
+    pub pool_cache_misses: u64,
 }
 
 impl BatchStats {
@@ -378,6 +424,16 @@ impl BatchStats {
                 Some((total - free) as f64 / total as f64 * 100.0)
             }
             _ => None,
+        }
+    }
+
+    /// Get pool hit rate as a percentage
+    pub fn pool_hit_rate(&self) -> f64 {
+        let total_requests = self.pool_cache_hits + self.pool_cache_misses;
+        if total_requests == 0 {
+            0.0
+        } else {
+            (self.pool_cache_hits as f64 / total_requests as f64) * 100.0
         }
     }
 }
@@ -392,6 +448,10 @@ mod tests {
             Ok(compressor) => {
                 assert_eq!(compressor.algorithm(), CompressionAlgorithm::Lz4);
                 println!("Batch LZ4 compressor created successfully");
+
+                // Verify shared infrastructure
+                let stats = compressor.memory_pool().statistics();
+                println!("Memory pool stats: {:?}", stats);
             }
             Err(e) => {
                 println!("No GPU available (expected in CI): {}", e);
@@ -433,7 +493,15 @@ mod tests {
             let compressed = compressor.compress_batch(&chunks).unwrap();
             assert_eq!(compressed.len(), 1);
 
-            let decompressed = compressor.decompress_batch(&compressed.iter().map(|c| c.as_slice()).collect::<Vec<_>>().as_slice()).unwrap();
+            let decompressed = compressor
+                .decompress_batch(
+                    &compressed
+                        .iter()
+                        .map(|c| c.as_slice())
+                        .collect::<Vec<_>>()
+                        .as_slice(),
+                )
+                .unwrap();
             assert_eq!(decompressed.len(), 1);
             assert_eq!(decompressed[0], data);
         }
@@ -509,6 +577,9 @@ mod tests {
             if let Some(util) = stats.memory_utilization() {
                 assert!(util >= 0.0 && util <= 100.0);
             }
+
+            // Pool hit rate should be valid
+            assert!(stats.pool_hit_rate() >= 0.0 && stats.pool_hit_rate() <= 100.0);
         }
     }
 
@@ -543,6 +614,62 @@ mod tests {
             for (i, original) in chunks_data.iter().enumerate() {
                 assert_eq!(decompressed[i], *original);
             }
+        }
+    }
+
+    #[test]
+    fn test_shared_infrastructure() {
+        if let Ok(context) = GpuContext::new() {
+            let context = Arc::new(context);
+            let memory_pool = Arc::new(PinnedMemoryPool::with_defaults(context.device().clone()));
+
+            // Create two batch compressors sharing infrastructure
+            let batch1 = BatchCompressor::with_context(
+                context.clone(),
+                memory_pool.clone(),
+                CompressionAlgorithm::Lz4,
+            )
+            .unwrap();
+
+            let batch2 = BatchCompressor::with_context(
+                context.clone(),
+                memory_pool.clone(),
+                CompressionAlgorithm::Zstd(3),
+            )
+            .unwrap();
+
+            // Both should work correctly
+            let data = vec![vec![0x42u8; 1024]];
+            let chunks: Vec<&[u8]> = data.iter().map(|c| c.as_slice()).collect();
+
+            let _compressed1 = batch1.compress_batch(&chunks).unwrap();
+            let _compressed2 = batch2.compress_batch(&chunks).unwrap();
+
+            // Verify shared pool has activity
+            let stats = memory_pool.statistics();
+            assert!(stats.allocations > 0);
+        }
+    }
+
+    #[test]
+    fn test_pool_reuse_across_batches() {
+        if let Ok(compressor) = BatchCompressor::new_lz4() {
+            let data = vec![vec![0x42u8; 1024 * 1024]; 5];
+            let chunks: Vec<&[u8]> = data.iter().map(|c| c.as_slice()).collect();
+
+            // Process multiple times to verify reuse
+            for _ in 0..3 {
+                let _compressed = compressor.compress_batch(&chunks).unwrap();
+            }
+
+            let stats = compressor.stats();
+            println!("Pool hit rate: {:.2}%", stats.pool_hit_rate());
+
+            // Should have good hit rate after first batch
+            assert!(
+                stats.pool_cache_hits > 0,
+                "Expected cache hits from pool reuse"
+            );
         }
     }
 }

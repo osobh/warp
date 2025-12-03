@@ -1,0 +1,74 @@
+{% extends "base.html" %}
+
+{% block title %}Metrics - Warp Dashboard{% endblock %}
+
+{% block content %}
+<div class="card">
+    <h2>Transfer Metrics</h2>
+    <div class="stats">
+        <div class="stat">
+            <div class="stat-label">Total Transfers</div>
+            <div class="stat-value">{{ metrics.total_transfers }}</div>
+        </div>
+        <div class="stat">
+            <div class="stat-label">Active</div>
+            <div class="stat-value">{{ metrics.active_transfers }}</div>
+        </div>
+        <div class="stat">
+            <div class="stat-label">Completed</div>
+            <div class="stat-value">{{ metrics.completed_transfers }}</div>
+        </div>
+        <div class="stat">
+            <div class="stat-label">Failed</div>
+            <div class="stat-value">{{ metrics.failed_transfers }}</div>
+        </div>
+        <div class="stat">
+            <div class="stat-label">Success Rate</div>
+            <div class="stat-value">{{ metrics.success_rate() }}%</div>
+        </div>
+        <div class="stat">
+            <div class="stat-label">Failure Rate</div>
+            <div class="stat-value">{{ metrics.failure_rate() }}%</div>
+        </div>
+    </div>
+</div>
+
+<div class="card">
+    <h2>Performance Metrics</h2>
+    <div class="stats">
+        <div class="stat">
+            <div class="stat-label">Total Bytes Transferred</div>
+            <div class="stat-value">{{ metrics.total_bytes_transferred }}</div>
+        </div>
+        <div class="stat">
+            <div class="stat-label">Aggregate Throughput</div>
+            <div class="stat-value">{{ metrics.aggregate_throughput_mbps }} Mbps</div>
+        </div>
+        <div class="stat">
+            <div class="stat-label">Average Speed</div>
+            <div class="stat-value">{{ metrics.average_speed_mbps }} Mbps</div>
+        </div>
+    </div>
+</div>
+
+<div class="card">
+    <h2>Network Metrics</h2>
+    <div class="stats">
+        <div class="stat">
+            <div class="stat-label">Connected Edges</div>
+            <div class="stat-value">{{ metrics.connected_edges }}</div>
+        </div>
+        <div class="stat">
+            <div class="stat-label">Average RTT</div>
+            <div class="stat-value">{{ metrics.average_rtt_ms }} ms</div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+    // Auto-refresh every 10 seconds
+    setTimeout(() => window.location.reload(), 10000);
+</script>
+{% endblock %}

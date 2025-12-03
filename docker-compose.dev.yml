@@ -1,0 +1,216 @@
+# Docker Compose Development Configuration
+# Extended configuration for development and testing scenarios
+
+version: '3.8'
+
+services:
+  # ========================================================================
+  # Development warp with hot-reload (volume mount source)
+  # ========================================================================
+  warp-dev:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: builder
+    image: warp:dev
+    container_name: warp-dev
+    volumes:
+      - .:/app
+      - cargo-cache:/root/.cargo/registry
+      - target-cache:/app/target
+    working_dir: /app
+    command: cargo watch -x 'run --bin warp'
+    environment:
+      - RUST_LOG=debug
+      - RUST_BACKTRACE=1
+    networks:
+      - warp-network
+
+  # ========================================================================
+  # Sender node for testing
+  # ========================================================================
+  warp-sender:
+    image: warp:latest
+    container_name: warp-sender
+    volumes:
+      - ./test-data/send:/data
+    command: ["send", "/data/test-file.txt", "warp-receiver:9999"]
+    environment:
+      - RUST_LOG=info
+    networks:
+      - warp-network
+    depends_on:
+      warp-receiver:
+        condition: service_healthy
+    profiles:
+      - test
+
+  # ========================================================================
+  # Receiver node for testing
+  # ========================================================================
+  warp-receiver:
+    image: warp:latest
+    container_name: warp-receiver
+    ports:
+      - "9999:9999"
+    volumes:
+      - ./test-data/receive:/data
+    command: ["listen", "--port", "9999", "--bind", "0.0.0.0"]
+    environment:
+      - RUST_LOG=info
+    networks:
+      - warp-network
+    healthcheck:
+      test: ["CMD", "warp", "--version"]
+      interval: 5s
+      timeout: 3s
+      retries: 3
+      start_period: 2s
+    profiles:
+      - test
+
+  # ========================================================================
+  # Benchmark container with performance monitoring
+  # ========================================================================
+  warp-bench:
+    image: warp:latest
+    container_name: warp-bench
+    volumes:
+      - ./bench-data:/data
+      - ./bench-results:/results
+    command: |
+      sh -c '
+        echo "Running performance benchmarks..."
+        warp --version
+        echo "Benchmark completed"
+      '
+    environment:
+      - RUST_LOG=info
+    networks:
+      - warp-network
+    profiles:
+      - bench
+
+  # ========================================================================
+  # Multi-node cluster setup (3 nodes)
+  # ========================================================================
+  warp-node-1:
+    image: warp:latest
+    container_name: warp-node-1
+    hostname: node1
+    ports:
+      - "10001:9999"
+    volumes:
+      - warp-node-1-data:/data
+    command: ["listen", "--port", "9999", "--bind", "0.0.0.0"]
+    environment:
+      - RUST_LOG=info
+      - NODE_ID=1
+    networks:
+      warp-network:
+        ipv4_address: 172.28.0.11
+    profiles:
+      - cluster
+
+  warp-node-2:
+    image: warp:latest
+    container_name: warp-node-2
+    hostname: node2
+    ports:
+      - "10002:9999"
+    volumes:
+      - warp-node-2-data:/data
+    command: ["listen", "--port", "9999", "--bind", "0.0.0.0"]
+    environment:
+      - RUST_LOG=info
+      - NODE_ID=2
+    networks:
+      warp-network:
+        ipv4_address: 172.28.0.12
+    profiles:
+      - cluster
+
+  warp-node-3:
+    image: warp:latest
+    container_name: warp-node-3
+    hostname: node3
+    ports:
+      - "10003:9999"
+    volumes:
+      - warp-node-3-data:/data
+    command: ["listen", "--port", "9999", "--bind", "0.0.0.0"]
+    environment:
+      - RUST_LOG=info
+      - NODE_ID=3
+    networks:
+      warp-network:
+        ipv4_address: 172.28.0.13
+    profiles:
+      - cluster
+
+  # ========================================================================
+  # Monitoring and observability
+  # ========================================================================
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: warp-prometheus
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml
+      - prometheus-data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+    networks:
+      - warp-network
+    profiles:
+      - monitoring
+
+  grafana:
+    image: grafana/grafana:latest
+    container_name: warp-grafana
+    ports:
+      - "3000:3000"
+    volumes:
+      - grafana-data:/var/lib/grafana
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_USERS_ALLOW_SIGN_UP=false
+    networks:
+      - warp-network
+    depends_on:
+      - prometheus
+    profiles:
+      - monitoring
+
+# ============================================================================
+# Network configuration
+# ============================================================================
+networks:
+  warp-network:
+    driver: bridge
+    ipam:
+      driver: default
+      config:
+        - subnet: 172.28.0.0/16
+          gateway: 172.28.0.1
+
+# ============================================================================
+# Volume configuration
+# ============================================================================
+volumes:
+  cargo-cache:
+    driver: local
+  target-cache:
+    driver: local
+  warp-node-1-data:
+    driver: local
+  warp-node-2-data:
+    driver: local
+  warp-node-3-data:
+    driver: local
+  prometheus-data:
+    driver: local
+  grafana-data:
+    driver: local

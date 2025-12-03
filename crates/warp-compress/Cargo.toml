@@ -8,7 +8,7 @@ description = "Compression algorithms for warp (CPU and GPU)"
 
 [features]
 default = []
-gpu = ["dep:cudarc", "cudarc?/cuda-12060"]
+gpu = ["dep:cudarc", "dep:warp-gpu", "cudarc?/cuda-12060"]
 
 [dependencies]
 zstd.workspace = true
@@ -18,10 +18,12 @@ tracing.workspace = true
 
 # GPU support (optional)
 cudarc = { workspace = true, optional = true }
+warp-gpu = { path = "../warp-gpu", optional = true }
 
 [dev-dependencies]
 criterion.workspace = true
 rand.workspace = true
+tempfile.workspace = true
 
 [[bench]]
 name = "compression"

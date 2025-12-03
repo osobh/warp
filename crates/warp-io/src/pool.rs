@@ -18,7 +18,7 @@ impl BufferPool {
     }
     
     /// Get a buffer from the pool (or allocate a new one)
-    pub fn get(&self) -> PooledBuffer {
+    pub fn get(&self) -> PooledBuffer<'_> {
         let buffer = self
             .buffers
             .lock()

@@ -1,0 +1,77 @@
+{% extends "base.html" %}
+
+{% block title %}Transfer {{ transfer.id }} - Warp Dashboard{% endblock %}
+
+{% block content %}
+<div class="card">
+    <h2>Transfer Details</h2>
+    <table>
+        <tr>
+            <th style="width: 200px;">ID</th>
+            <td><code style="color: #94a3b8;">{{ transfer.id }}</code></td>
+        </tr>
+        <tr>
+            <th>Name</th>
+            <td>{{ transfer.name }}</td>
+        </tr>
+        <tr>
+            <th>Direction</th>
+            <td><span class="badge badge-{{ transfer.direction }}">{{ transfer.direction }}</span></td>
+        </tr>
+        <tr>
+            <th>Status</th>
+            <td><span class="badge badge-{{ transfer.status }}">{{ transfer.status }}</span></td>
+        </tr>
+        <tr>
+            <th>Progress</th>
+            <td>
+                <div class="progress">
+                    <div class="progress-bar" style="width: {{ transfer.progress_percent }}%"></div>
+                </div>
+                {{ transfer.progress_percent }}%
+            </td>
+        </tr>
+        <tr>
+            <th>Speed</th>
+            <td>{{ transfer.speed_mbps }} Mbps</td>
+        </tr>
+        <tr>
+            <th>ETA</th>
+            <td>
+                {% if transfer.eta_seconds.is_some() %}
+                    {{ transfer.eta_seconds.unwrap() }} seconds
+                {% else %}
+                    N/A
+                {% endif %}
+            </td>
+        </tr>
+        <tr>
+            <th>Bytes Transferred</th>
+            <td>{{ transfer.bytes_transferred }} bytes</td>
+        </tr>
+        <tr>
+            <th>Total Bytes</th>
+            <td>{{ transfer.total_bytes }} bytes</td>
+        </tr>
+        <tr>
+            <th>Remote Peer</th>
+            <td>{{ transfer.remote_peer }}</td>
+        </tr>
+        <tr>
+            <th>Start Time</th>
+            <td>{{ transfer.start_time }}</td>
+        </tr>
+    </table>
+</div>
+
+<div style="margin-top: 20px;">
+    <a href="/transfers" style="color: #60a5fa;">← Back to Transfers</a>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+    // Auto-refresh every 2 seconds for live updates
+    setTimeout(() => window.location.reload(), 2000);
+</script>
+{% endblock %}

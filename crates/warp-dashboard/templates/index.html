@@ -1,0 +1,124 @@
+{% extends "base.html" %}
+
+{% block title %}Dashboard - Warp{% endblock %}
+
+{% block content %}
+<div class="stats">
+    <div class="stat">
+        <div class="stat-label">Active Transfers</div>
+        <div class="stat-value">{{ state.metrics.active_transfers }}</div>
+    </div>
+    <div class="stat">
+        <div class="stat-label">Total Transfers</div>
+        <div class="stat-value">{{ state.metrics.total_transfers }}</div>
+    </div>
+    <div class="stat">
+        <div class="stat-label">Success Rate</div>
+        <div class="stat-value">{{ state.metrics.success_rate() }}%</div>
+    </div>
+    <div class="stat">
+        <div class="stat-label">Throughput</div>
+        <div class="stat-value">{{ state.metrics.aggregate_throughput_mbps }} Mbps</div>
+    </div>
+    <div class="stat">
+        <div class="stat-label">Connected Edges</div>
+        <div class="stat-value">{{ state.metrics.connected_edges }}</div>
+    </div>
+    <div class="stat">
+        <div class="stat-label">Avg RTT</div>
+        <div class="stat-value">{{ state.metrics.average_rtt_ms }} ms</div>
+    </div>
+</div>
+
+{% if state.alerts.len() > 0 %}
+<div class="card">
+    <h2>Alerts</h2>
+    {% for alert in state.alerts %}
+    <div class="alert alert-{{ alert.level }}">
+        <strong>[{{ alert.level }}]</strong> {{ alert.message }}
+        {% if alert.source.is_some() %}
+        <span style="color: #94a3b8;"> - {{ alert.source.as_ref().unwrap() }}</span>
+        {% endif %}
+    </div>
+    {% endfor %}
+</div>
+{% endif %}
+
+<div class="card">
+    <h2>Active Transfers</h2>
+    {% if state.active_transfers.len() > 0 %}
+    <table>
+        <thead>
+            <tr>
+                <th>Name</th>
+                <th>Direction</th>
+                <th>Status</th>
+                <th>Progress</th>
+                <th>Speed</th>
+                <th>ETA</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for transfer in state.active_transfers %}
+            <tr>
+                <td><a href="/transfers/{{ transfer.id }}" style="color: #60a5fa;">{{ transfer.name }}</a></td>
+                <td><span class="badge badge-{{ transfer.direction }}">{{ transfer.direction }}</span></td>
+                <td><span class="badge badge-{{ transfer.status }}">{{ transfer.status }}</span></td>
+                <td>
+                    <div class="progress">
+                        <div class="progress-bar" style="width: {{ transfer.progress_percent }}%"></div>
+                    </div>
+                    {{ transfer.progress_percent }}%
+                </td>
+                <td>{{ transfer.speed_mbps }} Mbps</td>
+                <td>
+                    {% if transfer.eta_seconds.is_some() %}
+                        {{ transfer.eta_seconds.unwrap() }}s
+                    {% else %}
+                        -
+                    {% endif %}
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    {% else %}
+    <p style="color: #64748b;">No active transfers</p>
+    {% endif %}
+</div>
+
+<div class="card">
+    <h2>Recent Transfers</h2>
+    {% if state.recent_transfers.len() > 0 %}
+    <table>
+        <thead>
+            <tr>
+                <th>Name</th>
+                <th>Direction</th>
+                <th>Status</th>
+                <th>Transferred</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for transfer in state.recent_transfers %}
+            <tr>
+                <td><a href="/transfers/{{ transfer.id }}" style="color: #60a5fa;">{{ transfer.name }}</a></td>
+                <td><span class="badge badge-{{ transfer.direction }}">{{ transfer.direction }}</span></td>
+                <td><span class="badge badge-{{ transfer.status }}">{{ transfer.status }}</span></td>
+                <td>{{ transfer.bytes_transferred }} bytes</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    {% else %}
+    <p style="color: #64748b;">No recent transfers</p>
+    {% endif %}
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+    // Auto-refresh every 5 seconds
+    setTimeout(() => window.location.reload(), 5000);
+</script>
+{% endblock %}

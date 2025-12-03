@@ -1,0 +1,30 @@
+[package]
+name = "warp-config"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "Configuration management for Portal distributed storage"
+
+[dependencies]
+# Serialization
+serde = { workspace = true, features = ["derive"] }
+toml = "0.8"
+
+# Error handling
+thiserror.workspace = true
+
+# Logging
+tracing.workspace = true
+
+# Utilities
+dirs = "5.0"
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["test-util", "macros", "rt-multi-thread"] }
+tempfile.workspace = true
+proptest.workspace = true
+test-case.workspace = true
+
+[lints]
+workspace = true

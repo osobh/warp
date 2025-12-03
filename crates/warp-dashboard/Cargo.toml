@@ -1,0 +1,28 @@
+[package]
+name = "warp-dashboard"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Web monitoring dashboard for Warp transfers"
+
+[dependencies]
+axum = "0.8"
+tower = "0.5"
+tower-http = { version = "0.6", features = ["fs", "cors", "trace", "compression-gzip"] }
+tokio = { workspace = true }
+serde = { workspace = true, features = ["derive"] }
+serde_json = "1.0"
+thiserror.workspace = true
+tracing.workspace = true
+warp-config = { workspace = true }
+warp-telemetry = { workspace = true }
+askama = "0.12"
+askama_axum = "0.4"
+uuid = { version = "1.16", features = ["v4", "serde"] }
+tokio-stream = { version = "0.1", features = ["sync"] }
+
+[dev-dependencies]
+tokio-test = "0.4"
+tempfile.workspace = true

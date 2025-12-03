@@ -12,6 +12,7 @@ memmap2.workspace = true
 walkdir.workspace = true
 thiserror.workspace = true
 tracing.workspace = true
+tokio = { workspace = true, features = ["fs", "io-util", "sync", "rt", "rt-multi-thread", "time"] }
 
 [dev-dependencies]
 tempfile.workspace = true

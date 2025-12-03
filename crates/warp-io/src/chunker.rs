@@ -39,7 +39,7 @@ impl Chunker {
         // Calculate mask for target size (find boundary when hash & mask == 0)
         let bits = (config.target_size as f64).log2() as u32;
         let mask = (1u64 << bits) - 1;
-        
+
         // Initialize Buzhash table with pseudo-random values
         let mut table = [0u64; 256];
         let mut state = 0x123456789ABCDEFu64;
@@ -50,8 +50,23 @@ impl Chunker {
             state ^= state << 17;
             *entry = state;
         }
-        
+
         Self { config, mask, table }
+    }
+
+    /// Get the chunker configuration
+    pub fn config(&self) -> &ChunkerConfig {
+        &self.config
+    }
+
+    /// Get the Buzhash table
+    pub fn table(&self) -> &[u64; 256] {
+        &self.table
+    }
+
+    /// Get the boundary mask
+    pub fn mask(&self) -> u64 {
+        self.mask
     }
     
     /// Chunk data from a reader
@@ -82,12 +97,12 @@ impl Chunker {
                 
                 // Check for chunk boundary
                 let size = current_chunk.len();
-                if size >= self.config.min_size {
-                    if (hash & self.mask) == 0 || size >= self.config.max_size {
-                        chunks.push(std::mem::take(&mut current_chunk));
-                        hash = 0;
-                        window.clear();
-                    }
+                if size >= self.config.min_size
+                    && ((hash & self.mask) == 0 || size >= self.config.max_size)
+                {
+                    chunks.push(std::mem::take(&mut current_chunk));
+                    hash = 0;
+                    window.clear();
                 }
             }
         }

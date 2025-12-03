@@ -1,0 +1,74 @@
+{% extends "base.html" %}
+
+{% block title %}Transfers - Warp Dashboard{% endblock %}
+
+{% block content %}
+<div class="card">
+    <h2>All Transfers</h2>
+    <div class="stats">
+        <div class="stat">
+            <div class="stat-label">Total</div>
+            <div class="stat-value">{{ transfers.len() }}</div>
+        </div>
+        <div class="stat">
+            <div class="stat-label">Active</div>
+            <div class="stat-value">{{ active_count }}</div>
+        </div>
+        <div class="stat">
+            <div class="stat-label">Completed</div>
+            <div class="stat-value">{{ completed_count }}</div>
+        </div>
+        <div class="stat">
+            <div class="stat-label">Failed</div>
+            <div class="stat-value">{{ failed_count }}</div>
+        </div>
+    </div>
+
+    {% if transfers.len() > 0 %}
+    <table>
+        <thead>
+            <tr>
+                <th>ID</th>
+                <th>Name</th>
+                <th>Direction</th>
+                <th>Status</th>
+                <th>Progress</th>
+                <th>Speed</th>
+                <th>Bytes Transferred</th>
+                <th>Remote Peer</th>
+                <th>Actions</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for transfer in transfers %}
+            <tr>
+                <td><code style="color: #94a3b8;">{{ transfer.id }}</code></td>
+                <td>{{ transfer.name }}</td>
+                <td><span class="badge badge-{{ transfer.direction }}">{{ transfer.direction }}</span></td>
+                <td><span class="badge badge-{{ transfer.status }}">{{ transfer.status }}</span></td>
+                <td>
+                    <div class="progress">
+                        <div class="progress-bar" style="width: {{ transfer.progress_percent }}%"></div>
+                    </div>
+                    {{ transfer.progress_percent }}%
+                </td>
+                <td>{{ transfer.speed_mbps }} Mbps</td>
+                <td>{{ transfer.bytes_transferred }} / {{ transfer.total_bytes }}</td>
+                <td>{{ transfer.remote_peer }}</td>
+                <td><a href="/transfers/{{ transfer.id }}" style="color: #60a5fa;">View</a></td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    {% else %}
+    <p style="color: #64748b;">No transfers found</p>
+    {% endif %}
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+    // Auto-refresh every 3 seconds
+    setTimeout(() => window.location.reload(), 3000);
+</script>
+{% endblock %}
