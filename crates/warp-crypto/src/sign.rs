@@ -2,6 +2,7 @@
 
 pub use ed25519_dalek::{SigningKey, VerifyingKey, Signature};
 use ed25519_dalek::Signer;
+use rand::rngs::OsRng;
 use crate::{Error, Result};
 
 /// Sign data with Ed25519
@@ -16,9 +17,9 @@ pub fn verify(key: &VerifyingKey, data: &[u8], signature: &Signature) -> Result<
         .map_err(|_| Error::InvalidSignature)
 }
 
-/// Generate a new signing keypair
+/// Generate a new signing keypair using cryptographically secure OS randomness
 pub fn generate_keypair() -> SigningKey {
-    SigningKey::generate(&mut rand::thread_rng())
+    SigningKey::generate(&mut OsRng)
 }
 
 #[cfg(test)]

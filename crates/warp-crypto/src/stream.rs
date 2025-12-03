@@ -132,11 +132,46 @@ impl StreamCipher {
         Ok(plaintext)
     }
 
-    /// Reset the counter to a specific value
+    /// Skip forward to a specific counter value (for resuming streams)
     ///
-    /// Use with caution - resetting to a previously used counter
-    /// will result in nonce reuse, which is a security vulnerability.
+    /// # Arguments
+    /// * `counter` - New counter value, must be >= current counter
+    ///
+    /// # Errors
+    /// Returns error if counter would move backward (which would cause
+    /// catastrophic nonce reuse with AEAD ciphers).
+    ///
+    /// # Security
+    /// This function only allows forward movement to prevent nonce reuse.
+    /// Nonce reuse with ChaCha20-Poly1305 breaks all security guarantees
+    /// and can lead to key recovery attacks.
+    pub fn skip_to_counter(&mut self, counter: u64) -> Result<()> {
+        if counter < self.counter {
+            return Err(Error::InvalidKey(format!(
+                "Cannot reset counter backward: {} -> {} would cause nonce reuse",
+                self.counter, counter
+            )));
+        }
+        self.counter = counter;
+        Ok(())
+    }
+
+    /// Reset the counter to a specific value (DEPRECATED - use skip_to_counter)
+    ///
+    /// # Safety
+    /// This function is unsafe for production use as it can cause nonce reuse.
+    /// Only use for testing or when you are certain the counter has never been
+    /// used with this key/nonce combination.
+    ///
+    /// # Panics
+    /// Panics in debug builds if counter moves backward.
+    #[deprecated(since = "0.2.0", note = "Use skip_to_counter() which prevents nonce reuse")]
     pub fn reset_counter(&mut self, counter: u64) {
+        debug_assert!(
+            counter >= self.counter,
+            "SECURITY: Counter reset from {} to {} would cause nonce reuse!",
+            self.counter, counter
+        );
         self.counter = counter;
     }
 
@@ -357,7 +392,7 @@ mod tests {
     }
 
     #[test]
-    fn test_reset_counter() {
+    fn test_skip_to_counter_forward() {
         let key = [0x42u8; 32];
         let nonce = [0x24u8; 12];
         let mut cipher = StreamCipher::new(&key, &nonce);
@@ -365,6 +400,41 @@ mod tests {
         cipher.encrypt_chunk(b"test").unwrap();
         assert_eq!(cipher.counter(), 1);
 
+        // Forward skip is allowed
+        cipher.skip_to_counter(100).unwrap();
+        assert_eq!(cipher.counter(), 100);
+
+        // Skip to same value is allowed
+        cipher.skip_to_counter(100).unwrap();
+        assert_eq!(cipher.counter(), 100);
+    }
+
+    #[test]
+    fn test_skip_to_counter_backward_fails() {
+        let key = [0x42u8; 32];
+        let nonce = [0x24u8; 12];
+        let mut cipher = StreamCipher::new(&key, &nonce);
+
+        cipher.skip_to_counter(100).unwrap();
+        assert_eq!(cipher.counter(), 100);
+
+        // Backward skip is not allowed (would cause nonce reuse)
+        let result = cipher.skip_to_counter(50);
+        assert!(result.is_err());
+        assert_eq!(cipher.counter(), 100); // Counter unchanged
+    }
+
+    #[test]
+    #[allow(deprecated)]
+    fn test_deprecated_reset_counter() {
+        let key = [0x42u8; 32];
+        let nonce = [0x24u8; 12];
+        let mut cipher = StreamCipher::new(&key, &nonce);
+
+        cipher.encrypt_chunk(b"test").unwrap();
+        assert_eq!(cipher.counter(), 1);
+
+        // Deprecated but still works for backwards compatibility
         cipher.reset_counter(100);
         assert_eq!(cipher.counter(), 100);
     }

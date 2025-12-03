@@ -4,7 +4,7 @@ use chacha20poly1305::{
     aead::{Aead, KeyInit},
     ChaCha20Poly1305, Nonce,
 };
-use rand::RngCore;
+use rand::{rngs::OsRng, RngCore};
 use zeroize::Zeroize;
 
 use crate::{Error, Result};
@@ -23,7 +23,7 @@ impl Key {
     /// Generate random key
     pub fn generate() -> Self {
         let mut bytes = [0u8; 32];
-        rand::thread_rng().fill_bytes(&mut bytes);
+        OsRng.fill_bytes(&mut bytes);
         Self(bytes)
     }
     
@@ -40,7 +40,7 @@ pub fn encrypt(key: &Key, plaintext: &[u8]) -> Result<Vec<u8>> {
     let cipher = ChaCha20Poly1305::new(key.0.as_ref().into());
     
     let mut nonce_bytes = [0u8; 12];
-    rand::thread_rng().fill_bytes(&mut nonce_bytes);
+    OsRng.fill_bytes(&mut nonce_bytes);
     let nonce = Nonce::from_slice(&nonce_bytes);
     
     let ciphertext = cipher
