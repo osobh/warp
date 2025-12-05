@@ -44,8 +44,7 @@ use cudarc::nvrtc::compile_ptx;
 use std::sync::Arc;
 use tracing::{debug, trace};
 
-/// ChaCha20 constants (reserved for future CPU fallback)
-#[allow(dead_code)]
+/// ChaCha20 constants
 mod constants {
     pub const BLOCK_SIZE: usize = 64;
     pub const KEY_SIZE: usize = 32;
@@ -53,10 +52,14 @@ mod constants {
     pub const TAG_SIZE: usize = 16;
 
     // "expand 32-byte k" in little-endian
+    #[allow(dead_code)]
     pub const SIGMA: [u32; 4] = [
         0x61707865, 0x3320646e, 0x79622d32, 0x6b206574,
     ];
 }
+
+/// Minimum size to use GPU encryption (below this, CPU is faster due to transfer overhead)
+pub const GPU_CROSSOVER_SIZE: usize = 256 * 1024; // 256KB
 
 /// CUDA kernel for ChaCha20 encryption
 ///
@@ -312,23 +315,72 @@ impl ChaCha20Poly1305 {
     /// # Returns
     /// Encrypted data with 16-byte Poly1305 tag appended
     ///
-    /// # Note
-    /// Currently uses CPU for correctness. The GPU kernel infrastructure is
-    /// available via `encrypt_gpu_experimental()` for performance testing.
-    /// The chacha20poly1305 crate provides excellent SIMD-optimized CPU performance.
+    /// # Performance
+    /// - Data < 256KB: Uses CPU (SIMD-optimized chacha20poly1305 crate)
+    /// - Data >= 256KB: Uses GPU for ChaCha20, CPU for Poly1305 tag
     pub fn encrypt(&self, plaintext: &[u8], key: &[u8; 32], nonce: &[u8; 12]) -> Result<Vec<u8>> {
         use chacha20poly1305::{
             aead::{Aead, KeyInit},
             ChaCha20Poly1305 as CpuCipher, Nonce,
         };
 
-        // Use CPU implementation for correctness (like blake3.rs pattern)
+        // Use GPU for large data where transfer overhead is amortized
+        if plaintext.len() >= GPU_CROSSOVER_SIZE {
+            trace!("Using GPU encryption for {} bytes", plaintext.len());
+            return self.encrypt_with_gpu_chacha20(plaintext, key, nonce);
+        }
+
+        // Use CPU for small data (transfer overhead > compute savings)
+        trace!("Using CPU encryption for {} bytes", plaintext.len());
         let cipher = CpuCipher::new(key.into());
         let nonce_obj = Nonce::from_slice(nonce);
 
         cipher
             .encrypt(nonce_obj, plaintext)
             .map_err(|e| Error::Crypto(e.to_string()))
+    }
+
+    /// Encrypt using GPU ChaCha20 with CPU Poly1305 tag
+    ///
+    /// This hybrid approach uses GPU for the parallelizable ChaCha20 encryption
+    /// and CPU for the sequential Poly1305 authentication tag computation.
+    /// Follows RFC 8439 AEAD construction exactly.
+    fn encrypt_with_gpu_chacha20(&self, plaintext: &[u8], key: &[u8; 32], nonce: &[u8; 12]) -> Result<Vec<u8>> {
+        use chacha20::{ChaCha20, cipher::{KeyIvInit, StreamCipher}};
+        use poly1305::{Poly1305, universal_hash::{KeyInit as PolyKeyInit, UniversalHash}};
+
+        // Step 1: Derive Poly1305 key from ChaCha20 block 0 (first 32 bytes of keystream)
+        let mut poly_key_block = [0u8; 64];
+        let mut chacha = ChaCha20::new(key.into(), nonce.into());
+        chacha.apply_keystream(&mut poly_key_block);
+        let poly_key: [u8; 32] = poly_key_block[..32].try_into().unwrap();
+
+        // Step 2: Encrypt with GPU ChaCha20 starting at counter 1 (per RFC 8439)
+        // Counter 0 is reserved for Poly1305 key derivation
+        let ciphertext = self.encrypt_gpu_with_counter(plaintext, key, nonce, 1)?;
+
+        // Step 3: Compute Poly1305 tag (RFC 8439 construction with no AAD)
+        // Tag = Poly1305(poly_key, pad16(ciphertext) || len_aad || len_ciphertext)
+        let mut mac = Poly1305::new((&poly_key).into());
+
+        // Feed ciphertext with padding to 16-byte boundary
+        mac.update_padded(&ciphertext);
+
+        // Feed lengths (AAD length = 0, ciphertext length) - each as 8-byte LE
+        let aad_len_bytes = 0u64.to_le_bytes();
+        let ct_len_bytes = (ciphertext.len() as u64).to_le_bytes();
+        let mut len_block = [0u8; 16];
+        len_block[..8].copy_from_slice(&aad_len_bytes);
+        len_block[8..].copy_from_slice(&ct_len_bytes);
+        mac.update_padded(&len_block);
+
+        let tag = mac.finalize();
+
+        // Step 4: Append 16-byte tag to ciphertext
+        let mut result = ciphertext;
+        result.extend_from_slice(tag.as_slice());
+
+        Ok(result)
     }
 
     /// Decrypt data using ChaCha20-Poly1305
@@ -374,12 +426,18 @@ impl ChaCha20Poly1305 {
     }
 
     /// Internal GPU encryption implementation
-    fn encrypt_gpu(&self, plaintext: &[u8], key: &[u8; 32], nonce: &[u8; 12]) -> Result<Vec<u8>> {
+    ///
+    /// # Arguments
+    /// * `plaintext` - Data to encrypt
+    /// * `key` - 32-byte key
+    /// * `nonce` - 12-byte nonce
+    /// * `counter_base` - Starting counter value (0 for raw ChaCha20, 1 for AEAD)
+    fn encrypt_gpu_with_counter(&self, plaintext: &[u8], key: &[u8; 32], nonce: &[u8; 12], counter_base: u32) -> Result<Vec<u8>> {
         if plaintext.is_empty() {
             return Ok(vec![]);
         }
 
-        trace!("GPU encrypting {} bytes", plaintext.len());
+        trace!("GPU encrypting {} bytes with counter_base={}", plaintext.len(), counter_base);
 
         // 1. Transfer plaintext to GPU
         let d_plaintext = self.stream.clone_htod(plaintext)?;
@@ -416,7 +474,6 @@ impl ChaCha20Poly1305 {
         let (grid_size, block_size, _) = self.compute_launch_config(plaintext.len(), false);
         trace!("Launch config: grid={}, block={}", grid_size, block_size);
 
-        let counter_base = 0u32;
         let data_size = plaintext.len() as u64;
 
         unsafe {
@@ -446,6 +503,11 @@ impl ChaCha20Poly1305 {
 
         trace!("GPU encryption completed");
         Ok(ciphertext)
+    }
+
+    /// Internal GPU encryption (counter starts at 0, for experimental use)
+    fn encrypt_gpu(&self, plaintext: &[u8], key: &[u8; 32], nonce: &[u8; 12]) -> Result<Vec<u8>> {
+        self.encrypt_gpu_with_counter(plaintext, key, nonce, 0)
     }
 
     /// Compute launch configuration for encryption

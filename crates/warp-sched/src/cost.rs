@@ -5,8 +5,8 @@
 //! computation paths with configurable cost function weights.
 
 use crate::{ChunkId, CpuStateBuffers, EdgeIdx};
+use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
-use std::collections::HashSet;
 
 /// Cost function configuration with tunable weights
 ///
@@ -123,59 +123,104 @@ impl CpuCostMatrix {
     ///
     /// Uses state buffers to access chunk sizes, edge bandwidth, RTT, health,
     /// and replica locations. Computes weighted cost based on configuration.
+    /// Uses Rayon for parallel computation across chunks.
     pub fn compute(&mut self, state: &CpuStateBuffers) {
-        // Reset all costs to invalid
-        self.costs.fill(f32::INFINITY);
-        self.valid_mask.fill(false);
-
         // Get actual counts from state
         let actual_chunks = state.chunk_count();
         let actual_edges = state.edge_count();
 
-        // Compute costs for each chunk-edge pair
-        for chunk_idx in 0..actual_chunks {
-            let chunk = match state.get_chunk(chunk_idx as u32) {
-                Some(c) => c,
-                None => continue,
-            };
+        // Reset costs in parallel
+        self.costs.par_iter_mut().for_each(|c| *c = f32::INFINITY);
+        self.valid_mask.par_iter_mut().for_each(|v| *v = false);
 
-            let chunk_size = chunk.size;
-            // Convert replicas slice to HashSet for O(1) lookups instead of O(n)
-            let replicas: HashSet<EdgeIdx> = state.get_replicas(chunk_idx as u32).iter().copied().collect();
+        // Capture config values for use in parallel closure
+        let bandwidth_weight = self.config.bandwidth_weight;
+        let rtt_weight = self.config.rtt_weight;
+        let health_weight = self.config.health_weight;
+        let load_weight = self.config.load_weight;
+        let max_rtt_us = self.config.max_acceptable_rtt_us;
+        let num_edges = self.num_edges;
 
-            for edge_idx in 0..actual_edges {
-                let edge = match state.get_edge(EdgeIdx(edge_idx as u32)) {
-                    Some(e) => e,
-                    None => continue,
-                };
+        // Compute costs in parallel per chunk
+        let results: Vec<Vec<(usize, f32)>> = (0..actual_chunks)
+            .into_par_iter()
+            .filter_map(|chunk_idx| {
+                let chunk = state.get_chunk(chunk_idx as u32)?;
+                let chunk_size = chunk.size;
+                let replicas = state.get_replicas(chunk_idx as u32);
 
-                // Check if this edge has a replica of the chunk (O(1) with HashSet)
-                if !replicas.contains(&EdgeIdx(edge_idx as u32)) {
-                    continue;
+                let mut chunk_costs = Vec::new();
+
+                for edge_idx in 0..actual_edges {
+                    // Use slice::contains instead of HashSet (small replica sets, ~3 items)
+                    if !replicas.contains(&EdgeIdx(edge_idx as u32)) {
+                        continue;
+                    }
+
+                    let edge = match state.get_edge(EdgeIdx(edge_idx as u32)) {
+                        Some(e) if e.can_accept_transfer() => e,
+                        _ => continue,
+                    };
+
+                    // Compute individual cost components using static methods
+                    let bandwidth_cost = Self::compute_bandwidth_cost_static(chunk_size, edge.available_bandwidth_bps);
+                    let rtt_cost = Self::compute_rtt_cost_static(edge.rtt_us, max_rtt_us);
+                    let health_cost = Self::compute_health_cost_static(edge.health_score_f32());
+                    let load_cost = Self::compute_load_cost_static(edge.active_transfers, edge.max_transfers);
+
+                    // Weighted sum of all components
+                    let total_cost = bandwidth_weight * bandwidth_cost
+                        + rtt_weight * rtt_cost
+                        + health_weight * health_cost
+                        + load_weight * load_cost;
+
+                    let index = chunk_idx * num_edges + edge_idx;
+                    chunk_costs.push((index, total_cost));
                 }
 
-                // Check if edge is online and can accept transfers
-                if !edge.can_accept_transfer() {
-                    continue;
-                }
+                Some(chunk_costs)
+            })
+            .collect();
 
-                // Compute individual cost components
-                let bandwidth_cost = self.compute_bandwidth_cost(chunk_size, edge.available_bandwidth_bps);
-                let rtt_cost = self.compute_rtt_cost(edge.rtt_us);
-                let health_cost = self.compute_health_cost(edge.health_score_f32());
-                let load_cost = self.compute_load_cost(edge.active_transfers, edge.max_transfers);
-
-                // Weighted sum of all components
-                let total_cost = self.config.bandwidth_weight * bandwidth_cost
-                    + self.config.rtt_weight * rtt_cost
-                    + self.config.health_weight * health_cost
-                    + self.config.load_weight * load_cost;
-
-                let index = self.index(chunk_idx, edge_idx);
-                self.costs[index] = total_cost;
+        // Apply results (single-threaded to avoid race conditions)
+        for chunk_costs in results {
+            for (index, cost) in chunk_costs {
+                self.costs[index] = cost;
                 self.valid_mask[index] = true;
             }
         }
+    }
+
+    /// Static bandwidth cost computation for use in parallel contexts
+    #[inline]
+    fn compute_bandwidth_cost_static(chunk_size: u32, bandwidth_bps: u64) -> f32 {
+        if bandwidth_bps == 0 {
+            return 1.0;
+        }
+        let bits = chunk_size as f64 * 8.0;
+        let transfer_time_sec = bits / bandwidth_bps as f64;
+        (transfer_time_sec / 10.0).min(1.0) as f32
+    }
+
+    /// Static RTT cost computation for use in parallel contexts
+    #[inline]
+    fn compute_rtt_cost_static(rtt_us: u32, max_rtt_us: u32) -> f32 {
+        (rtt_us as f32 / max_rtt_us as f32).min(1.0)
+    }
+
+    /// Static health cost computation for use in parallel contexts
+    #[inline]
+    fn compute_health_cost_static(health_score: f32) -> f32 {
+        1.0 - health_score.clamp(0.0, 1.0)
+    }
+
+    /// Static load cost computation for use in parallel contexts
+    #[inline]
+    fn compute_load_cost_static(active_transfers: u16, max_transfers: u16) -> f32 {
+        if max_transfers == 0 {
+            return 1.0;
+        }
+        active_transfers as f32 / max_transfers as f32
     }
 
     /// Compute bandwidth cost component

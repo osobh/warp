@@ -73,45 +73,56 @@ impl Chunker {
     pub fn chunk<R: Read>(&self, mut reader: R) -> crate::Result<Vec<Vec<u8>>> {
         let mut chunks = Vec::new();
         let mut buffer = vec![0u8; self.config.max_size];
-        let mut current_chunk = Vec::new();
+        let mut current_chunk = Vec::with_capacity(self.config.target_size);
         let mut hash = 0u64;
-        let mut window = Vec::with_capacity(self.config.window_size);
-        
+
+        // Use fixed-size circular buffer instead of Vec for O(1) operations
+        // Max window size is 64 bytes (typical values are 32-48)
+        let mut window = [0u8; 64];
+        let mut window_pos = 0usize;
+        let mut window_len = 0usize;
+        let window_size = self.config.window_size;
+
         loop {
             let n = reader.read(&mut buffer)?;
             if n == 0 {
                 break;
             }
-            
+
             for &byte in &buffer[..n] {
-                // Update rolling hash
-                if window.len() >= self.config.window_size {
-                    let old_byte = window.remove(0);
+                // Update rolling hash using circular buffer (O(1) instead of O(n))
+                if window_len >= window_size {
+                    let old_byte = window[window_pos];
                     hash ^= self.table[old_byte as usize]
-                        .rotate_left(self.config.window_size as u32);
+                        .rotate_left(window_size as u32);
+                } else {
+                    window_len += 1;
                 }
-                window.push(byte);
+                window[window_pos] = byte;
+                window_pos = (window_pos + 1) % window_size;
                 hash = hash.rotate_left(1) ^ self.table[byte as usize];
-                
+
                 current_chunk.push(byte);
-                
+
                 // Check for chunk boundary
                 let size = current_chunk.len();
                 if size >= self.config.min_size
                     && ((hash & self.mask) == 0 || size >= self.config.max_size)
                 {
                     chunks.push(std::mem::take(&mut current_chunk));
+                    current_chunk = Vec::with_capacity(self.config.target_size);
                     hash = 0;
-                    window.clear();
+                    window_pos = 0;
+                    window_len = 0;
                 }
             }
         }
-        
+
         // Don't forget the last chunk
         if !current_chunk.is_empty() {
             chunks.push(current_chunk);
         }
-        
+
         Ok(chunks)
     }
 }
