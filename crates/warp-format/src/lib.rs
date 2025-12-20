@@ -16,6 +16,7 @@ pub mod reader;
 pub mod writer;
 
 pub use header::{Header, MAGIC, VERSION, Compression, Encryption};
+pub use merkle::{MerkleTree, MerkleProof, SparseMerkleTree};
 pub use reader::WarpReader;
 pub use writer::{WarpWriter, WarpWriterConfig};
 

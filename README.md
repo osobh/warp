@@ -7,7 +7,8 @@
 - **GPU Acceleration**: nvCOMP integration for parallel compression/decompression
 - **Ultra-Fast Chunking**: SeqCDC algorithm with SIMD acceleration (30+ GB/s)
 - **QUIC Transport**: Modern, multiplexed transport with built-in encryption
-- **Merkle Verification**: Cryptographic integrity with incremental verification
+- **Sparse Merkle Verification**: O(log n) single-chunk verification with LRU caching
+- **Erasure Coding**: Reed-Solomon fault tolerance (survive up to m shard failures)
 - **Adaptive Compression**: Per-chunk algorithm selection based on entropy analysis
 - **Resume Support**: Interrupted transfers continue from last verified chunk
 - **Cross-Platform SIMD**: AVX2/AVX-512 on x86_64, NEON on ARM (Apple Silicon)
@@ -108,19 +109,71 @@ Benchmarks on modern hardware (release build):
 └─────────────────────────────────────────────────────────────────┘
 ```
 
+## Erasure Coding
+
+The `warp-ec` crate provides Reed-Solomon erasure coding for fault-tolerant data transfer:
+
+```rust
+use warp_ec::{ErasureConfig, ErasureEncoder, ErasureDecoder};
+
+// RS(10,4): 10 data shards + 4 parity shards
+// Can survive up to 4 shard failures
+let config = ErasureConfig::new(10, 4).unwrap();
+
+// Encode data into shards
+let encoder = ErasureEncoder::new(config.clone());
+let shards = encoder.encode(&data)?;
+
+// Decode even with missing shards
+let mut received: Vec<Option<Vec<u8>>> = shards.into_iter().map(Some).collect();
+received[0] = None;  // Simulate loss
+received[5] = None;  // Simulate loss
+
+let decoder = ErasureDecoder::new(config);
+let recovered = decoder.decode(&received)?;
+```
+
+**Preset Configurations:**
+
+| Config | Overhead | Fault Tolerance | Use Case |
+|--------|----------|-----------------|----------|
+| RS(4,2) | 50% | 2 failures | Small transfers |
+| RS(6,3) | 50% | 3 failures | Medium reliability |
+| RS(10,4) | 40% | 4 failures | **Default** |
+| RS(16,4) | 25% | 4 failures | Storage efficiency |
+
+## Sparse Merkle Verification
+
+Efficient O(log n) verification for large archives:
+
+```rust
+use warp_format::WarpReader;
+
+// Open archive with verification tree
+let reader = WarpReader::open_with_verification(path)?;
+
+// Verify single chunk in O(log n) time
+let valid = reader.verify_chunk_fast(chunk_index)?;
+
+// Random spot-check (e.g., verify 100 random chunks)
+let (passed, total) = reader.verify_random_sample(100)?;
+println!("Verified {}/{} chunks", passed, total);
+```
+
 ## Crates
 
 | Crate | Description |
 |-------|-------------|
 | `warp-cli` | Command-line interface |
 | `warp-core` | Core orchestration and transfer engine |
-| `warp-format` | Native `.warp` archive format |
+| `warp-format` | Native `.warp` archive format with sparse Merkle verification |
 | `warp-net` | QUIC networking with TLS 1.3 |
 | `warp-compress` | Zstd/LZ4 compression |
 | `warp-hash` | BLAKE3 hashing with parallelism |
 | `warp-crypto` | ChaCha20/Ed25519/Argon2 cryptography |
 | `warp-io` | SeqCDC chunking (31 GB/s), file I/O, SIMD acceleration |
 | `warp-gpu` | GPU acceleration via nvCOMP |
+| `warp-ec` | Reed-Solomon erasure coding for fault tolerance |
 | `warp-sched` | Transfer scheduling |
 | `warp-orch` | Multi-source orchestration |
 | `portal-*` | Zero-knowledge portal system |

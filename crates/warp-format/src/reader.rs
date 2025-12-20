@@ -4,7 +4,7 @@ use crate::{
     file_table::{FileEntry, FileTable},
     header::{Compression, Encryption, Header, HEADER_SIZE},
     index::ChunkIndex,
-    merkle::MerkleTree,
+    merkle::{MerkleTree, SparseMerkleTree},
     Error, Result,
 };
 use memmap2::Mmap;
@@ -24,6 +24,7 @@ use warp_crypto::encrypt::Key;
 /// - Incremental verification support
 /// - Automatic decompression
 /// - Automatic decryption (if key provided)
+/// - Optional sparse Merkle tree for O(log n) chunk verification
 pub struct WarpReader {
     /// Memory-mapped archive file
     mmap: Mmap,
@@ -37,6 +38,8 @@ pub struct WarpReader {
     decompressor: Arc<dyn Compressor>,
     /// Decryption key (if archive is encrypted)
     decryption_key: Option<Key>,
+    /// Sparse Merkle tree for efficient verification (optional)
+    sparse_tree: Option<SparseMerkleTree>,
 }
 
 impl WarpReader {
@@ -78,6 +81,182 @@ impl WarpReader {
     /// - Compression algorithm is unsupported
     pub fn open_encrypted(path: &Path, key: Key) -> Result<Self> {
         Self::open_internal(path, Some(key))
+    }
+
+    /// Open a .warp archive with sparse Merkle tree for efficient verification
+    ///
+    /// This builds a sparse Merkle tree from the chunk hashes stored in the
+    /// index, enabling O(log n) single-chunk verification without reading
+    /// all chunks.
+    ///
+    /// # Performance
+    ///
+    /// - Construction: O(n) where n is the number of chunks
+    /// - Memory: O(n) for leaf hashes + O(cache_size) for internal nodes
+    /// - Single verification: O(log n)
+    ///
+    /// # Example
+    ///
+    /// ```no_run
+    /// use warp_format::WarpReader;
+    /// use std::path::Path;
+    ///
+    /// let reader = WarpReader::open_with_verification(Path::new("archive.warp"))?;
+    ///
+    /// // Fast verification of a single chunk
+    /// if reader.verify_chunk_fast(42)? {
+    ///     println!("Chunk 42 is valid");
+    /// }
+    /// # Ok::<(), warp_format::Error>(())
+    /// ```
+    pub fn open_with_verification(path: &Path) -> Result<Self> {
+        let mut reader = Self::open_internal(path, None)?;
+        reader.build_verification_tree();
+        Ok(reader)
+    }
+
+    /// Open an encrypted .warp archive with sparse Merkle tree
+    ///
+    /// Combines encrypted archive support with efficient verification.
+    pub fn open_encrypted_with_verification(path: &Path, key: Key) -> Result<Self> {
+        let mut reader = Self::open_internal(path, Some(key))?;
+        reader.build_verification_tree();
+        Ok(reader)
+    }
+
+    /// Build the sparse Merkle tree for efficient verification
+    ///
+    /// This extracts chunk hashes from the index and builds a sparse
+    /// Merkle tree. The tree is built lazily - only the root is computed
+    /// immediately, internal nodes are computed on demand.
+    ///
+    /// Call this method after opening if you need fast chunk verification
+    /// but didn't use `open_with_verification`.
+    pub fn build_verification_tree(&mut self) {
+        let hashes: Vec<[u8; 32]> = (0..self.chunk_index.len())
+            .map(|i| self.chunk_index.get(i).unwrap().hash)
+            .collect();
+
+        self.sparse_tree = Some(SparseMerkleTree::from_leaves(hashes));
+    }
+
+    /// Check if the verification tree is built
+    pub fn has_verification_tree(&self) -> bool {
+        self.sparse_tree.is_some()
+    }
+
+    /// Verify a single chunk using the sparse Merkle tree (O(log n))
+    ///
+    /// This method uses the pre-built sparse Merkle tree for fast
+    /// verification. It reads and hashes the chunk, then verifies
+    /// the hash against the tree.
+    ///
+    /// # Arguments
+    ///
+    /// * `index` - Zero-based chunk index
+    ///
+    /// # Returns
+    ///
+    /// - `Ok(true)` if the chunk is valid
+    /// - `Ok(false)` if the chunk hash doesn't match
+    /// - `Err` if reading fails or verification tree not built
+    ///
+    /// # Performance
+    ///
+    /// This is O(log n) in the number of chunks, compared to O(n)
+    /// for full archive verification.
+    pub fn verify_chunk_fast(&self, index: usize) -> Result<bool> {
+        let tree = self.sparse_tree.as_ref().ok_or_else(|| {
+            Error::Corrupted(
+                "Verification tree not built. Call build_verification_tree() first".into(),
+            )
+        })?;
+
+        if index >= self.chunk_index.len() {
+            return Err(Error::Corrupted(format!("Invalid chunk index: {}", index)));
+        }
+
+        // Read and hash the chunk
+        let chunk_data = self.read_chunk(index)?;
+        let computed_hash = warp_hash::hash(&chunk_data);
+
+        // Verify against the tree
+        Ok(tree.verify_chunk(index, &computed_hash))
+    }
+
+    /// Randomly verify a sample of chunks for integrity checking
+    ///
+    /// This method selects random chunks and verifies each one using
+    /// the sparse Merkle tree. Useful for quick spot-checks of large
+    /// archives without verifying every chunk.
+    ///
+    /// # Arguments
+    ///
+    /// * `sample_size` - Number of chunks to randomly sample and verify
+    ///
+    /// # Returns
+    ///
+    /// A tuple of (verified_count, total_sampled) where:
+    /// - `verified_count` is the number of chunks that passed verification
+    /// - `total_sampled` is the actual number of chunks sampled
+    ///
+    /// # Example
+    ///
+    /// ```no_run
+    /// use warp_format::WarpReader;
+    /// use std::path::Path;
+    ///
+    /// let reader = WarpReader::open_with_verification(Path::new("archive.warp"))?;
+    ///
+    /// // Verify 100 random chunks
+    /// let (passed, total) = reader.verify_random_sample(100)?;
+    /// println!("{}/{} chunks verified successfully", passed, total);
+    /// # Ok::<(), warp_format::Error>(())
+    /// ```
+    pub fn verify_random_sample(&self, sample_size: usize) -> Result<(usize, usize)> {
+        use rand::seq::SliceRandom;
+
+        let tree = self.sparse_tree.as_ref().ok_or_else(|| {
+            Error::Corrupted(
+                "Verification tree not built. Call build_verification_tree() first".into(),
+            )
+        })?;
+
+        if self.chunk_index.len() == 0 {
+            return Ok((0, 0));
+        }
+
+        let actual_sample = sample_size.min(self.chunk_index.len());
+        let mut rng = rand::thread_rng();
+
+        // Select random indices
+        let indices: Vec<usize> = (0..self.chunk_index.len())
+            .collect::<Vec<_>>()
+            .choose_multiple(&mut rng, actual_sample)
+            .copied()
+            .collect();
+
+        let mut verified = 0;
+
+        for index in &indices {
+            // Read and hash the chunk
+            let chunk_data = self.read_chunk(*index)?;
+            let computed_hash = warp_hash::hash(&chunk_data);
+
+            if tree.verify_chunk(*index, &computed_hash) {
+                verified += 1;
+            }
+        }
+
+        Ok((verified, actual_sample))
+    }
+
+    /// Get the sparse Merkle tree root hash
+    ///
+    /// Returns the root hash of the sparse Merkle tree, or None
+    /// if the tree hasn't been built.
+    pub fn sparse_tree_root(&self) -> Option<[u8; 32]> {
+        self.sparse_tree.as_ref().map(|t| t.root())
     }
 
     /// Internal implementation for opening archives
@@ -172,6 +351,7 @@ impl WarpReader {
             file_table,
             decompressor,
             decryption_key,
+            sparse_tree: None,
         })
     }
 
@@ -1001,6 +1181,233 @@ mod tests {
 
         let reader = WarpReader::open_encrypted(&encrypted_path, key)?;
         assert!(reader.is_encrypted());
+
+        Ok(())
+    }
+
+    // =========================================================================
+    // Sparse Merkle Tree Verification Tests
+    // =========================================================================
+
+    #[test]
+    fn test_open_with_verification() -> Result<()> {
+        let temp_dir = TempDir::new()?;
+        let archive_path = create_test_archive(temp_dir.path())?;
+
+        let reader = WarpReader::open_with_verification(&archive_path)?;
+
+        assert!(reader.has_verification_tree());
+        assert!(reader.sparse_tree_root().is_some());
+
+        // The sparse tree root should match the header merkle root
+        assert_eq!(reader.sparse_tree_root().unwrap(), reader.header().merkle_root);
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_build_verification_tree_manually() -> Result<()> {
+        let temp_dir = TempDir::new()?;
+        let archive_path = create_test_archive(temp_dir.path())?;
+
+        let mut reader = WarpReader::open(&archive_path)?;
+
+        // Initially no tree
+        assert!(!reader.has_verification_tree());
+
+        // Build the tree
+        reader.build_verification_tree();
+
+        // Now we have a tree
+        assert!(reader.has_verification_tree());
+        assert_eq!(reader.sparse_tree_root().unwrap(), reader.header().merkle_root);
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_verify_chunk_fast() -> Result<()> {
+        let temp_dir = TempDir::new()?;
+        let archive_path = create_test_archive(temp_dir.path())?;
+
+        let reader = WarpReader::open_with_verification(&archive_path)?;
+
+        // Verify all chunks
+        for i in 0..reader.chunk_count() {
+            let valid = reader.verify_chunk_fast(i)?;
+            assert!(valid, "Chunk {} should verify", i);
+        }
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_verify_chunk_fast_without_tree_fails() -> Result<()> {
+        let temp_dir = TempDir::new()?;
+        let archive_path = create_test_archive(temp_dir.path())?;
+
+        let reader = WarpReader::open(&archive_path)?;
+
+        // Should fail because tree not built
+        let result = reader.verify_chunk_fast(0);
+        assert!(result.is_err());
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_verify_chunk_fast_invalid_index() -> Result<()> {
+        let temp_dir = TempDir::new()?;
+        let archive_path = create_test_archive(temp_dir.path())?;
+
+        let reader = WarpReader::open_with_verification(&archive_path)?;
+
+        // Should fail for invalid index
+        let result = reader.verify_chunk_fast(9999);
+        assert!(result.is_err());
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_verify_random_sample() -> Result<()> {
+        let temp_dir = TempDir::new()?;
+        let archive_path = temp_dir.path().join("multi_chunk.warp");
+        let source_dir = temp_dir.path().join("source");
+        std::fs::create_dir_all(&source_dir)?;
+
+        // Create multiple files to ensure multiple chunks
+        for i in 0..10 {
+            let file_path = source_dir.join(format!("file{}.txt", i));
+            std::fs::write(&file_path, format!("Content for file number {}", i))?;
+        }
+
+        // Create archive with small chunks and no compression
+        // to ensure we get multiple chunks
+        let config = WarpWriterConfig {
+            compression: Compression::None,
+            chunk_size: 32, // Very small chunks
+            ..Default::default()
+        };
+        let mut writer = WarpWriter::create_with_config(&archive_path, config)?;
+        writer.add_directory(&source_dir, "")?;
+        writer.finish()?;
+
+        // Open with verification
+        let reader = WarpReader::open_with_verification(&archive_path)?;
+
+        // Verify random sample (may have single or multiple chunks)
+        let (verified, total) = reader.verify_random_sample(5)?;
+        assert_eq!(verified, total, "All sampled chunks should verify");
+        // Total should be at most 5 or the total chunk count
+        assert!(total <= 5 || total == reader.chunk_count());
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_verify_random_sample_without_tree_fails() -> Result<()> {
+        let temp_dir = TempDir::new()?;
+        let archive_path = create_test_archive(temp_dir.path())?;
+
+        let reader = WarpReader::open(&archive_path)?;
+
+        // Should fail because tree not built
+        let result = reader.verify_random_sample(5);
+        assert!(result.is_err());
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_verify_random_sample_empty_archive() -> Result<()> {
+        let temp_dir = TempDir::new()?;
+        let archive_path = temp_dir.path().join("empty.warp");
+
+        // Create empty archive
+        let writer = WarpWriter::create(&archive_path)?;
+        writer.finish()?;
+
+        let reader = WarpReader::open_with_verification(&archive_path)?;
+
+        // Should return (0, 0) for empty archive
+        let (verified, total) = reader.verify_random_sample(10)?;
+        assert_eq!(verified, 0);
+        assert_eq!(total, 0);
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_encrypted_with_verification() -> Result<()> {
+        use warp_crypto::encrypt::Key;
+
+        let temp_dir = TempDir::new()?;
+        let archive_path = temp_dir.path().join("encrypted.warp");
+        let source_dir = temp_dir.path().join("source");
+        std::fs::create_dir_all(&source_dir)?;
+
+        // Create test files
+        std::fs::write(source_dir.join("file1.txt"), b"Content 1")?;
+        std::fs::write(source_dir.join("file2.txt"), b"Content 2")?;
+
+        // Create encrypted archive
+        let key = Key::generate();
+        let config = WarpWriterConfig::default().with_encryption(key.clone());
+        let mut writer = WarpWriter::create_with_config(&archive_path, config)?;
+        writer.add_directory(&source_dir, "")?;
+        writer.finish()?;
+
+        // Open with verification
+        let reader = WarpReader::open_encrypted_with_verification(&archive_path, key)?;
+
+        assert!(reader.is_encrypted());
+        assert!(reader.has_verification_tree());
+
+        // Verify all chunks
+        for i in 0..reader.chunk_count() {
+            let valid = reader.verify_chunk_fast(i)?;
+            assert!(valid, "Encrypted chunk {} should verify", i);
+        }
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_sparse_tree_root_matches_header() -> Result<()> {
+        let temp_dir = TempDir::new()?;
+        let archive_path = temp_dir.path().join("test.warp");
+        let source_dir = temp_dir.path().join("source");
+        std::fs::create_dir_all(&source_dir)?;
+
+        // Create files
+        for i in 0..10 {
+            std::fs::write(
+                source_dir.join(format!("file{}.txt", i)),
+                format!("Content for file {}", i).as_bytes(),
+            )?;
+        }
+
+        let config = WarpWriterConfig {
+            compression: Compression::Zstd,
+            chunk_size: 1024,
+            ..Default::default()
+        };
+        let mut writer = WarpWriter::create_with_config(&archive_path, config)?;
+        writer.add_directory(&source_dir, "")?;
+        writer.finish()?;
+
+        // Open with verification
+        let reader = WarpReader::open_with_verification(&archive_path)?;
+
+        // The sparse tree should produce the same root as stored in header
+        let sparse_root = reader.sparse_tree_root().unwrap();
+        let header_root = reader.header().merkle_root;
+
+        assert_eq!(
+            sparse_root, header_root,
+            "Sparse tree root should match header merkle root"
+        );
 
         Ok(())
     }

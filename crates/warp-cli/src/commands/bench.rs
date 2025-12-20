@@ -4,6 +4,7 @@
 //! compression algorithms and network transfer performance.
 
 use anyhow::{Context, Result};
+use bytes::Bytes;
 use indicatif::{ProgressBar, ProgressStyle};
 use rand::Rng;
 use std::net::SocketAddr;
@@ -193,7 +194,7 @@ async fn run_remote_benchmark(server: &str, bytes: u64) -> Result<()> {
     let transfer_start = Instant::now();
 
     for (i, chunk) in chunks.iter().enumerate() {
-        conn.send_chunk(i as u32, chunk)
+        conn.send_chunk(i as u32, Bytes::copy_from_slice(chunk))
             .await
             .context("Failed to send chunk")?;
 

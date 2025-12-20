@@ -7,7 +7,7 @@ use crate::tls::{client_config, generate_self_signed, server_config};
 #[cfg(any(test, feature = "insecure-tls"))]
 use crate::tls::client_config_insecure;
 use crate::{Error, Result};
-use bytes::BytesMut;
+use bytes::{Bytes, BytesMut};
 use quinn::{Connection, Endpoint, RecvStream, SendStream};
 use std::net::SocketAddr;
 use std::sync::Arc;
@@ -239,13 +239,13 @@ impl WarpConnection {
         Ok(params)
     }
 
-    /// Send chunk data on a new stream
-    pub async fn send_chunk(&self, chunk_id: u32, data: &[u8]) -> Result<()> {
+    /// Send chunk data on a new stream (zero-copy)
+    pub async fn send_chunk(&self, chunk_id: u32, data: Bytes) -> Result<()> {
         let (mut send, _recv) = self.open_stream().await?;
 
         let frame = Frame::Chunk {
             chunk_id,
-            data: data.to_vec(),
+            data,
         };
 
         let mut buf = BytesMut::new();
@@ -261,8 +261,8 @@ impl WarpConnection {
         Ok(())
     }
 
-    /// Receive chunk data from a stream
-    pub async fn recv_chunk(&self) -> Result<(u32, Vec<u8>)> {
+    /// Receive chunk data from a stream (zero-copy)
+    pub async fn recv_chunk(&self) -> Result<(u32, Bytes)> {
         let (_send, mut recv) = self
             .connection
             .accept_bi()
@@ -294,8 +294,8 @@ impl WarpConnection {
         }
     }
 
-    /// Send chunk batch on a new stream
-    pub async fn send_chunk_batch(&self, chunks: Vec<(u32, Vec<u8>)>) -> Result<()> {
+    /// Send chunk batch on a new stream (zero-copy)
+    pub async fn send_chunk_batch(&self, chunks: Vec<(u32, Bytes)>) -> Result<()> {
         let (mut send, _recv) = self.open_stream().await?;
 
         let frame = Frame::ChunkBatch { chunks };

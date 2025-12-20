@@ -7,6 +7,7 @@
 //! - Health checking
 //! - Concurrent access via DashMap
 
+use bytes::Bytes;
 use dashmap::DashMap;
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -207,11 +208,11 @@ impl PooledConnection {
         self.pool.transports.get(&self.conn_id).map(|t| t.clone())
     }
 
-    /// Send chunk data using real QUIC transport
+    /// Send chunk data using real QUIC transport (zero-copy)
     ///
     /// This method uses the actual WarpConnection to send chunk data
     /// over the network. Falls back to mock if no transport is attached.
-    pub async fn send_chunk(&self, chunk_id: u32, data: &[u8]) -> Result<()> {
+    pub async fn send_chunk(&self, chunk_id: u32, data: Bytes) -> Result<()> {
         // Update stats regardless of transport type
         if let Some(mut conn) = self.pool.connections.get_mut(&self.conn_id) {
             conn.bytes_sent += data.len() as u64;
@@ -237,8 +238,8 @@ impl PooledConnection {
         }
     }
 
-    /// Send multiple chunks in a batch using real QUIC transport
-    pub async fn send_chunk_batch(&self, chunks: Vec<(u32, Vec<u8>)>) -> Result<()> {
+    /// Send multiple chunks in a batch using real QUIC transport (zero-copy)
+    pub async fn send_chunk_batch(&self, chunks: Vec<(u32, Bytes)>) -> Result<()> {
         // Update stats
         let total_bytes: u64 = chunks.iter().map(|(_, data)| data.len() as u64).sum();
         if let Some(mut conn) = self.pool.connections.get_mut(&self.conn_id) {
@@ -290,11 +291,11 @@ impl PooledConnection {
         }
     }
 
-    /// Receive a chunk from the peer
+    /// Receive a chunk from the peer (zero-copy)
     ///
     /// Waits for and receives a CHUNK frame from the peer.
     /// Returns (chunk_id, data).
-    pub async fn recv_chunk(&self) -> Result<(u32, Vec<u8>)> {
+    pub async fn recv_chunk(&self) -> Result<(u32, Bytes)> {
         // Update stats
         if let Some(transport) = self.pool.transports.get(&self.conn_id) {
             let (chunk_id, data) = transport
@@ -315,7 +316,7 @@ impl PooledConnection {
             if conn.state != ConnectionState::InUse {
                 return Err(PoolError::InvalidConfig("connection not in use".to_string()));
             }
-            let mock_data = vec![0u8; 1024];
+            let mock_data = Bytes::from(vec![0u8; 1024]);
             conn.bytes_received += mock_data.len() as u64;
             Ok((0, mock_data))
         } else {

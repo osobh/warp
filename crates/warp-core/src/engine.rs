@@ -3,6 +3,7 @@
 use crate::analyzer::{analyze_payload, CompressionHint, PayloadAnalysis};
 use crate::session::{Session, SessionState};
 use crate::{Error, Result};
+use bytes::Bytes;
 use std::path::Path;
 use std::sync::Arc;
 use std::time::Instant;
@@ -248,7 +249,7 @@ impl TransferEngine {
         session.set_state(SessionState::Transferring);
         tracing::info!("Sending {} chunks", temp_header.total_chunks);
 
-        let metadata = create_metadata(&remote_path, &analysis);
+        let metadata = Bytes::from(create_metadata(&remote_path, &analysis));
         conn.send_frame(Frame::Plan {
             total_size: temp_header.compressed_size,
             num_chunks: temp_header.total_chunks as u32,
@@ -273,7 +274,7 @@ impl TransferEngine {
                 continue;
             }
 
-            let chunk_data = reader.read_chunk(chunk_idx)?;
+            let chunk_data = Bytes::from(reader.read_chunk(chunk_idx)?);
 
             conn.send_frame(Frame::Chunk {
                 chunk_id: chunk_idx as u32,

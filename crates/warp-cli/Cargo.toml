@@ -23,6 +23,7 @@ warp-io.workspace = true
 warp-net.workspace = true
 warp-compress.workspace = true
 warp-stream.workspace = true
+bytes.workspace = true
 
 clap.workspace = true
 clap_complete = "4.5"

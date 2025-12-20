@@ -80,11 +80,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Automatic runtime detection and dispatch
 - **Backward Compatibility**: Legacy `BuzhashChunker` still available
 - **Comprehensive Benchmarks**: Criterion benchmarks for all chunking variants
+- **Zero-Copy QUIC**: Frame types use `Bytes` instead of `Vec<u8>` for zero-copy
+  - Eliminated `.to_vec()` calls in decode paths
+  - Updated transport layer for zero-copy chunk handling
+- **Sparse Merkle Trees** (`warp-format`): Lazy computation with LRU caching
+  - `SparseMerkleTree` for memory-efficient large archives
+  - O(log n) single-chunk verification via `MerkleProof`
+  - Parallel root computation using rayon
+  - Configurable node cache with LRU eviction
+- **WarpReader Verification**: Fast integrity checking
+  - `open_with_verification()` builds sparse tree from chunk index
+  - `verify_chunk_fast()` for O(log n) single-chunk verification
+  - `verify_random_sample()` for probabilistic spot-checking
+  - Works with both encrypted and unencrypted archives
+- **Reed-Solomon Erasure Coding** (`warp-ec` crate): Fault-tolerant data encoding
+  - SIMD-optimized via `reed-solomon-simd` (AVX2, SSSE3, NEON)
+  - Preset configurations: RS(4,2), RS(6,3), RS(10,4), RS(16,4)
+  - `ErasureEncoder` for data-to-shard encoding
+  - `ErasureDecoder` for recovery from partial shard sets
+  - Shard metadata tracking (data vs parity, indices)
+  - Survives up to m shard failures with RS(k,m) encoding
 
 ### Changed
 - Default chunker now uses SeqCDC instead of Buzhash
 - `Chunker` type alias points to `SeqCdcChunker`
 - Updated warp-io documentation with new algorithm details
+- Frame enum in warp-net uses `Bytes` for chunk data (zero-copy)
+- WarpReader struct includes optional `SparseMerkleTree` field
 
 ### Planned
 - WebSocket transport fallback

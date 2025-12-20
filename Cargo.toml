@@ -11,6 +11,7 @@ members = [
     "crates/warp-io",
     "crates/warp-gpu",
     "crates/warp-stream",
+    "crates/warp-ec",
     "crates/portal-core",
     "crates/portal-hub",
     "crates/portal-net",
@@ -47,6 +48,7 @@ warp-crypto = { path = "crates/warp-crypto" }
 warp-io = { path = "crates/warp-io" }
 warp-gpu = { path = "crates/warp-gpu" }
 warp-stream = { path = "crates/warp-stream" }
+warp-ec = { path = "crates/warp-ec" }
 portal-core = { path = "crates/portal-core" }
 portal-hub = { path = "crates/portal-hub" }
 portal-net = { path = "crates/portal-net" }

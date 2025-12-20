@@ -172,7 +172,7 @@ fn test_transfer_error_handling() {
 
 #[test]
 fn test_network_protocol_compatibility() {
-    use bytes::BytesMut;
+    use bytes::{Bytes, BytesMut};
     use warp_net::codec::Frame;
     use warp_net::frames::Capabilities;
 
@@ -215,11 +215,12 @@ fn test_network_protocol_compatibility() {
     }
 
     // Test Plan frame round-trip
+    let metadata_bytes = Bytes::from(vec![1u8, 2, 3, 4, 5]);
     let plan = Frame::Plan {
         total_size: 1_000_000_000,
         num_chunks: 1000,
         chunk_size: 1_000_000,
-        metadata: vec![1, 2, 3, 4, 5],
+        metadata: metadata_bytes.clone(),
     };
     let mut buf = BytesMut::new();
     plan.encode(&mut buf).unwrap();
@@ -229,7 +230,7 @@ fn test_network_protocol_compatibility() {
             assert_eq!(total_size, 1_000_000_000);
             assert_eq!(num_chunks, 1000);
             assert_eq!(chunk_size, 1_000_000);
-            assert_eq!(metadata, vec![1, 2, 3, 4, 5]);
+            assert_eq!(metadata, metadata_bytes);
         }
         _ => panic!("Expected Plan frame"),
     }
@@ -248,7 +249,7 @@ fn test_network_protocol_compatibility() {
     }
 
     // Test Chunk frame round-trip
-    let chunk_data = vec![0u8; 1024];
+    let chunk_data = Bytes::from(vec![0u8; 1024]);
     let chunk = Frame::Chunk { chunk_id: 42, data: chunk_data.clone() };
     let mut buf = BytesMut::new();
     chunk.encode(&mut buf).unwrap();

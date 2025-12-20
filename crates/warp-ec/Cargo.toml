@@ -1,0 +1,18 @@
+[package]
+name = "warp-ec"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "Reed-Solomon erasure coding for fault-tolerant data transfer"
+
+[dependencies]
+reed-solomon-simd = "3.0"
+thiserror.workspace = true
+rayon.workspace = true
+bytes.workspace = true
+
+[dev-dependencies]
+criterion.workspace = true
+proptest.workspace = true
+rand.workspace = true

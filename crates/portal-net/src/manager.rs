@@ -7,6 +7,7 @@
 //! - Connection mode selection (direct P2P vs relay)
 //! - Network state tracking and events
 
+use bytes::Bytes;
 use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::sync::Arc;
@@ -246,7 +247,7 @@ impl NetworkManager {
                     let state = self.state.read().await;
                     if let Some(conn) = state.peer_connections.get(to) {
                         // Use existing connection - send as a chunk with id 0
-                        return conn.send_chunk(0, data)
+                        return conn.send_chunk(0, Bytes::copy_from_slice(data))
                             .await
                             .map_err(|e| PortalNetError::Transport(format!("Failed to send: {}", e)));
                     }
@@ -269,7 +270,7 @@ impl NetworkManager {
                         .map_err(|e| PortalNetError::Transport(format!("Handshake failed: {}", e)))?;
 
                     // Send the data
-                    conn.send_chunk(0, data)
+                    conn.send_chunk(0, Bytes::copy_from_slice(data))
                         .await
                         .map_err(|e| PortalNetError::Transport(format!("Failed to send: {}", e)))?;
 
@@ -291,7 +292,7 @@ impl NetworkManager {
                     relay_data.extend_from_slice(to);
                     relay_data.extend_from_slice(data);
 
-                    hub_conn.send_chunk(0, &relay_data)
+                    hub_conn.send_chunk(0, Bytes::from(relay_data))
                         .await
                         .map_err(|e| PortalNetError::Transport(format!("Failed to relay: {}", e)))
                 } else {

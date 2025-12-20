@@ -1,8 +1,11 @@
 //! Frame codec for wire format
+//!
+//! This module uses the `Bytes` type for zero-copy buffer sharing.
+//! `Bytes` is reference-counted, enabling efficient data passing without allocation.
 
 use crate::frames::{frame_type, Capabilities, FrameHeader};
 use crate::{Error, Result};
-use bytes::{Buf, BufMut, BytesMut};
+use bytes::{Buf, BufMut, Bytes, BytesMut};
 
 /// Maximum frame payload size (16MB)
 const MAX_PAYLOAD_SIZE: u32 = 16 * 1024 * 1024;
@@ -25,8 +28,8 @@ pub enum Frame {
         num_chunks: u32,
         /// Chunk size
         chunk_size: u32,
-        /// File metadata (MessagePack encoded)
-        metadata: Vec<u8>,
+        /// File metadata (MessagePack encoded, zero-copy)
+        metadata: Bytes,
     },
     /// Accept frame
     Accept,
@@ -44,13 +47,13 @@ pub enum Frame {
     Chunk {
         /// Chunk ID
         chunk_id: u32,
-        /// Chunk data
-        data: Vec<u8>,
+        /// Chunk data (zero-copy)
+        data: Bytes,
     },
     /// Batch of chunks
     ChunkBatch {
-        /// Multiple chunks with (chunk_id, data) pairs
-        chunks: Vec<(u32, Vec<u8>)>,
+        /// Multiple chunks with (chunk_id, data) pairs (zero-copy)
+        chunks: Vec<(u32, Bytes)>,
     },
     /// Acknowledgment frame
     Ack {
@@ -257,7 +260,7 @@ impl Frame {
                 if buf.remaining() < metadata_len as usize {
                     return Err(Error::Protocol("Incomplete PLAN metadata".into()));
                 }
-                let metadata = buf.split_to(metadata_len as usize).to_vec();
+                let metadata = buf.split_to(metadata_len as usize).freeze();
 
                 Self::Plan {
                     total_size,
@@ -305,7 +308,7 @@ impl Frame {
                 if buf.remaining() < data_len as usize {
                     return Err(Error::Protocol("Incomplete CHUNK data".into()));
                 }
-                let data = buf.split_to(data_len as usize).to_vec();
+                let data = buf.split_to(data_len as usize).freeze();
 
                 Self::Chunk { chunk_id, data }
             }
@@ -326,7 +329,7 @@ impl Frame {
                     if buf.remaining() < data_len as usize {
                         return Err(Error::Protocol("Incomplete CHUNK_BATCH data".into()));
                     }
-                    let data = buf.split_to(data_len as usize).to_vec();
+                    let data = buf.split_to(data_len as usize).freeze();
                     chunks.push((chunk_id, data));
                 }
 
@@ -430,7 +433,7 @@ mod tests {
 
     #[test]
     fn test_chunk_encode_decode() {
-        let data = vec![1, 2, 3, 4, 5];
+        let data = Bytes::from(vec![1u8, 2, 3, 4, 5]);
         let frame = Frame::Chunk {
             chunk_id: 42,
             data: data.clone(),

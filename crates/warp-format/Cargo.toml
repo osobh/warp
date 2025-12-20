@@ -17,6 +17,8 @@ warp-hash.workspace = true
 warp-io.workspace = true
 warp-compress.workspace = true
 warp-crypto.workspace = true
+rayon.workspace = true
+rand.workspace = true
 
 [dev-dependencies]
 tempfile.workspace = true

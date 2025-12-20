@@ -1,6 +1,7 @@
 //! send command implementation - creates .warp archives or sends to remote
 
 use anyhow::{Context, Result};
+use bytes::Bytes;
 use indicatif::{ProgressBar, ProgressStyle};
 use std::io::{self, Write};
 use std::path::PathBuf;
@@ -311,7 +312,7 @@ async fn send_remote(
     };
 
     let metadata_bytes =
-        rmp_serde::to_vec(&file_metadata).context("Failed to encode metadata")?;
+        Bytes::from(rmp_serde::to_vec(&file_metadata).context("Failed to encode metadata")?);
 
     // Send PLAN frame
     conn.send_frame(Frame::Plan {
@@ -359,7 +360,7 @@ async fn send_remote(
         // Hash chunk for Merkle tree
         chunk_hashes.push(warp_hash::hash(chunk_data));
 
-        conn.send_chunk(chunk_id as u32, chunk_data)
+        conn.send_chunk(chunk_id as u32, Bytes::copy_from_slice(chunk_data))
             .await
             .context("Failed to send chunk")?;
 
