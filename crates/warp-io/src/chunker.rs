@@ -6,6 +6,7 @@
 //!
 //! SeqCDC achieves ~30 GB/s with AVX-512 vs ~189 MB/s for Buzhash.
 
+use std::collections::VecDeque;
 use std::io::Read;
 
 // ============================================================================
@@ -184,7 +185,8 @@ impl SeqCdcChunker {
         let mut current_chunk = Vec::with_capacity(self.config.target_size);
 
         // Window to track recent bytes for boundary detection
-        let mut window: Vec<u8> = Vec::with_capacity(self.config.seq_length);
+        // Use VecDeque for O(1) pop_front instead of O(n) Vec::remove(0)
+        let mut window: VecDeque<u8> = VecDeque::with_capacity(self.config.seq_length + 1);
 
         // Counter for content-based skipping
         let mut opposing_count = 0usize;
@@ -215,7 +217,7 @@ impl SeqCdcChunker {
                 }
 
                 // Track opposing pairs for skip heuristic
-                if let Some(&prev) = window.last() {
+                if let Some(&prev) = window.back() {
                     if self.is_opposing_pair(prev, byte) {
                         opposing_count += 1;
                     } else {
@@ -223,10 +225,10 @@ impl SeqCdcChunker {
                     }
                 }
 
-                // Update window
-                window.push(byte);
+                // Update window - O(1) operations with VecDeque
+                window.push_back(byte);
                 if window.len() > self.config.seq_length {
-                    window.remove(0);
+                    window.pop_front();
                 }
 
                 current_chunk.push(byte);
@@ -236,7 +238,7 @@ impl SeqCdcChunker {
 
                 // Check for boundary after minimum size
                 if size >= self.config.min_size {
-                    let at_boundary = self.is_boundary(&window) || size >= self.config.max_size;
+                    let at_boundary = self.is_boundary(window.make_contiguous()) || size >= self.config.max_size;
 
                     if at_boundary {
                         chunks.push(std::mem::take(&mut current_chunk));

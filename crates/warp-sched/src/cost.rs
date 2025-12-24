@@ -307,7 +307,8 @@ impl CpuCostMatrix {
             return Vec::new();
         }
 
-        let mut edges = Vec::new();
+        // Pre-allocate with typical replication factor (3 replicas per chunk)
+        let mut edges = Vec::with_capacity(self.num_edges.min(8));
         for edge_idx in 0..self.num_edges {
             let index = self.index(chunk_idx, edge_idx);
             if self.valid_mask[index] {
@@ -315,8 +316,8 @@ impl CpuCostMatrix {
             }
         }
 
-        // Sort by cost (ascending)
-        edges.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal));
+        // Sort by cost (ascending) - unstable sort is faster and order doesn't matter for equal costs
+        edges.sort_unstable_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal));
         edges
     }
 
