@@ -9,6 +9,8 @@
 #![warn(missing_docs)]
 
 pub mod analyzer;
+#[cfg(feature = "hpc-channels")]
+pub mod channels;
 pub mod engine;
 pub mod pipeline;
 pub mod scheduler;
@@ -19,6 +21,12 @@ pub use engine::{ProgressCallback, TransferConfig, TransferEngine, TransferProgr
 pub use pipeline::TransferPipeline;
 pub use scheduler::ChunkScheduler;
 pub use session::{Session, SessionState};
+#[cfg(feature = "hpc-channels")]
+pub use channels::{
+    StorageChannelBridge, SharedStorageChannelBridge,
+    UploadStartEvent, DownloadStartEvent, TransferProgressEvent,
+    TransferStatusEvent, TransferStatus, shared_channel_bridge,
+};
 
 /// Core error types
 #[derive(Debug, thiserror::Error)]

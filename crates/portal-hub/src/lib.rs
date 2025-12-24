@@ -38,6 +38,7 @@
 #![allow(clippy::module_name_repetitions)]
 
 pub mod auth;
+pub mod ephemeral_auth;
 pub mod routes;
 pub mod server;
 pub mod storage;
@@ -106,6 +107,27 @@ pub enum Error {
     /// Invalid portal name
     #[error("Invalid portal name: {0}")]
     InvalidPortalName(String),
+
+    // Ephemeral access errors
+    /// Rate limited
+    #[error("Rate limit exceeded")]
+    RateLimited,
+
+    /// Resource not found
+    #[error("Not found: {0}")]
+    NotFound(String),
+
+    /// Resource already exists
+    #[error("Already exists: {0}")]
+    AlreadyExists(String),
+
+    /// Access denied
+    #[error("Access denied: {0}")]
+    AccessDenied(String),
+
+    /// Configuration error
+    #[error("Configuration error: {0}")]
+    Configuration(String),
 }
 
 /// Result type for portal-hub operations
