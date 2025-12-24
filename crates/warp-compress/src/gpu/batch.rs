@@ -14,6 +14,7 @@
 use crate::{Compressor, Result};
 use super::lz4::GpuLz4Compressor;
 use super::zstd::GpuZstdCompressor;
+use rayon::prelude::*;
 use std::sync::Arc;
 use tracing::{debug, warn};
 use warp_gpu::{GpuContext, PinnedMemoryPool};
@@ -189,8 +190,8 @@ impl BatchCompressor {
             self.algorithm.name()
         );
 
-        // Calculate total size and check memory
-        let total_size: usize = chunks.iter().map(|c| c.len()).sum();
+        // Calculate total size and check memory (parallel sum for large batches)
+        let total_size: usize = chunks.par_iter().map(|c| c.len()).sum();
 
         // Estimate memory requirement (3x for input + output + temp buffers)
         let required_memory = total_size * 3 + 1024 * 1024;
@@ -264,8 +265,9 @@ impl BatchCompressor {
 
     /// Compress chunks sequentially (fallback for memory constraints)
     fn compress_batch_sequential(&self, chunks: &[&[u8]]) -> Result<Vec<Vec<u8>>> {
+        // Even in "sequential" mode, use parallel iteration for CPU work
         chunks
-            .iter()
+            .par_iter()
             .map(|chunk| match self.algorithm {
                 CompressionAlgorithm::Lz4 => {
                     self.lz4_compressor.as_ref().unwrap().compress(chunk)
@@ -281,19 +283,20 @@ impl BatchCompressor {
     fn compress_batch_parallel(&self, chunks: &[&[u8]]) -> Result<Vec<Vec<u8>>> {
         // With shared memory pool, buffers are automatically reused across chunks
         // This significantly reduces allocation overhead
+        // Use Rayon for parallel CPU compression when GPU is busy
 
         match self.algorithm {
             CompressionAlgorithm::Lz4 => {
                 let compressor = self.lz4_compressor.as_ref().unwrap();
                 chunks
-                    .iter()
+                    .par_iter()
                     .map(|chunk| compressor.compress(chunk))
                     .collect()
             }
             CompressionAlgorithm::Zstd(_) => {
                 let compressor = self.zstd_compressor.as_ref().unwrap();
                 chunks
-                    .iter()
+                    .par_iter()
                     .map(|chunk| compressor.compress(chunk))
                     .collect()
             }
@@ -306,14 +309,14 @@ impl BatchCompressor {
             CompressionAlgorithm::Lz4 => {
                 let compressor = self.lz4_compressor.as_ref().unwrap();
                 chunks
-                    .iter()
+                    .par_iter()
                     .map(|chunk| compressor.decompress(chunk))
                     .collect()
             }
             CompressionAlgorithm::Zstd(_) => {
                 let compressor = self.zstd_compressor.as_ref().unwrap();
                 chunks
-                    .iter()
+                    .par_iter()
                     .map(|chunk| compressor.decompress(chunk))
                     .collect()
             }
@@ -332,8 +335,8 @@ impl BatchCompressor {
             Err(_) => return 1, // Conservative fallback
         };
 
-        // Calculate average chunk size
-        let total_size: usize = chunks.iter().map(|c| c.len()).sum();
+        // Calculate average chunk size (parallel sum for large batches)
+        let total_size: usize = chunks.par_iter().map(|c| c.len()).sum();
         let avg_chunk_size = total_size / chunks.len();
 
         // Estimate how many chunks can fit in 80% of free memory

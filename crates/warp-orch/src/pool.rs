@@ -101,41 +101,74 @@ pub enum ConnectionState {
 }
 
 /// Internal connection representation
+///
+/// Cache line optimized (64 bytes, aligned) following mechanical sympathy principles.
+/// Fields are ordered by access frequency: state is checked most often, then edge_idx,
+/// id, and timing fields. Metrics are accessed only on send/recv operations.
+///
+/// # Cache Line Layout (64 bytes)
+/// If you modify this struct, ensure:
+/// 1. Total size remains exactly 64 bytes
+/// 2. Alignment remains 64 bytes
+/// 3. Run `cargo test` to verify the compile-time assertions below
 #[derive(Debug, Clone)]
+#[repr(C, align(64))]
 pub struct Connection {
-    pub id: u64,
-    pub edge_idx: EdgeIdx,
-    pub state: ConnectionState,
-    pub created_at_ms: u64,
-    pub last_used_ms: u64,
-    pub bytes_sent: u64,
-    pub bytes_received: u64,
+    // === Hot fields (checked on every acquire) ===
+    pub state: ConnectionState,      // 1 byte - checked most frequently
+    _pad1: [u8; 3],                  // 3 bytes padding for alignment
+    pub edge_idx: EdgeIdx,           // 4 bytes - used with state
+    pub id: u64,                     // 8 bytes - returned on match
+    pub last_used_ms: u64,           // 8 bytes - timeout checks
+    pub created_at_ms: u64,          // 8 bytes - rarely accessed
+    // === Metrics (accessed on send/recv) ===
+    pub bytes_sent: u64,             // 8 bytes
+    pub bytes_received: u64,         // 8 bytes
+    _pad2: [u8; 16],                 // 16 bytes padding to reach 64 bytes
 }
 
+// Compile-time assertions to prevent cache line regression
+// (Inspired by Brian's zlib-rs mechanical sympathy talk)
+const _: () = {
+    // Connection must be exactly one cache line (64 bytes)
+    assert!(std::mem::size_of::<Connection>() == 64);
+    // Connection must be aligned to cache line boundary
+    assert!(std::mem::align_of::<Connection>() == 64);
+};
+
 impl Connection {
+    #[inline]
     fn new(id: u64, edge_idx: EdgeIdx) -> Self {
         let now = current_time_ms();
         Self {
-            id,
-            edge_idx,
             state: ConnectionState::Idle,
-            created_at_ms: now,
+            _pad1: [0; 3],
+            edge_idx,
+            id,
             last_used_ms: now,
+            created_at_ms: now,
             bytes_sent: 0,
             bytes_received: 0,
+            _pad2: [0; 16],
         }
     }
 
+    /// Mark connection as in-use (called on every acquire)
+    #[inline]
     fn mark_used(&mut self) {
         self.last_used_ms = current_time_ms();
         self.state = ConnectionState::InUse;
     }
 
+    /// Mark connection as idle (called on every release)
+    #[inline]
     fn mark_idle(&mut self) {
         self.last_used_ms = current_time_ms();
         self.state = ConnectionState::Idle;
     }
 
+    /// Check if connection has exceeded idle timeout
+    #[inline]
     fn is_idle_timeout(&self, timeout_ms: u64) -> bool {
         let now = current_time_ms();
         self.state == ConnectionState::Idle && now - self.last_used_ms > timeout_ms
@@ -171,11 +204,13 @@ pub struct PooledConnection {
 
 impl PooledConnection {
     /// Get the edge index for this connection
+    #[inline]
     pub fn edge_idx(&self) -> EdgeIdx {
         self.edge_idx
     }
 
     /// Get the connection ID for transport attachment
+    #[inline]
     pub fn conn_id(&self) -> u64 {
         self.conn_id
     }
@@ -199,6 +234,7 @@ impl PooledConnection {
     }
 
     /// Check if this connection has a real transport attached
+    #[inline]
     pub fn has_transport(&self) -> bool {
         self.pool.transports.contains_key(&self.conn_id)
     }
@@ -212,23 +248,33 @@ impl PooledConnection {
     ///
     /// This method uses the actual WarpConnection to send chunk data
     /// over the network. Falls back to mock if no transport is attached.
+    ///
+    /// Hot/cold path split for better branch prediction (mechanical sympathy):
+    /// - Fast path (inline): real transport available (production use case)
+    /// - Slow path (cold): mock fallback (test use case)
+    #[inline]
     pub async fn send_chunk(&self, chunk_id: u32, data: Bytes) -> Result<()> {
         // Update stats regardless of transport type
         if let Some(mut conn) = self.pool.connections.get_mut(&self.conn_id) {
             conn.bytes_sent += data.len() as u64;
         }
 
-        // Try real transport first
+        // Fast path: real transport (common case in production)
         if let Some(transport) = self.pool.transports.get(&self.conn_id) {
-            transport
+            return transport
                 .send_chunk(chunk_id, data)
                 .await
-                .map_err(|e| PoolError::Transport(format!("Failed to send chunk: {}", e)))?;
-            return Ok(());
+                .map_err(|e| PoolError::Transport(format!("Failed to send chunk: {}", e)));
         }
 
-        // Fall back to mock behavior for tests
-        if let Some(mut conn) = self.pool.connections.get_mut(&self.conn_id) {
+        // Slow path: mock behavior for tests
+        self.send_chunk_mock_fallback()
+    }
+
+    /// Mock fallback for send_chunk (cold path - only used in tests)
+    #[cold]
+    fn send_chunk_mock_fallback(&self) -> Result<()> {
+        if let Some(conn) = self.pool.connections.get(&self.conn_id) {
             if conn.state != ConnectionState::InUse {
                 return Err(PoolError::InvalidConfig("connection not in use".to_string()));
             }
@@ -347,6 +393,9 @@ struct ConnectionPoolInner {
     connections: DashMap<u64, Connection>,
     transports: DashMap<u64, Arc<WarpConnection>>,
     edge_connections: DashMap<EdgeIdx, Vec<u64>>,
+    /// Index of idle connections per edge for O(1) lookup (mechanical sympathy optimization)
+    /// Maintained by mark_idle_indexed/mark_used_indexed to avoid O(n) scanning
+    idle_connections: DashMap<EdgeIdx, Vec<u64>>,
     next_conn_id: AtomicU64,
     total_semaphore: Arc<Semaphore>,
     edge_semaphores: DashMap<EdgeIdx, Arc<Semaphore>>,
@@ -370,11 +419,13 @@ impl ConnectionPoolInner {
             connections: DashMap::new(),
             transports: DashMap::new(),
             edge_connections: DashMap::new(),
+            idle_connections: DashMap::new(),
             next_conn_id: AtomicU64::new(1),
             edge_semaphores: DashMap::new(),
         }
     }
 
+    #[inline]
     fn get_edge_semaphore(&self, edge_idx: EdgeIdx) -> Arc<Semaphore> {
         self.edge_semaphores
             .entry(edge_idx)
@@ -383,10 +434,12 @@ impl ConnectionPoolInner {
     }
 
     async fn acquire_connection(&self, edge_idx: EdgeIdx) -> Result<u64> {
-        // Try to find an idle connection first
+        // Try to find an idle connection first (O(1) via index)
         if let Some(conn_id) = self.find_idle_connection(edge_idx) {
             if let Some(mut conn) = self.connections.get_mut(&conn_id) {
                 conn.mark_used();
+                // Remove from idle index since it's now in use
+                self.remove_from_idle_index(edge_idx, conn_id);
                 return Ok(conn_id);
             }
         }
@@ -405,7 +458,8 @@ impl ConnectionPoolInner {
             .map_err(|_| PoolError::MaxConnectionsPerEdge(self.config.max_connections_per_edge))?;
 
         // Create new connection
-        let conn_id = self.next_conn_id.fetch_add(1, Ordering::SeqCst);
+        // Relaxed is sufficient for ID generation - we only need atomicity
+        let conn_id = self.next_conn_id.fetch_add(1, Ordering::Relaxed);
         let mut conn = Connection::new(conn_id, edge_idx);
         conn.mark_used();
 
@@ -422,23 +476,40 @@ impl ConnectionPoolInner {
         Ok(conn_id)
     }
 
+    /// Find an idle connection for the given edge (hot path - O(1) via index)
+    /// Uses idle_connections index to avoid O(n) loop scanning (mechanical sympathy)
+    #[inline]
     fn find_idle_connection(&self, edge_idx: EdgeIdx) -> Option<u64> {
-        if let Some(conn_ids) = self.edge_connections.get(&edge_idx) {
-            for &conn_id in conn_ids.iter() {
-                if let Some(conn) = self.connections.get(&conn_id) {
-                    if conn.state == ConnectionState::Idle {
-                        return Some(conn_id);
-                    }
-                }
-            }
+        // O(1) lookup via idle connections index
+        self.idle_connections
+            .get(&edge_idx)
+            .and_then(|ids| ids.last().copied())
+    }
+
+    /// Add connection to the idle index (called when connection becomes idle)
+    #[inline]
+    fn add_to_idle_index(&self, edge_idx: EdgeIdx, conn_id: u64) {
+        self.idle_connections
+            .entry(edge_idx)
+            .or_insert_with(Vec::new)
+            .push(conn_id);
+    }
+
+    /// Remove connection from the idle index (called when connection is acquired)
+    #[inline]
+    fn remove_from_idle_index(&self, edge_idx: EdgeIdx, conn_id: u64) {
+        if let Some(mut ids) = self.idle_connections.get_mut(&edge_idx) {
+            ids.retain(|&id| id != conn_id);
         }
-        None
     }
 
     fn release(&self, conn_id: u64) {
         if let Some(mut conn) = self.connections.get_mut(&conn_id) {
             if conn.state == ConnectionState::InUse {
+                let edge_idx = conn.edge_idx;
                 conn.mark_idle();
+                // Add to idle index for O(1) lookup
+                self.add_to_idle_index(edge_idx, conn_id);
             }
         }
     }
@@ -453,6 +524,8 @@ impl ConnectionPoolInner {
                 self.transports.remove(&conn_id);
             }
         }
+        // Clear idle index for this edge
+        self.idle_connections.remove(&edge_idx);
         self.edge_semaphores.remove(&edge_idx);
     }
 
