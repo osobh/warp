@@ -78,13 +78,46 @@ pub fn calculate_entropy(data: &[u8]) -> f64 {
 }
 
 /// Scalar frequency calculation (for small buffers)
+///
+/// Uses 4-way histogram split to avoid pipeline stalls from memory dependencies.
+/// Each histogram buffer handles every 4th byte, then they're merged.
+/// This is a well-known optimization for histogram computation (2-4x faster).
 #[inline]
 fn calculate_frequency_scalar(data: &[u8]) -> [u64; 256] {
-    let mut freq = [0u64; 256];
-    for &byte in data {
-        freq[byte as usize] += 1;
+    // 4-way split histograms to avoid memory dependency stalls
+    let mut freq0 = [0u64; 256];
+    let mut freq1 = [0u64; 256];
+    let mut freq2 = [0u64; 256];
+    let mut freq3 = [0u64; 256];
+
+    // Process 4 bytes per iteration (unrolled)
+    let chunks = data.chunks_exact(4);
+    let remainder = chunks.remainder();
+
+    for chunk in chunks {
+        // Each increment goes to a different histogram, avoiding dependencies
+        freq0[chunk[0] as usize] += 1;
+        freq1[chunk[1] as usize] += 1;
+        freq2[chunk[2] as usize] += 1;
+        freq3[chunk[3] as usize] += 1;
     }
-    freq
+
+    // Handle remainder
+    for (i, &byte) in remainder.iter().enumerate() {
+        match i {
+            0 => freq0[byte as usize] += 1,
+            1 => freq1[byte as usize] += 1,
+            2 => freq2[byte as usize] += 1,
+            _ => freq3[byte as usize] += 1,
+        }
+    }
+
+    // Merge histograms
+    for i in 0..256 {
+        freq0[i] += freq1[i] + freq2[i] + freq3[i];
+    }
+
+    freq0
 }
 
 /// Parallel frequency calculation using Rayon
@@ -95,11 +128,8 @@ fn calculate_frequency_parallel(data: &[u8]) -> [u64; 256] {
     // Split into chunks and compute local histograms in parallel
     data.par_chunks(16 * 1024) // 16KB chunks for good cache utilization
         .map(|chunk| {
-            let mut local_freq = [0u64; 256];
-            for &byte in chunk {
-                local_freq[byte as usize] += 1;
-            }
-            local_freq
+            // Use 4-way split for each chunk too
+            calculate_frequency_scalar(chunk)
         })
         .reduce(
             || [0u64; 256],
