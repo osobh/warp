@@ -280,11 +280,77 @@ pub struct ObjectEntry {
     pub is_latest: bool,
 }
 
+/// Simplified object summary for listings
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ObjectSummary {
+    /// Object key
+    pub key: String,
+    /// Object size
+    pub size: u64,
+    /// Last modified time
+    pub last_modified: DateTime<Utc>,
+    /// ETag
+    pub etag: String,
+}
+
+/// Field value types for lazy-loading
+#[derive(Debug, Clone)]
+pub enum FieldValue {
+    /// Raw bytes
+    Bytes(Bytes),
+    /// UTF-8 string
+    String(String),
+    /// Integer value
+    Int(i64),
+    /// Float value
+    Float(f64),
+    /// Boolean value
+    Bool(bool),
+    /// Null/None
+    Null,
+}
+
+impl From<Bytes> for FieldValue {
+    fn from(b: Bytes) -> Self {
+        FieldValue::Bytes(b)
+    }
+}
+
+impl From<Vec<u8>> for FieldValue {
+    fn from(v: Vec<u8>) -> Self {
+        FieldValue::Bytes(v.into())
+    }
+}
+
+impl From<String> for FieldValue {
+    fn from(s: String) -> Self {
+        FieldValue::String(s)
+    }
+}
+
+impl From<i64> for FieldValue {
+    fn from(i: i64) -> Self {
+        FieldValue::Int(i)
+    }
+}
+
+impl From<f64> for FieldValue {
+    fn from(f: f64) -> Self {
+        FieldValue::Float(f)
+    }
+}
+
+impl From<bool> for FieldValue {
+    fn from(b: bool) -> Self {
+        FieldValue::Bool(b)
+    }
+}
+
 /// Field data for lazy-loading (parcode integration)
 #[derive(Debug, Clone, Default)]
 pub struct FieldData {
     /// Field values by name
-    fields: HashMap<String, Bytes>,
+    fields: HashMap<String, FieldValue>,
 }
 
 impl FieldData {
@@ -294,17 +360,22 @@ impl FieldData {
     }
 
     /// Insert a field
-    pub fn insert(&mut self, name: String, value: impl Into<Bytes>) {
+    pub fn insert(&mut self, name: String, value: impl Into<FieldValue>) {
         self.fields.insert(name, value.into());
     }
 
     /// Get a field
-    pub fn get(&self, name: &str) -> Option<&Bytes> {
+    pub fn get(&self, name: &str) -> Option<&FieldValue> {
         self.fields.get(name)
     }
 
     /// Check if a field exists
     pub fn contains(&self, name: &str) -> bool {
+        self.fields.contains_key(name)
+    }
+
+    /// Check if a field exists (alias for contains)
+    pub fn contains_key(&self, name: &str) -> bool {
         self.fields.contains_key(name)
     }
 

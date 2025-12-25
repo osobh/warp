@@ -74,6 +74,10 @@ pub enum Error {
     #[error("version not found: {0}")]
     VersionNotFound(String),
 
+    /// Field not found in parcode object
+    #[error("field not found: {0}")]
+    FieldNotFound(String),
+
     /// IO error
     #[error("IO error: {0}")]
     Io(#[from] std::io::Error),

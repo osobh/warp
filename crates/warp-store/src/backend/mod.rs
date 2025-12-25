@@ -14,6 +14,12 @@ mod portal;
 #[cfg(feature = "portal")]
 pub use portal::PortalBackend;
 
+#[cfg(feature = "parcode")]
+mod parcode;
+
+#[cfg(feature = "parcode")]
+pub use parcode::{ParcodeBackend, FieldEntry, FieldType, ParcodeHeader, Promise};
+
 use async_trait::async_trait;
 
 use crate::key::ObjectKey;

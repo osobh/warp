@@ -39,18 +39,21 @@
 
 pub mod backend;
 pub mod bucket;
+pub mod collective;
 pub mod ephemeral;
 pub mod error;
 pub mod key;
 pub mod object;
+pub mod transport;
 pub mod version;
 
 pub use backend::{StorageBackend, HpcStorageBackend};
 pub use bucket::{Bucket, BucketConfig, BucketPolicy};
+pub use collective::{Rank, CollectiveContext, StorageCollectiveOps, CollectiveAdapter};
 pub use ephemeral::{EphemeralToken, AccessScope, Permissions, RateLimit};
 pub use error::{Error, Result};
 pub use key::ObjectKey;
-pub use object::{ObjectData, ObjectMeta, PutOptions, ListOptions, ObjectList};
+pub use object::{ObjectData, ObjectMeta, PutOptions, ListOptions, ObjectList, ObjectSummary, FieldData, FieldValue};
 pub use version::{Version, VersionId, VersioningMode};
 
 use std::sync::Arc;
