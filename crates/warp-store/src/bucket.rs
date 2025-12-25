@@ -3,6 +3,7 @@
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
+use crate::replication::ReplicationPolicy;
 use crate::version::VersioningMode;
 
 /// A storage bucket
@@ -81,8 +82,14 @@ pub struct BucketConfig {
     /// CORS configuration
     pub cors: Option<CorsConfig>,
 
-    /// Replication configuration
+    /// Replication configuration (S3-style cross-region)
     pub replication: Option<ReplicationConfig>,
+
+    /// Distributed replication policy (HPC-style with erasure coding)
+    ///
+    /// When set, objects in this bucket are distributed across domains
+    /// using erasure coding for fault tolerance and geo-optimized reads.
+    pub distributed_replication: Option<ReplicationPolicy>,
 
     /// Tags
     pub tags: Vec<(String, String)>,
@@ -98,6 +105,7 @@ impl Default for BucketConfig {
             lifecycle: Vec::new(),
             cors: None,
             replication: None,
+            distributed_replication: None,
             tags: Vec::new(),
         }
     }

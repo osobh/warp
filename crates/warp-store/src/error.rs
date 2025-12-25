@@ -93,6 +93,54 @@ pub enum Error {
     /// Token encoding error
     #[error("token encoding error: {0}")]
     TokenEncoding(String),
+
+    /// Raft consensus error
+    #[error("raft error: {0}")]
+    Raft(String),
+
+    /// Domain not found
+    #[error("domain not found: {0}")]
+    DomainNotFound(u64),
+
+    /// Domain already exists
+    #[error("domain already exists: {0}")]
+    DomainAlreadyExists(u64),
+
+    /// Node not found in domain
+    #[error("node not found: {0}")]
+    NodeNotFound(u64),
+
+    /// Insufficient replicas for write quorum
+    #[error("insufficient replicas: have {available} but need {required}")]
+    InsufficientReplicas {
+        /// Available replicas
+        available: usize,
+        /// Required replicas
+        required: usize,
+    },
+
+    /// Replication error
+    #[error("replication error: {0}")]
+    Replication(String),
+
+    /// WireGuard tunnel error
+    #[error("wireguard error: {0}")]
+    WireGuard(String),
+
+    /// Shard not found
+    #[error("shard not found: {bucket}/{key} shard {shard_index}")]
+    ShardNotFound {
+        /// Bucket name
+        bucket: String,
+        /// Object key
+        key: String,
+        /// Shard index
+        shard_index: u16,
+    },
+
+    /// Erasure coding error
+    #[error("erasure coding error: {0}")]
+    ErasureCoding(String),
 }
 
 impl From<rmp_serde::encode::Error> for Error {

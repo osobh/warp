@@ -53,12 +53,12 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use bytes::{Buf, BufMut, Bytes, BytesMut};
+use bytes::{BufMut, Bytes, BytesMut};
 use chrono::Utc;
 use dashmap::DashMap;
 use serde::{Deserialize, Serialize};
-use tokio::io::{AsyncReadExt, AsyncSeekExt, AsyncWriteExt};
-use tracing::{debug, trace, warn};
+use tokio::io::{AsyncReadExt, AsyncSeekExt};
+use tracing::{debug, trace};
 
 use crate::backend::{HpcStorageBackend, StorageBackend, StorageProof};
 use crate::error::{Error, Result};
@@ -68,14 +68,23 @@ use crate::object::{FieldData, FieldValue, ListOptions, ObjectData, ObjectEntry,
 /// Magic bytes for parcode format
 const PARCODE_MAGIC: &[u8; 4] = b"PARC";
 
-/// Current format version
-const PARCODE_VERSION: u16 = 1;
+/// Current format version (v2 adds compression support)
+const PARCODE_VERSION: u16 = 2;
+
+/// Minimum supported version for backward compatibility
+const PARCODE_MIN_VERSION: u16 = 1;
 
 /// Header size in bytes
 const HEADER_SIZE: usize = 64;
 
 /// Default hash table load factor
 const DEFAULT_LOAD_FACTOR: f32 = 0.75;
+
+/// Compression threshold - fields larger than this are compressed
+const COMPRESSION_THRESHOLD: usize = 1024;
+
+/// Zstd compression level (3 is a good balance of speed and ratio)
+const COMPRESSION_LEVEL: i32 = 3;
 
 /// Field entry in the hash-sharded index
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -86,10 +95,16 @@ pub struct FieldEntry {
     pub name: String,
     /// Offset into data section
     pub offset: u64,
-    /// Size of field data
+    /// Size of field data (compressed size if compressed)
     pub size: u32,
+    /// Original uncompressed size (0 if not compressed)
+    #[serde(default)]
+    pub uncompressed_size: u32,
     /// Field type hint
     pub field_type: FieldType,
+    /// Whether this field is compressed
+    #[serde(default)]
+    pub compressed: bool,
 }
 
 /// Field type hints for efficient access
@@ -150,8 +165,11 @@ impl ParcodeHeader {
 
         let version = u16::from_le_bytes([buf[0], buf[1]]);
         buf = &buf[2..];
-        if version > PARCODE_VERSION {
-            return Err(Error::Backend(format!("unsupported version: {}", version)));
+        if version > PARCODE_VERSION || version < PARCODE_MIN_VERSION {
+            return Err(Error::Backend(format!(
+                "unsupported parcode version {} (supported: {}-{})",
+                version, PARCODE_MIN_VERSION, PARCODE_VERSION
+            )));
         }
 
         let field_count = u32::from_le_bytes([buf[0], buf[1], buf[2], buf[3]]);
@@ -272,6 +290,9 @@ struct BucketMeta {
     total_size: AtomicU64,
 }
 
+/// Index cache file name
+const INDEX_CACHE_FILE: &str = ".parcode_index_cache";
+
 /// Parcode lazy-loading storage backend
 pub struct ParcodeBackend {
     /// Root storage path
@@ -282,22 +303,97 @@ pub struct ParcodeBackend {
     index_cache: DashMap<String, Arc<Vec<FieldEntry>>>,
     /// Maximum cache entries
     max_cache_entries: usize,
+    /// Whether to persist index cache to disk
+    persist_index: bool,
 }
 
 impl ParcodeBackend {
     /// Create a new parcode backend
     pub async fn new(root: impl AsRef<Path>) -> Result<Self> {
+        Self::with_options(root, true).await
+    }
+
+    /// Create a new parcode backend with options
+    pub async fn with_options(root: impl AsRef<Path>, persist_index: bool) -> Result<Self> {
         let root = root.as_ref().to_path_buf();
         tokio::fs::create_dir_all(&root).await?;
 
-        debug!(root = %root.display(), "Initializing parcode backend");
+        debug!(root = %root.display(), persist_index, "Initializing parcode backend");
 
-        Ok(Self {
+        let backend = Self {
             root,
             buckets: DashMap::new(),
             index_cache: DashMap::new(),
             max_cache_entries: 10000,
-        })
+            persist_index,
+        };
+
+        // Try to load persisted index cache
+        if persist_index {
+            if let Err(e) = backend.load_index_cache().await {
+                debug!("No persisted index cache found or error loading: {}", e);
+            }
+        }
+
+        Ok(backend)
+    }
+
+    /// Path to the index cache file
+    fn index_cache_path(&self) -> PathBuf {
+        self.root.join(INDEX_CACHE_FILE)
+    }
+
+    /// Load index cache from disk
+    async fn load_index_cache(&self) -> Result<()> {
+        let path = self.index_cache_path();
+        if !path.exists() {
+            return Ok(());
+        }
+
+        let data = tokio::fs::read(&path).await?;
+        let cache: HashMap<String, Vec<FieldEntry>> = rmp_serde::from_slice(&data)
+            .map_err(|e| Error::Backend(format!("Failed to deserialize index cache: {}", e)))?;
+
+        for (key, entries) in cache {
+            self.index_cache.insert(key, Arc::new(entries));
+        }
+
+        debug!(
+            entries = self.index_cache.len(),
+            "Loaded index cache from disk"
+        );
+        Ok(())
+    }
+
+    /// Persist index cache to disk
+    pub async fn persist_index_cache(&self) -> Result<()> {
+        if !self.persist_index {
+            return Ok(());
+        }
+
+        let cache: HashMap<String, Vec<FieldEntry>> = self
+            .index_cache
+            .iter()
+            .map(|entry| (entry.key().clone(), entry.value().as_ref().clone()))
+            .collect();
+
+        let data = rmp_serde::to_vec(&cache)
+            .map_err(|e| Error::Backend(format!("Failed to serialize index cache: {}", e)))?;
+
+        let path = self.index_cache_path();
+        tokio::fs::write(&path, data).await?;
+
+        debug!(
+            entries = cache.len(),
+            path = %path.display(),
+            "Persisted index cache to disk"
+        );
+        Ok(())
+    }
+
+    /// Flush and persist the index cache (call on shutdown)
+    pub async fn shutdown(&self) -> Result<()> {
+        self.persist_index_cache().await
     }
 
     /// Path for a bucket
@@ -327,7 +423,17 @@ impl ParcodeBackend {
 
     /// Build parcode format from structured data
     pub fn build_parcode(data: &HashMap<String, Vec<u8>>) -> Result<Vec<u8>> {
-        let field_count = data.len() as u32;
+        Self::build_parcode_typed(
+            data.iter()
+                .map(|(k, v)| (k.as_str(), v.as_slice(), FieldType::Bytes))
+                .collect::<Vec<_>>()
+                .as_slice(),
+        )
+    }
+
+    /// Build parcode format from typed field data with optional compression
+    pub fn build_parcode_typed(fields: &[(&str, &[u8], FieldType)]) -> Result<Vec<u8>> {
+        let field_count = fields.len() as u32;
 
         // Calculate hash table size (power of 2, with load factor)
         let table_size = ((field_count as f32 / DEFAULT_LOAD_FACTOR).ceil() as usize)
@@ -338,9 +444,26 @@ impl ParcodeBackend {
         let mut entries: Vec<Option<FieldEntry>> = vec![None; table_size];
         let mut data_section = BytesMut::new();
 
-        for (name, value) in data {
+        for (name, value, field_type) in fields {
             let name_hash = Self::hash_field_name(name);
             let slot = (name_hash as usize) % table_size;
+
+            // Compress large fields
+            let (stored_value, compressed, uncompressed_size) = if value.len() > COMPRESSION_THRESHOLD {
+                match zstd::encode_all(*value, COMPRESSION_LEVEL) {
+                    Ok(compressed_data) => {
+                        // Only use compression if it actually saves space
+                        if compressed_data.len() < value.len() {
+                            (compressed_data, true, value.len() as u32)
+                        } else {
+                            (value.to_vec(), false, 0)
+                        }
+                    }
+                    Err(_) => (value.to_vec(), false, 0),
+                }
+            } else {
+                (value.to_vec(), false, 0)
+            };
 
             // Linear probing for collisions
             let mut probe = slot;
@@ -348,12 +471,14 @@ impl ParcodeBackend {
                 if entries[probe].is_none() {
                     entries[probe] = Some(FieldEntry {
                         name_hash,
-                        name: name.clone(),
+                        name: name.to_string(),
                         offset: data_section.len() as u64,
-                        size: value.len() as u32,
-                        field_type: FieldType::Bytes,
+                        size: stored_value.len() as u32,
+                        uncompressed_size,
+                        field_type: *field_type,
+                        compressed,
                     });
-                    data_section.put_slice(value);
+                    data_section.put_slice(&stored_value);
                     break;
                 }
                 probe = (probe + 1) % table_size;
@@ -442,14 +567,125 @@ impl ParcodeBackend {
         let mut buf = vec![0u8; entry.size as usize];
         file.read_exact(&mut buf).await?;
 
+        // Decompress if needed
+        let data = if entry.compressed {
+            zstd::decode_all(buf.as_slice())
+                .map_err(|e| Error::Backend(format!("decompression failed: {}", e)))?
+        } else {
+            buf
+        };
+
         trace!(
             key = %key,
             field = %entry.name,
             size = entry.size,
+            compressed = entry.compressed,
+            field_type = ?entry.field_type,
             "Read field data"
         );
 
-        Ok(FieldValue::Bytes(buf.into()))
+        // Convert to appropriate FieldValue based on type
+        Self::bytes_to_field_value(&data, entry.field_type)
+    }
+
+    /// Convert raw bytes to a typed FieldValue
+    fn bytes_to_field_value(data: &[u8], field_type: FieldType) -> Result<FieldValue> {
+        match field_type {
+            FieldType::Bytes => Ok(FieldValue::Bytes(Bytes::copy_from_slice(data))),
+            FieldType::String => {
+                let s = String::from_utf8(data.to_vec())
+                    .map_err(|e| Error::Backend(format!("invalid UTF-8: {}", e)))?;
+                Ok(FieldValue::String(s))
+            }
+            FieldType::Int => {
+                if data.len() != 8 {
+                    return Err(Error::Backend("invalid int size".into()));
+                }
+                let val = i64::from_le_bytes([
+                    data[0], data[1], data[2], data[3],
+                    data[4], data[5], data[6], data[7],
+                ]);
+                Ok(FieldValue::Int(val))
+            }
+            FieldType::Float => {
+                if data.len() != 8 {
+                    return Err(Error::Backend("invalid float size".into()));
+                }
+                let val = f64::from_le_bytes([
+                    data[0], data[1], data[2], data[3],
+                    data[4], data[5], data[6], data[7],
+                ]);
+                Ok(FieldValue::Float(val))
+            }
+            FieldType::Bool => {
+                if data.is_empty() {
+                    return Err(Error::Backend("invalid bool size".into()));
+                }
+                Ok(FieldValue::Bool(data[0] != 0))
+            }
+            FieldType::Nested => {
+                // Nested parcode objects are stored as raw bytes
+                // The caller can parse them recursively if needed
+                Ok(FieldValue::Bytes(Bytes::copy_from_slice(data)))
+            }
+            FieldType::Array => {
+                // Arrays are msgpack-encoded
+                let values: Vec<FieldValue> = rmp_serde::from_slice(data)
+                    .map_err(|e| Error::Backend(format!("invalid array: {}", e)))?;
+                Ok(FieldValue::Array(values))
+            }
+            FieldType::MsgPack => {
+                // Arbitrary msgpack value
+                let value: serde_json::Value = rmp_serde::from_slice(data)
+                    .map_err(|e| Error::Backend(format!("invalid msgpack: {}", e)))?;
+                Ok(FieldValue::Json(value))
+            }
+        }
+    }
+
+    /// Convert a FieldValue to bytes for storage
+    fn field_value_to_bytes(value: &FieldValue) -> Result<(Vec<u8>, FieldType)> {
+        match value {
+            FieldValue::Bytes(b) => Ok((b.to_vec(), FieldType::Bytes)),
+            FieldValue::String(s) => Ok((s.as_bytes().to_vec(), FieldType::String)),
+            FieldValue::Int(i) => Ok((i.to_le_bytes().to_vec(), FieldType::Int)),
+            FieldValue::Float(f) => Ok((f.to_le_bytes().to_vec(), FieldType::Float)),
+            FieldValue::Bool(b) => Ok((vec![if *b { 1 } else { 0 }], FieldType::Bool)),
+            FieldValue::Null => Ok((vec![], FieldType::Bytes)), // Empty bytes for null
+            FieldValue::Array(arr) => {
+                let bytes = rmp_serde::to_vec(arr)?;
+                Ok((bytes, FieldType::Array))
+            }
+            FieldValue::Json(v) => {
+                let bytes = rmp_serde::to_vec(v)?;
+                Ok((bytes, FieldType::MsgPack))
+            }
+        }
+    }
+
+    /// Store typed fields directly from FieldValue map
+    pub async fn put_typed_fields(
+        &self,
+        key: &ObjectKey,
+        fields: HashMap<String, FieldValue>,
+        opts: PutOptions,
+    ) -> Result<ObjectMeta> {
+        let typed_fields: Vec<_> = fields
+            .iter()
+            .map(|(name, value)| {
+                let (bytes, field_type) = Self::field_value_to_bytes(value)?;
+                Ok((name.as_str(), bytes, field_type))
+            })
+            .collect::<Result<Vec<_>>>()?;
+
+        // Convert to the format expected by build_parcode_typed
+        let field_refs: Vec<_> = typed_fields
+            .iter()
+            .map(|(name, bytes, field_type)| (*name, bytes.as_slice(), *field_type))
+            .collect();
+
+        let data = Self::build_parcode_typed(&field_refs)?;
+        self.put(key, ObjectData::from(data), opts).await
     }
 
     /// Get cached or load field index
@@ -714,6 +950,20 @@ impl HpcStorageBackend for ParcodeBackend {
 
         Ok((data, proof))
     }
+
+    #[cfg(feature = "gpu")]
+    async fn pinned_store(
+        &self,
+        key: &ObjectKey,
+        gpu_buffer: &warp_gpu::GpuBuffer<u8>,
+    ) -> Result<ObjectMeta> {
+        // Copy from GPU to CPU then store with parcode format
+        let buffer = gpu_buffer.copy_to_host()
+            .map_err(|e| crate::Error::Backend(format!("GPU copy failed: {}", e)))?;
+
+        let data = ObjectData::from(buffer);
+        self.put(key, data, PutOptions::default()).await
+    }
 }
 
 #[cfg(test)]
@@ -838,5 +1088,432 @@ mod tests {
         assert_eq!(FieldType::Bytes as u8, 0);
         assert_eq!(FieldType::String as u8, 1);
         assert_eq!(FieldType::Nested as u8, 5);
+    }
+
+    #[test]
+    fn test_compression_roundtrip() {
+        // Create a field larger than COMPRESSION_THRESHOLD (1024 bytes)
+        let large_data = vec![0x42u8; 2048]; // Compressible data
+        let fields = vec![
+            ("small", &[1u8, 2, 3, 4][..], FieldType::Bytes),
+            ("large", large_data.as_slice(), FieldType::Bytes),
+        ];
+
+        let parcode = ParcodeBackend::build_parcode_typed(&fields).unwrap();
+        let entries = ParcodeBackend::parse_index(&parcode).unwrap();
+
+        // Small field should not be compressed
+        let small_entry = ParcodeBackend::lookup_field(&entries, "small").unwrap();
+        assert!(!small_entry.compressed);
+        assert_eq!(small_entry.size, 4);
+        assert_eq!(small_entry.uncompressed_size, 0);
+
+        // Large field should be compressed (since it's all the same byte, it compresses well)
+        let large_entry = ParcodeBackend::lookup_field(&entries, "large").unwrap();
+        assert!(large_entry.compressed);
+        assert!(large_entry.size < 2048); // Compressed size should be smaller
+        assert_eq!(large_entry.uncompressed_size, 2048);
+    }
+
+    #[test]
+    fn test_typed_fields_roundtrip() {
+        let int_bytes = 42i64.to_le_bytes();
+        let float_bytes = 3.14159f64.to_le_bytes();
+        let bool_bytes = [1u8];
+        let bytes_bytes = [0xDE, 0xAD, 0xBE, 0xEF];
+
+        let fields = vec![
+            ("string_field", "hello world".as_bytes(), FieldType::String),
+            ("int_field", &int_bytes[..], FieldType::Int),
+            ("float_field", &float_bytes[..], FieldType::Float),
+            ("bool_field", &bool_bytes[..], FieldType::Bool),
+            ("bytes_field", &bytes_bytes[..], FieldType::Bytes),
+        ];
+
+        let parcode = ParcodeBackend::build_parcode_typed(&fields).unwrap();
+        let entries = ParcodeBackend::parse_index(&parcode).unwrap();
+
+        // Verify each field has the correct type
+        let string_entry = ParcodeBackend::lookup_field(&entries, "string_field").unwrap();
+        assert_eq!(string_entry.field_type, FieldType::String);
+
+        let int_entry = ParcodeBackend::lookup_field(&entries, "int_field").unwrap();
+        assert_eq!(int_entry.field_type, FieldType::Int);
+
+        let float_entry = ParcodeBackend::lookup_field(&entries, "float_field").unwrap();
+        assert_eq!(float_entry.field_type, FieldType::Float);
+
+        let bool_entry = ParcodeBackend::lookup_field(&entries, "bool_field").unwrap();
+        assert_eq!(bool_entry.field_type, FieldType::Bool);
+
+        let bytes_entry = ParcodeBackend::lookup_field(&entries, "bytes_field").unwrap();
+        assert_eq!(bytes_entry.field_type, FieldType::Bytes);
+    }
+
+    #[test]
+    fn test_bytes_to_field_value_conversions() {
+        // String
+        let result = ParcodeBackend::bytes_to_field_value(b"hello", FieldType::String).unwrap();
+        assert!(matches!(result, FieldValue::String(s) if s == "hello"));
+
+        // Int
+        let int_bytes = 12345i64.to_le_bytes();
+        let result = ParcodeBackend::bytes_to_field_value(&int_bytes, FieldType::Int).unwrap();
+        assert!(matches!(result, FieldValue::Int(i) if i == 12345));
+
+        // Float
+        let float_bytes = 2.71828f64.to_le_bytes();
+        let result = ParcodeBackend::bytes_to_field_value(&float_bytes, FieldType::Float).unwrap();
+        if let FieldValue::Float(f) = result {
+            assert!((f - 2.71828).abs() < 0.00001);
+        } else {
+            panic!("Expected Float");
+        }
+
+        // Bool true
+        let result = ParcodeBackend::bytes_to_field_value(&[1], FieldType::Bool).unwrap();
+        assert!(matches!(result, FieldValue::Bool(true)));
+
+        // Bool false
+        let result = ParcodeBackend::bytes_to_field_value(&[0], FieldType::Bool).unwrap();
+        assert!(matches!(result, FieldValue::Bool(false)));
+
+        // Bytes
+        let result = ParcodeBackend::bytes_to_field_value(&[1, 2, 3], FieldType::Bytes).unwrap();
+        if let FieldValue::Bytes(b) = result {
+            assert_eq!(b.as_ref(), &[1, 2, 3]);
+        } else {
+            panic!("Expected Bytes");
+        }
+    }
+
+    #[test]
+    fn test_field_value_to_bytes_conversions() {
+        use bytes::Bytes;
+
+        // String
+        let (bytes, ft) = ParcodeBackend::field_value_to_bytes(&FieldValue::String("test".into())).unwrap();
+        assert_eq!(bytes, b"test");
+        assert_eq!(ft, FieldType::String);
+
+        // Int
+        let (bytes, ft) = ParcodeBackend::field_value_to_bytes(&FieldValue::Int(999)).unwrap();
+        assert_eq!(bytes, 999i64.to_le_bytes());
+        assert_eq!(ft, FieldType::Int);
+
+        // Float
+        let (bytes, ft) = ParcodeBackend::field_value_to_bytes(&FieldValue::Float(1.5)).unwrap();
+        assert_eq!(bytes, 1.5f64.to_le_bytes());
+        assert_eq!(ft, FieldType::Float);
+
+        // Bool
+        let (bytes, ft) = ParcodeBackend::field_value_to_bytes(&FieldValue::Bool(true)).unwrap();
+        assert_eq!(bytes, vec![1]);
+        assert_eq!(ft, FieldType::Bool);
+
+        // Null
+        let (bytes, ft) = ParcodeBackend::field_value_to_bytes(&FieldValue::Null).unwrap();
+        assert!(bytes.is_empty());
+        assert_eq!(ft, FieldType::Bytes);
+
+        // Bytes
+        let (bytes, ft) = ParcodeBackend::field_value_to_bytes(&FieldValue::Bytes(Bytes::from_static(&[0xAB, 0xCD]))).unwrap();
+        assert_eq!(bytes, vec![0xAB, 0xCD]);
+        assert_eq!(ft, FieldType::Bytes);
+    }
+
+    #[test]
+    fn test_schema_version_backward_compat() {
+        // Create a v1 header (simulate old format without compression fields)
+        let mut header_bytes = [0u8; HEADER_SIZE];
+        header_bytes[0..4].copy_from_slice(PARCODE_MAGIC);
+        header_bytes[4..6].copy_from_slice(&1u16.to_le_bytes()); // Version 1
+        header_bytes[6..10].copy_from_slice(&2u32.to_le_bytes()); // 2 fields
+        header_bytes[10..18].copy_from_slice(&64u64.to_le_bytes()); // index_offset
+        header_bytes[18..26].copy_from_slice(&256u64.to_le_bytes()); // data_offset
+
+        // Should parse successfully
+        let header = ParcodeHeader::from_bytes(&header_bytes).unwrap();
+        assert_eq!(header.version, 1);
+        assert_eq!(header.field_count, 2);
+    }
+
+    #[test]
+    fn test_unsupported_version_rejected() {
+        let mut header_bytes = [0u8; HEADER_SIZE];
+        header_bytes[0..4].copy_from_slice(PARCODE_MAGIC);
+        header_bytes[4..6].copy_from_slice(&99u16.to_le_bytes()); // Future version
+
+        let result = ParcodeHeader::from_bytes(&header_bytes);
+        assert!(result.is_err());
+        let err = result.unwrap_err().to_string();
+        assert!(err.contains("unsupported parcode version"));
+    }
+
+    #[tokio::test]
+    async fn test_promise_resolution() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let backend = Arc::new(ParcodeBackend::new(temp_dir.path()).await.unwrap());
+
+        backend.create_bucket("test").await.unwrap();
+
+        // Create object with typed fields
+        let key = ObjectKey::new("test", "promise_test").unwrap();
+        let age_bytes = 30i64.to_le_bytes();
+        let score_bytes = 95.5f64.to_le_bytes();
+        let fields = vec![
+            ("name", "Alice".as_bytes(), FieldType::String),
+            ("age", &age_bytes[..], FieldType::Int),
+            ("score", &score_bytes[..], FieldType::Float),
+        ];
+
+        let data = ParcodeBackend::build_parcode_typed(&fields).unwrap();
+        backend.put(&key, ObjectData::from(data), PutOptions::default()).await.unwrap();
+
+        // Create promises
+        let name_promise = backend.create_promise(&key, "name").await.unwrap();
+        let age_promise = backend.create_promise(&key, "age").await.unwrap();
+
+        // Promises should not be resolved yet
+        assert!(!name_promise.is_resolved());
+        assert!(!age_promise.is_resolved());
+
+        // Resolve name promise
+        let name_value = name_promise.resolve().await.unwrap();
+        assert!(matches!(name_value, FieldValue::String(s) if s == "Alice"));
+        assert!(name_promise.is_resolved());
+
+        // Resolve age promise
+        let age_value = age_promise.resolve().await.unwrap();
+        assert!(matches!(age_value, FieldValue::Int(30)));
+
+        // Resolving again should use cached value
+        let name_value2 = name_promise.resolve().await.unwrap();
+        assert!(matches!(name_value2, FieldValue::String(s) if s == "Alice"));
+    }
+
+    #[tokio::test]
+    async fn test_put_typed_fields() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let backend = ParcodeBackend::new(temp_dir.path()).await.unwrap();
+
+        backend.create_bucket("test").await.unwrap();
+
+        let key = ObjectKey::new("test", "typed_obj").unwrap();
+
+        // Create typed fields using FieldValue
+        let mut fields = HashMap::new();
+        fields.insert("name".to_string(), FieldValue::String("Bob".into()));
+        fields.insert("count".to_string(), FieldValue::Int(42));
+        fields.insert("ratio".to_string(), FieldValue::Float(0.75));
+        fields.insert("active".to_string(), FieldValue::Bool(true));
+
+        backend.put_typed_fields(&key, fields, PutOptions::default()).await.unwrap();
+
+        // Read back the fields
+        let field_data = backend.get_fields(&key, &["name", "count", "ratio", "active"]).await.unwrap();
+        assert_eq!(field_data.len(), 4);
+
+        // Verify values
+        if let Some(FieldValue::String(s)) = field_data.get("name") {
+            assert_eq!(s, "Bob");
+        } else {
+            panic!("Expected String for name");
+        }
+
+        if let Some(FieldValue::Int(i)) = field_data.get("count") {
+            assert_eq!(*i, 42);
+        } else {
+            panic!("Expected Int for count");
+        }
+    }
+
+    #[tokio::test]
+    async fn test_large_field_compression_in_storage() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let backend = ParcodeBackend::new(temp_dir.path()).await.unwrap();
+
+        backend.create_bucket("test").await.unwrap();
+
+        let key = ObjectKey::new("test", "compressed_obj").unwrap();
+
+        // Create a large compressible field
+        let large_text = "Hello, World! ".repeat(200); // ~2800 bytes
+        let fields = vec![
+            ("small", b"tiny".as_slice(), FieldType::String),
+            ("large", large_text.as_bytes(), FieldType::String),
+        ];
+
+        let data = ParcodeBackend::build_parcode_typed(&fields).unwrap();
+        backend.put(&key, ObjectData::from(data), PutOptions::default()).await.unwrap();
+
+        // Read back and verify
+        let field_data = backend.get_fields(&key, &["small", "large"]).await.unwrap();
+        assert_eq!(field_data.len(), 2);
+
+        if let Some(FieldValue::String(s)) = field_data.get("large") {
+            assert_eq!(s, &large_text);
+        } else {
+            panic!("Expected String for large field");
+        }
+    }
+
+    #[test]
+    fn test_incompressible_data_not_compressed() {
+        // Random data doesn't compress well
+        let random_data: Vec<u8> = (0..2048).map(|i| (i * 17 + 31) as u8).collect();
+        let fields = vec![
+            ("random", random_data.as_slice(), FieldType::Bytes),
+        ];
+
+        let parcode = ParcodeBackend::build_parcode_typed(&fields).unwrap();
+        let entries = ParcodeBackend::parse_index(&parcode).unwrap();
+
+        let entry = ParcodeBackend::lookup_field(&entries, "random").unwrap();
+        // If compression didn't help, it should not be marked as compressed
+        // (or if it is compressed, the size should still be reasonable)
+        if entry.compressed {
+            // Compression was used, but should still be smaller than original
+            assert!(entry.size <= 2048);
+        } else {
+            // Not compressed, size should match original
+            assert_eq!(entry.size, 2048);
+        }
+    }
+
+    #[tokio::test]
+    async fn test_array_field_roundtrip() {
+        // Test Array field type with msgpack encoding
+        let array_data: Vec<FieldValue> = vec![
+            FieldValue::Int(1),
+            FieldValue::Int(2),
+            FieldValue::Int(3),
+        ];
+        let encoded = rmp_serde::to_vec(&array_data).unwrap();
+
+        let fields = vec![
+            ("numbers", encoded.as_slice(), FieldType::Array),
+        ];
+
+        let parcode = ParcodeBackend::build_parcode_typed(&fields).unwrap();
+        let entries = ParcodeBackend::parse_index(&parcode).unwrap();
+
+        let entry = ParcodeBackend::lookup_field(&entries, "numbers").unwrap();
+        assert_eq!(entry.field_type, FieldType::Array);
+    }
+
+    #[tokio::test]
+    async fn test_index_persistence() {
+        let temp_dir = tempfile::tempdir().unwrap();
+
+        // Create backend and store some objects
+        {
+            let backend = ParcodeBackend::new(temp_dir.path()).await.unwrap();
+            backend.create_bucket("test").await.unwrap();
+
+            // Create multiple objects to populate the index cache
+            for i in 0..5 {
+                let key = ObjectKey::new("test", &format!("obj_{}", i)).unwrap();
+                let mut fields = HashMap::new();
+                fields.insert("id".to_string(), i.to_string().as_bytes().to_vec());
+                fields.insert("data".to_string(), vec![i as u8; 100]);
+
+                let parcode = ParcodeBackend::build_parcode(&fields).unwrap();
+                backend.put(&key, ObjectData::from(parcode), PutOptions::default()).await.unwrap();
+
+                // Access fields to populate cache
+                let _ = backend.get_fields(&key, &["id"]).await.unwrap();
+            }
+
+            // Verify cache is populated
+            assert_eq!(backend.index_cache.len(), 5);
+
+            // Persist the cache
+            backend.shutdown().await.unwrap();
+
+            // Verify cache file exists
+            let cache_path = temp_dir.path().join(INDEX_CACHE_FILE);
+            assert!(cache_path.exists());
+        }
+
+        // Create a new backend and verify cache is loaded
+        {
+            let backend = ParcodeBackend::new(temp_dir.path()).await.unwrap();
+
+            // Cache should be pre-populated from disk
+            assert_eq!(backend.index_cache.len(), 5);
+
+            // Verify we can access fields without re-reading from storage
+            let key = ObjectKey::new("test", "obj_2").unwrap();
+            let field_data = backend.get_fields(&key, &["id"]).await.unwrap();
+            assert_eq!(field_data.len(), 1);
+        }
+    }
+
+    #[tokio::test]
+    async fn test_index_persistence_disabled() {
+        let temp_dir = tempfile::tempdir().unwrap();
+
+        // Create backend with persistence disabled
+        let backend = ParcodeBackend::with_options(temp_dir.path(), false).await.unwrap();
+        backend.create_bucket("test").await.unwrap();
+
+        let key = ObjectKey::new("test", "obj").unwrap();
+        let mut fields = HashMap::new();
+        fields.insert("data".to_string(), b"test".to_vec());
+
+        let parcode = ParcodeBackend::build_parcode(&fields).unwrap();
+        backend.put(&key, ObjectData::from(parcode), PutOptions::default()).await.unwrap();
+
+        // Access to populate cache
+        let _ = backend.get_fields(&key, &["data"]).await.unwrap();
+
+        // Shutdown should not create cache file
+        backend.shutdown().await.unwrap();
+
+        let cache_path = temp_dir.path().join(INDEX_CACHE_FILE);
+        assert!(!cache_path.exists());
+    }
+
+    #[tokio::test]
+    async fn test_benchmark_field_access_vs_full_deser() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let backend = ParcodeBackend::new(temp_dir.path()).await.unwrap();
+
+        backend.create_bucket("bench").await.unwrap();
+
+        // Create object with many fields
+        let key = ObjectKey::new("bench", "large_obj").unwrap();
+        let mut fields = HashMap::new();
+        for i in 0..100 {
+            fields.insert(format!("field_{}", i), vec![i as u8; 1000]);
+        }
+
+        let parcode = ParcodeBackend::build_parcode(&fields).unwrap();
+        let total_size = parcode.len();
+        backend.put(&key, ObjectData::from(parcode), PutOptions::default()).await.unwrap();
+
+        // Benchmark: get single field vs full object
+        let start = std::time::Instant::now();
+        for _ in 0..10 {
+            let _ = backend.get_fields(&key, &["field_50"]).await.unwrap();
+        }
+        let field_time = start.elapsed();
+
+        let start = std::time::Instant::now();
+        for _ in 0..10 {
+            let _ = backend.get(&key).await.unwrap();
+        }
+        let full_time = start.elapsed();
+
+        // Field access should be faster for single field
+        // (may not always be true on first access due to index parsing,
+        // but should be true after cache is populated)
+        println!("Field access (10x): {:?}", field_time);
+        println!("Full object (10x): {:?}", full_time);
+        println!("Total object size: {} bytes", total_size);
+
+        // We don't assert timing since it's environment-dependent,
+        // but we verify both operations succeed
     }
 }

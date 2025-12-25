@@ -446,12 +446,11 @@ impl HpcStorageBackend for PortalBackend {
     async fn pinned_store(
         &self,
         key: &ObjectKey,
-        gpu_ptr: warp_gpu::GpuPtr,
-        size: usize,
+        gpu_buffer: &warp_gpu::GpuBuffer<u8>,
     ) -> Result<ObjectMeta> {
         // Copy from GPU to CPU, then store
-        let mut buffer = vec![0u8; size];
-        gpu_ptr.copy_to_host(&mut buffer)?;
+        let buffer = gpu_buffer.copy_to_host()
+            .map_err(|e| crate::Error::Backend(format!("GPU copy failed: {}", e)))?;
 
         let data = ObjectData::from(buffer);
         self.put(key, data, PutOptions::default()).await

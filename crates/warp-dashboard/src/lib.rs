@@ -6,13 +6,16 @@
 //! - Performance metrics display
 //! - Live updates via Server-Sent Events
 //! - RESTful API for state queries
+//! - IPC integration with Horizon dashboard
 
 pub mod handlers;
+pub mod ipc;
 pub mod server;
 pub mod templates;
 pub mod types;
 
 pub use handlers::*;
+pub use ipc::IpcHandler;
 pub use server::*;
 pub use templates::*;
 pub use types::*;

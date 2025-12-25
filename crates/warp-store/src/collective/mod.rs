@@ -11,6 +11,10 @@
 //! These operations are designed to integrate with rmpi for type-safe
 //! message passing when the `rmpi` feature is enabled.
 //!
+//! # Feature Flags
+//!
+//! - `rmpi`: Enable real distributed collective operations using rmpi
+//!
 //! # Example
 //!
 //! ```ignore
@@ -30,11 +34,15 @@
 //! let my_data = store.scatter_objects(&ctx, &keys).await?;
 //! ```
 
+#[cfg(feature = "rmpi")]
+pub mod rmpi_adapter;
+#[cfg(feature = "rmpi")]
+pub use rmpi_adapter::RmpiCollectiveAdapter;
+
 use std::collections::HashMap;
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use bytes::Bytes;
 use serde::{Deserialize, Serialize};
 use tracing::{debug, trace, warn};
 

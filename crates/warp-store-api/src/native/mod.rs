@@ -29,10 +29,13 @@ pub fn routes<B: StorageBackend>(state: AppState<B>) -> Router {
         .route("/api/v1/ephemeral/verify", post(verify_ephemeral_token::<B>))
         // Access via ephemeral token
         .route("/api/v1/access/{token}/{*key}", get(access_with_token::<B>))
-        // Stats
+        // Stats and metrics
         .route("/api/v1/stats", get(get_stats::<B>))
-        // Health check
+        // Health checks
         .route("/health", get(health_check))
+        .route("/health/detailed", get(health_check_detailed::<B>))
+        .route("/ready", get(readiness_check::<B>))
+        .route("/live", get(liveness_check))
         .with_state(state)
 }
 
@@ -256,18 +259,119 @@ async fn access_with_token<B: StorageBackend>(
 #[derive(Debug, Serialize)]
 struct StatsResponse {
     buckets: usize,
+    metrics: Option<warp_store::MetricsSnapshot>,
 }
 
 /// Get storage statistics
 async fn get_stats<B: StorageBackend>(
     State(state): State<AppState<B>>,
 ) -> Json<StatsResponse> {
-    let buckets = state.store.list_buckets().len();
+    let buckets = state.store.list_buckets().await.len();
+    let metrics = state.metrics.as_ref().map(|m| m.snapshot());
 
-    Json(StatsResponse { buckets })
+    Json(StatsResponse { buckets, metrics })
 }
 
-/// Health check
+/// Detailed health check response
+#[derive(Debug, Serialize)]
+struct HealthResponse {
+    /// Overall status: "healthy", "degraded", or "unhealthy"
+    status: &'static str,
+    /// Uptime in seconds
+    uptime_secs: u64,
+    /// Storage health details
+    storage: StorageHealth,
+    /// Optional metrics summary
+    #[serde(skip_serializing_if = "Option::is_none")]
+    metrics: Option<MetricsSummary>,
+}
+
+#[derive(Debug, Serialize)]
+struct StorageHealth {
+    /// Number of buckets
+    buckets: usize,
+    /// Whether the backend is reachable
+    backend_ok: bool,
+}
+
+#[derive(Debug, Serialize)]
+struct MetricsSummary {
+    /// Total operations
+    total_ops: u64,
+    /// Average GET latency in microseconds
+    get_latency_avg_us: u64,
+    /// Average PUT latency in microseconds
+    put_latency_avg_us: u64,
+    /// GET error rate (0.0 - 1.0)
+    get_error_rate: f64,
+    /// PUT error rate (0.0 - 1.0)
+    put_error_rate: f64,
+    /// Cache hit rate (0.0 - 1.0)
+    cache_hit_rate: f64,
+    /// Shard health ratio (0.0 - 1.0)
+    shard_health_ratio: f64,
+}
+
+/// Basic health check (just returns OK)
 async fn health_check() -> &'static str {
     "OK"
+}
+
+/// Detailed health check endpoint
+async fn health_check_detailed<B: StorageBackend>(
+    State(state): State<AppState<B>>,
+) -> Json<HealthResponse> {
+    let buckets = state.store.list_buckets().await.len();
+    let backend_ok = true; // If we got here, backend is responding
+
+    let (status, metrics_summary) = if let Some(metrics) = &state.metrics {
+        let snapshot = metrics.snapshot();
+        let is_healthy = snapshot.is_healthy();
+
+        let summary = MetricsSummary {
+            total_ops: snapshot.get_count + snapshot.put_count + snapshot.delete_count,
+            get_latency_avg_us: snapshot.get_latency_avg_us,
+            put_latency_avg_us: snapshot.put_latency_avg_us,
+            get_error_rate: snapshot.get_error_rate(),
+            put_error_rate: snapshot.put_error_rate(),
+            cache_hit_rate: snapshot.cache_hit_rate,
+            shard_health_ratio: snapshot.shard_health_ratio(),
+        };
+
+        let status = if is_healthy {
+            "healthy"
+        } else if snapshot.shards_missing > 0 {
+            "unhealthy"
+        } else {
+            "degraded"
+        };
+
+        (status, Some(summary))
+    } else {
+        ("healthy", None)
+    };
+
+    Json(HealthResponse {
+        status,
+        uptime_secs: state.metrics.as_ref().map(|m| m.snapshot().uptime_secs).unwrap_or(0),
+        storage: StorageHealth {
+            buckets,
+            backend_ok,
+        },
+        metrics: metrics_summary,
+    })
+}
+
+/// Readiness check (for Kubernetes)
+async fn readiness_check<B: StorageBackend>(
+    State(state): State<AppState<B>>,
+) -> impl IntoResponse {
+    // Check if we can list buckets (validates backend connectivity)
+    let _buckets = state.store.list_buckets().await;
+    (StatusCode::OK, "Ready")
+}
+
+/// Liveness check (for Kubernetes)
+async fn liveness_check() -> impl IntoResponse {
+    (StatusCode::OK, "Alive")
 }

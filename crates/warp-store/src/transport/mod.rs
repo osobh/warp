@@ -21,15 +21,13 @@
 use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::path::PathBuf;
-use std::sync::Arc;
 use std::time::Duration;
 
 use bytes::Bytes;
 use dashmap::DashMap;
-use tokio::sync::RwLock;
-use tracing::{debug, trace, warn};
+use tracing::{debug, trace};
 
-use crate::{Error, Result, ObjectKey};
+use crate::ObjectKey;
 
 /// Transport tier identifiers
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]

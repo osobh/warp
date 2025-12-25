@@ -12,31 +12,45 @@ default = ["local"]
 local = []
 portal = ["portal-hub", "portal-core"]
 parcode = []
+erasure = ["warp-ec"]
 gpu = ["warp-gpu"]
-full = ["local", "portal", "parcode", "gpu"]
+raft = ["openraft", "sled"]
+# WireGuard tunnel management (currently simulated - boringtun has x25519-dalek version conflict)
+wireguard = []
+# RMPI collective operations for distributed storage
+rmpi = ["dep:rmpi"]
+full = ["local", "portal", "parcode", "erasure", "gpu", "raft", "wireguard", "rmpi"]
 
 [dependencies]
 # Core warp crates
 warp-core = { workspace = true }
 warp-hash = { workspace = true }
 warp-crypto = { workspace = true }
-warp-ec = { workspace = true }
 
 # Optional integrations
 warp-gpu = { workspace = true, optional = true }
+warp-ec = { workspace = true, optional = true }
 portal-hub = { workspace = true, optional = true }
 portal-core = { workspace = true, optional = true }
+openraft = { workspace = true, optional = true }
+sled = { workspace = true, optional = true }
+rmpi = { workspace = true, optional = true }
 
 # Async runtime
 tokio = { workspace = true }
 
-# Cryptography for ephemeral tokens
+# Cryptography for ephemeral tokens and WireGuard
 ed25519-dalek = { workspace = true }
+x25519-dalek = { version = "2.0", features = ["static_secrets"] }
 rand = { workspace = true }
 
 # Serialization
 serde = { workspace = true }
+serde_json = { workspace = true }
 rmp-serde = { workspace = true }
+
+# Compression
+zstd = { workspace = true }
 
 # Time handling
 chrono = { version = "0.4", features = ["serde"] }
@@ -59,6 +73,7 @@ tracing = { workspace = true }
 async-trait = "0.1"
 base64 = "0.22"
 serde_bytes = "0.11"
+hex = "0.4"
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["test-util", "macros", "rt-multi-thread"] }

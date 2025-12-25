@@ -244,6 +244,233 @@ fn bench_collective_context(c: &mut Criterion) {
     group.finish();
 }
 
+#[cfg(feature = "erasure")]
+fn bench_erasure(c: &mut Criterion) {
+    use warp_store::backend::{ErasureBackend, StoreErasureConfig};
+
+    let rt = tokio::runtime::Runtime::new().unwrap();
+    let temp_dir = tempfile::tempdir().unwrap();
+
+    // RS(10,4) - 10 data shards, 4 parity shards
+    let config = StoreErasureConfig::new(10, 4).unwrap();
+
+    let backend = rt.block_on(async {
+        ErasureBackend::new(temp_dir.path(), config).await.unwrap()
+    });
+
+    let mut group = c.benchmark_group("erasure");
+
+    // Encoding throughput
+    for size in [65536, 262144, 1048576, 4194304] {
+        let data = generate_data(size);
+        group.throughput(Throughput::Bytes(size as u64));
+
+        group.bench_with_input(BenchmarkId::new("encode", size), &data, |b, data| {
+            b.iter(|| {
+                let (shards, _meta) = backend.encode_to_shards(data, None).unwrap();
+                black_box(shards);
+            });
+        });
+
+        // Prepare shards for decode benchmark
+        let (shards, meta) = backend.encode_to_shards(&data, None).unwrap();
+        let shard_opts: Vec<Option<Vec<u8>>> = shards.into_iter().map(Some).collect();
+
+        group.bench_with_input(BenchmarkId::new("decode", size), &shard_opts, |b, shards| {
+            b.iter(|| {
+                let decoded = backend.decode_from_shards(shards, meta.original_size).unwrap();
+                black_box(decoded);
+            });
+        });
+
+        // Decode with missing parity shards (still recoverable)
+        let mut sparse_shards = shard_opts.clone();
+        // Remove 4 parity shards (indices 10-13)
+        for i in 10..14 {
+            sparse_shards[i] = None;
+        }
+
+        group.bench_with_input(BenchmarkId::new("decode_recovery", size), &sparse_shards, |b, shards| {
+            b.iter(|| {
+                let decoded = backend.decode_from_shards(shards, meta.original_size).unwrap();
+                black_box(decoded);
+            });
+        });
+    }
+
+    group.finish();
+}
+
+#[cfg(feature = "erasure")]
+fn bench_erasure_put_get(c: &mut Criterion) {
+    use warp_store::backend::{ErasureBackend, StoreErasureConfig, StorageBackend};
+    use warp_store::object::PutOptions;
+
+    let rt = tokio::runtime::Runtime::new().unwrap();
+    let temp_dir = tempfile::tempdir().unwrap();
+
+    // RS(10,4) - 10 data shards, 4 parity shards
+    let config = StoreErasureConfig::new(10, 4).unwrap();
+
+    let backend = rt.block_on(async {
+        let b = ErasureBackend::new(temp_dir.path(), config).await.unwrap();
+        b.create_bucket("bench").await.unwrap();
+        b
+    });
+
+    let mut group = c.benchmark_group("erasure_io");
+
+    for size in [65536, 262144, 1048576, 4194304] {
+        let data = generate_data(size);
+        group.throughput(Throughput::Bytes(size as u64));
+
+        group.bench_with_input(BenchmarkId::new("put", size), &data, |b, data| {
+            let key = ObjectKey::new("bench", &format!("put-{}", size)).unwrap();
+            b.to_async(&rt).iter(|| async {
+                let key = key.clone();
+                let data = ObjectData::from(data.clone());
+                black_box(backend.put(&key, data, PutOptions::default()).await.unwrap());
+            });
+        });
+
+        // Setup for get benchmark
+        let key = ObjectKey::new("bench", &format!("get-{}", size)).unwrap();
+        rt.block_on(async {
+            backend.put(&key, ObjectData::from(data.clone()), PutOptions::default()).await.unwrap();
+        });
+
+        group.bench_with_input(BenchmarkId::new("get", size), &key, |b, key| {
+            b.to_async(&rt).iter(|| async {
+                black_box(backend.get(key).await.unwrap());
+            });
+        });
+    }
+
+    group.finish();
+}
+
+#[cfg(feature = "erasure")]
+fn bench_distributed(c: &mut Criterion) {
+    use warp_store::backend::{DistributedBackend, DistributedConfig, StorageBackend};
+    use warp_store::object::PutOptions;
+
+    let rt = tokio::runtime::Runtime::new().unwrap();
+    let temp_dir = tempfile::tempdir().unwrap();
+
+    let config = DistributedConfig::default();
+
+    let backend = rt.block_on(async {
+        let b = DistributedBackend::new(temp_dir.path(), config).await.unwrap();
+        b.create_bucket("bench").await.unwrap();
+        b
+    });
+
+    let mut group = c.benchmark_group("distributed");
+
+    // Put/Get with distributed backend (local-only mode since no remote domains)
+    for size in [65536, 262144, 1048576] {
+        let data = generate_data(size);
+        group.throughput(Throughput::Bytes(size as u64));
+
+        group.bench_with_input(BenchmarkId::new("put", size), &data, |b, data| {
+            let key = ObjectKey::new("bench", &format!("dist-put-{}", size)).unwrap();
+            b.to_async(&rt).iter(|| async {
+                let key = key.clone();
+                let data = ObjectData::from(data.clone());
+                black_box(backend.put(&key, data, PutOptions::default()).await.unwrap());
+            });
+        });
+
+        // Setup for get benchmark
+        let key = ObjectKey::new("bench", &format!("dist-get-{}", size)).unwrap();
+        rt.block_on(async {
+            backend.put(&key, ObjectData::from(data.clone()), PutOptions::default()).await.unwrap();
+        });
+
+        group.bench_with_input(BenchmarkId::new("get", size), &key, |b, key| {
+            b.to_async(&rt).iter(|| async {
+                black_box(backend.get(key).await.unwrap());
+            });
+        });
+    }
+
+    // Stats collection
+    group.bench_function("stats", |b| {
+        b.to_async(&rt).iter(|| async {
+            black_box(backend.stats().await);
+        });
+    });
+
+    group.finish();
+}
+
+#[cfg(feature = "erasure")]
+fn bench_shard_operations(c: &mut Criterion) {
+    use warp_store::backend::{ErasureBackend, StoreErasureConfig, StorageBackend};
+    use warp_store::object::PutOptions;
+
+    let rt = tokio::runtime::Runtime::new().unwrap();
+    let temp_dir = tempfile::tempdir().unwrap();
+
+    // RS(10,4) - 10 data shards, 4 parity shards
+    let config = StoreErasureConfig::new(10, 4).unwrap();
+
+    let backend = rt.block_on(async {
+        let b = ErasureBackend::new(temp_dir.path(), config).await.unwrap();
+        b.create_bucket("bench").await.unwrap();
+        b
+    });
+
+    // Store an object to get shards from
+    let key = ObjectKey::new("bench", "shard-test").unwrap();
+    let data = generate_data(1048576); // 1MB
+    rt.block_on(async {
+        backend.put(&key, ObjectData::from(data), PutOptions::default()).await.unwrap();
+    });
+
+    let mut group = c.benchmark_group("shard_ops");
+
+    // Get individual shard
+    group.bench_function("get_shard", |b| {
+        b.to_async(&rt).iter(|| async {
+            black_box(backend.get_shard(&key, 0).await.unwrap());
+        });
+    });
+
+    // Get multiple shards in sequence (avoid futures dep for simplicity)
+    group.bench_function("get_shards_sequential", |b| {
+        b.to_async(&rt).iter(|| async {
+            for i in 0..10 {
+                black_box(backend.get_shard(&key, i).await.unwrap());
+            }
+        });
+    });
+
+    // Put individual shard
+    let shard_data = vec![0u8; 75000]; // ~75KB per shard for 1MB/14 shards
+    group.bench_function("put_shard", |b| {
+        b.to_async(&rt).iter(|| async {
+            backend.put_shard(&key, 0, &shard_data).await.unwrap();
+        });
+    });
+
+    // Get shard metadata
+    group.bench_function("get_shard_meta", |b| {
+        b.to_async(&rt).iter(|| async {
+            black_box(backend.get_shard_meta(&key).await.unwrap());
+        });
+    });
+
+    // Shard health check
+    group.bench_function("shard_health", |b| {
+        b.to_async(&rt).iter(|| async {
+            black_box(backend.shard_health(&key).await.unwrap());
+        });
+    });
+
+    group.finish();
+}
+
 criterion_group!(
     benches,
     bench_put_get,
@@ -253,4 +480,17 @@ criterion_group!(
     bench_collective_context,
 );
 
+#[cfg(feature = "erasure")]
+criterion_group!(
+    erasure_benches,
+    bench_erasure,
+    bench_erasure_put_get,
+    bench_distributed,
+    bench_shard_operations,
+);
+
+#[cfg(feature = "erasure")]
+criterion_main!(benches, erasure_benches);
+
+#[cfg(not(feature = "erasure"))]
 criterion_main!(benches);

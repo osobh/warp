@@ -20,6 +20,27 @@ mod parcode;
 #[cfg(feature = "parcode")]
 pub use parcode::{ParcodeBackend, FieldEntry, FieldType, ParcodeHeader, Promise};
 
+#[cfg(feature = "erasure")]
+mod erasure;
+
+#[cfg(feature = "erasure")]
+pub use erasure::{ErasureBackend, StoreErasureConfig, ShardHealth, EncodedShardMeta};
+
+#[cfg(feature = "erasure")]
+mod distributed;
+
+#[cfg(feature = "erasure")]
+pub use distributed::{DistributedBackend, DistributedConfig, DistributedStats};
+
+#[cfg(feature = "gpu")]
+mod gpu_direct;
+
+#[cfg(feature = "gpu")]
+pub use gpu_direct::{
+    GpuDirectBackend, GpuDirectConfig, GpuDirectStats,
+    NvLinkTopology, P2PPath, GpuBufferHandle,
+};
+
 use async_trait::async_trait;
 
 use crate::key::ObjectKey;
@@ -134,8 +155,7 @@ pub trait HpcStorageBackend: StorageBackend {
     async fn pinned_store(
         &self,
         key: &ObjectKey,
-        gpu_ptr: warp_gpu::GpuPtr,
-        size: usize,
+        gpu_buffer: &warp_gpu::GpuBuffer<u8>,
     ) -> Result<ObjectMeta>;
 
     /// Get with zero-knowledge proof of storage

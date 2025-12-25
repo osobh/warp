@@ -40,19 +40,33 @@
 pub mod backend;
 pub mod bucket;
 pub mod collective;
+#[cfg(feature = "raft")]
+pub mod consistency;
 pub mod ephemeral;
 pub mod error;
 pub mod key;
+pub mod metrics;
 pub mod object;
+pub mod replication;
 pub mod transport;
 pub mod version;
 
 pub use backend::{StorageBackend, HpcStorageBackend};
 pub use bucket::{Bucket, BucketConfig, BucketPolicy};
 pub use collective::{Rank, CollectiveContext, StorageCollectiveOps, CollectiveAdapter};
+pub use replication::{
+    ReplicationPolicy, ErasurePolicy, PlacementConstraints, ReadPreference, ShardDistribution,
+    Domain, DomainId, DomainRegistry, DomainHealth, NodeInfo, NodeStatus,
+    WireGuardTunnelManager, WireGuardTunnel, WireGuardConfig, WireGuardKeyPair, TunnelStatus, TunnelStats,
+    DistributedShardManager, ShardKey, ShardLocation, ShardHealth, ShardIndex, ShardDistributionInfo, ShardManagerStats,
+    GeoRouter, LatencyStats, ShardReadPlan, GeoRouterStats,
+};
+#[cfg(feature = "raft")]
+pub use consistency::{RaftStore, RaftStoreConfig, RaftMetrics, NodeId, ObjectMetadataEntry};
 pub use ephemeral::{EphemeralToken, AccessScope, Permissions, RateLimit};
 pub use error::{Error, Result};
 pub use key::ObjectKey;
+pub use metrics::{MetricsCollector, MetricsSnapshot, LatencyTimer};
 pub use object::{ObjectData, ObjectMeta, PutOptions, ListOptions, ObjectList, ObjectSummary, FieldData, FieldValue};
 pub use version::{Version, VersionId, VersioningMode};
 
@@ -77,6 +91,25 @@ pub struct StoreConfig {
 
     /// Signing key for ephemeral tokens
     pub signing_key: Option<ed25519_dalek::SigningKey>,
+
+    /// Distributed mode configuration (requires "raft" feature)
+    #[cfg(feature = "raft")]
+    pub distributed: Option<DistributedConfig>,
+}
+
+/// Configuration for distributed mode with Raft consensus
+#[cfg(feature = "raft")]
+#[derive(Debug, Clone)]
+pub struct DistributedConfig {
+    /// This node's ID in the Raft cluster
+    pub node_id: NodeId,
+
+    /// Whether to initialize as a new single-node cluster
+    /// (set true for the first node, false for joining nodes)
+    pub init_cluster: bool,
+
+    /// Raft-specific configuration
+    pub raft_config: RaftStoreConfig,
 }
 
 impl Default for StoreConfig {
@@ -87,6 +120,29 @@ impl Default for StoreConfig {
             max_object_size: 5 * 1024 * 1024 * 1024 * 1024, // 5TB
             content_addressed: false,
             signing_key: None,
+            #[cfg(feature = "raft")]
+            distributed: None,
+        }
+    }
+}
+
+#[cfg(feature = "raft")]
+impl DistributedConfig {
+    /// Create a config for the first node in a new cluster
+    pub fn new_cluster(node_id: NodeId) -> Self {
+        Self {
+            node_id,
+            init_cluster: true,
+            raft_config: RaftStoreConfig::default(),
+        }
+    }
+
+    /// Create a config for joining an existing cluster
+    pub fn join_cluster(node_id: NodeId) -> Self {
+        Self {
+            node_id,
+            init_cluster: false,
+            raft_config: RaftStoreConfig::default(),
         }
     }
 }
@@ -94,11 +150,13 @@ impl Default for StoreConfig {
 /// The main warp-store instance
 ///
 /// Provides a unified interface to object storage with pluggable backends.
+/// When the "raft" feature is enabled and distributed mode is configured,
+/// metadata operations (bucket/object metadata) are replicated via Raft consensus.
 pub struct Store<B: StorageBackend = backend::LocalBackend> {
-    /// The storage backend
+    /// The storage backend (handles actual data storage)
     backend: Arc<B>,
 
-    /// Bucket registry
+    /// Bucket registry (local fallback when not using Raft)
     buckets: DashMap<String, Bucket>,
 
     /// Store configuration
@@ -109,6 +167,10 @@ pub struct Store<B: StorageBackend = backend::LocalBackend> {
 
     /// Verifying key for ephemeral tokens
     verifying_key: ed25519_dalek::VerifyingKey,
+
+    /// Distributed metadata store (when raft feature is enabled)
+    #[cfg(feature = "raft")]
+    raft_store: Option<Arc<RaftStore>>,
 }
 
 impl Store<backend::LocalBackend> {
@@ -129,6 +191,32 @@ impl<B: StorageBackend> Store<B> {
         });
         let verifying_key = signing_key.verifying_key();
 
+        // Initialize Raft store if distributed mode is configured
+        #[cfg(feature = "raft")]
+        let raft_store = if let Some(ref dist_config) = config.distributed {
+            info!(
+                node_id = dist_config.node_id,
+                init_cluster = dist_config.init_cluster,
+                "Initializing distributed mode with Raft"
+            );
+
+            let raft = RaftStore::with_config(
+                dist_config.node_id,
+                dist_config.raft_config.clone(),
+            )
+            .await?;
+
+            if dist_config.init_cluster {
+                raft.init_cluster().await?;
+                // Wait for leader election
+                raft.wait_for_leader(std::time::Duration::from_secs(5)).await?;
+            }
+
+            Some(Arc::new(raft))
+        } else {
+            None
+        };
+
         info!(root = %config.root_path.display(), "Initializing warp-store");
 
         Ok(Self {
@@ -137,17 +225,36 @@ impl<B: StorageBackend> Store<B> {
             config,
             signing_key,
             verifying_key,
+            #[cfg(feature = "raft")]
+            raft_store,
         })
     }
 
     /// Create a new bucket
+    ///
+    /// When running in distributed mode, this operation is replicated via Raft consensus.
     pub async fn create_bucket(&self, name: &str, config: BucketConfig) -> Result<()> {
-        if self.buckets.contains_key(name) {
-            return Err(Error::BucketAlreadyExists(name.to_string()));
+        // Use Raft for metadata if available
+        #[cfg(feature = "raft")]
+        if let Some(ref raft) = self.raft_store {
+            raft.create_bucket(name, config.clone()).await?;
+        } else {
+            // Local-only mode
+            if self.buckets.contains_key(name) {
+                return Err(Error::BucketAlreadyExists(name.to_string()));
+            }
+            let bucket = Bucket::new(name.to_string(), config.clone());
+            self.buckets.insert(name.to_string(), bucket);
         }
 
-        let bucket = Bucket::new(name.to_string(), config);
-        self.buckets.insert(name.to_string(), bucket);
+        #[cfg(not(feature = "raft"))]
+        {
+            if self.buckets.contains_key(name) {
+                return Err(Error::BucketAlreadyExists(name.to_string()));
+            }
+            let bucket = Bucket::new(name.to_string(), config.clone());
+            self.buckets.insert(name.to_string(), bucket);
+        }
 
         // Ensure backend storage is created
         self.backend.create_bucket(name).await?;
@@ -157,19 +264,34 @@ impl<B: StorageBackend> Store<B> {
     }
 
     /// Delete a bucket (must be empty)
+    ///
+    /// When running in distributed mode, this operation is replicated via Raft consensus.
     pub async fn delete_bucket(&self, name: &str) -> Result<()> {
-        // Check if bucket exists
-        if !self.buckets.contains_key(name) {
-            return Err(Error::BucketNotFound(name.to_string()));
-        }
-
         // Check if bucket is empty
         let list = self.backend.list(name, "", ListOptions::default()).await?;
         if !list.objects.is_empty() {
             return Err(Error::BucketNotEmpty(name.to_string()));
         }
 
-        self.buckets.remove(name);
+        // Use Raft for metadata if available
+        #[cfg(feature = "raft")]
+        if let Some(ref raft) = self.raft_store {
+            raft.delete_bucket(name).await?;
+        } else {
+            if !self.buckets.contains_key(name) {
+                return Err(Error::BucketNotFound(name.to_string()));
+            }
+            self.buckets.remove(name);
+        }
+
+        #[cfg(not(feature = "raft"))]
+        {
+            if !self.buckets.contains_key(name) {
+                return Err(Error::BucketNotFound(name.to_string()));
+            }
+            self.buckets.remove(name);
+        }
+
         self.backend.delete_bucket(name).await?;
 
         debug!(bucket = name, "Deleted bucket");
@@ -177,7 +299,14 @@ impl<B: StorageBackend> Store<B> {
     }
 
     /// List all buckets
-    pub fn list_buckets(&self) -> Vec<String> {
+    ///
+    /// In distributed mode, reads from the Raft-replicated metadata store.
+    pub async fn list_buckets(&self) -> Vec<String> {
+        #[cfg(feature = "raft")]
+        if let Some(ref raft) = self.raft_store {
+            return raft.list_buckets().await;
+        }
+
         self.buckets.iter().map(|r| r.key().clone()).collect()
     }
 
@@ -220,6 +349,52 @@ impl<B: StorageBackend> Store<B> {
     pub async fn delete(&self, key: &ObjectKey) -> Result<()> {
         debug!(key = %key, "Deleting object");
         self.backend.delete(key).await
+    }
+
+    // =========================================================================
+    // Multipart Upload API
+    // =========================================================================
+
+    /// Initiate a multipart upload
+    pub async fn create_multipart(&self, key: &ObjectKey) -> Result<backend::MultipartUpload> {
+        debug!(key = %key, "Creating multipart upload");
+        self.backend.create_multipart(key).await
+    }
+
+    /// Upload a part to a multipart upload
+    pub async fn upload_part(
+        &self,
+        upload: &backend::MultipartUpload,
+        part_number: u32,
+        data: ObjectData,
+    ) -> Result<backend::PartInfo> {
+        debug!(
+            upload_id = %upload.upload_id,
+            part_number,
+            size = data.len(),
+            "Uploading part"
+        );
+        self.backend.upload_part(upload, part_number, data).await
+    }
+
+    /// Complete a multipart upload
+    pub async fn complete_multipart(
+        &self,
+        upload: &backend::MultipartUpload,
+        parts: Vec<backend::PartInfo>,
+    ) -> Result<ObjectMeta> {
+        debug!(
+            upload_id = %upload.upload_id,
+            parts = parts.len(),
+            "Completing multipart upload"
+        );
+        self.backend.complete_multipart(upload, parts).await
+    }
+
+    /// Abort a multipart upload
+    pub async fn abort_multipart(&self, upload: &backend::MultipartUpload) -> Result<()> {
+        debug!(upload_id = %upload.upload_id, "Aborting multipart upload");
+        self.backend.abort_multipart(upload).await
     }
 
     /// List objects with prefix
@@ -289,6 +464,71 @@ impl<B: StorageBackend> Store<B> {
     pub fn backend(&self) -> &B {
         &self.backend
     }
+
+    // =========================================================================
+    // Distributed Mode Operations (requires "raft" feature)
+    // =========================================================================
+
+    /// Check if distributed mode is active
+    #[cfg(feature = "raft")]
+    pub fn is_distributed(&self) -> bool {
+        self.raft_store.is_some()
+    }
+
+    /// Check if this node is the Raft leader
+    ///
+    /// Returns false if not in distributed mode.
+    #[cfg(feature = "raft")]
+    pub fn is_leader(&self) -> bool {
+        self.raft_store
+            .as_ref()
+            .map(|r| r.is_leader())
+            .unwrap_or(false)
+    }
+
+    /// Get the current leader node ID
+    ///
+    /// Returns None if not in distributed mode or no leader is elected.
+    #[cfg(feature = "raft")]
+    pub fn current_leader(&self) -> Option<NodeId> {
+        self.raft_store.as_ref().and_then(|r| r.current_leader())
+    }
+
+    /// Get Raft cluster metrics
+    ///
+    /// Returns None if not in distributed mode.
+    #[cfg(feature = "raft")]
+    pub fn raft_metrics(&self) -> Option<RaftMetrics> {
+        self.raft_store.as_ref().map(|r| r.metrics())
+    }
+
+    /// Add a node to the distributed cluster
+    ///
+    /// Only the leader can add nodes.
+    #[cfg(feature = "raft")]
+    pub async fn add_cluster_node(&self, node_id: NodeId, addr: String) -> Result<()> {
+        match &self.raft_store {
+            Some(raft) => raft.add_node(node_id, addr).await,
+            None => Err(Error::Raft("Not in distributed mode".to_string())),
+        }
+    }
+
+    /// Remove a node from the distributed cluster
+    ///
+    /// Only the leader can remove nodes.
+    #[cfg(feature = "raft")]
+    pub async fn remove_cluster_node(&self, node_id: NodeId) -> Result<()> {
+        match &self.raft_store {
+            Some(raft) => raft.remove_node(node_id).await,
+            None => Err(Error::Raft("Not in distributed mode".to_string())),
+        }
+    }
+
+    /// Get the underlying Raft store (for advanced operations)
+    #[cfg(feature = "raft")]
+    pub fn raft_store(&self) -> Option<&Arc<RaftStore>> {
+        self.raft_store.as_ref()
+    }
 }
 
 #[cfg(test)]
@@ -345,5 +585,37 @@ mod tests {
         let encoded = token.encode();
         let decoded = EphemeralToken::decode(&encoded).unwrap();
         assert!(store.verify_token(&decoded, None).is_ok());
+    }
+
+    #[cfg(feature = "raft")]
+    #[tokio::test]
+    async fn test_distributed_store() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let config = StoreConfig {
+            root_path: temp_dir.path().to_path_buf(),
+            distributed: Some(DistributedConfig::new_cluster(1)),
+            ..Default::default()
+        };
+
+        let store = Store::new(config).await.unwrap();
+
+        // Verify distributed mode is active
+        assert!(store.is_distributed());
+
+        // Should become leader of single-node cluster
+        assert!(store.is_leader());
+        assert_eq!(store.current_leader(), Some(1));
+
+        // Create bucket via Raft
+        store.create_bucket("raft-bucket", BucketConfig::default()).await.unwrap();
+
+        // List buckets
+        let buckets = store.list_buckets().await;
+        assert!(buckets.contains(&"raft-bucket".to_string()));
+
+        // Get Raft metrics
+        let metrics = store.raft_metrics().unwrap();
+        assert_eq!(metrics.node_id, 1);
+        assert!(metrics.membership.contains(&1));
     }
 }

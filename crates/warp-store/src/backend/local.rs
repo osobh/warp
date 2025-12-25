@@ -21,10 +21,23 @@ use tokio::fs;
 use tokio::io::AsyncWriteExt;
 use tracing::{debug, trace};
 
-use super::{StorageBackend, HpcStorageBackend, StorageProof, ChunkedStream};
+use super::{StorageBackend, HpcStorageBackend, StorageProof, ChunkedStream, MultipartUpload, PartInfo};
 use crate::key::ObjectKey;
 use crate::object::{ListOptions, ObjectData, ObjectEntry, ObjectList, ObjectMeta, PutOptions, StorageClass};
 use crate::{Error, Result};
+use serde::{Deserialize, Serialize};
+
+/// Metadata for a multipart upload
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct UploadMeta {
+    /// Object key
+    bucket: String,
+    key: String,
+    /// Upload ID
+    upload_id: String,
+    /// Creation timestamp
+    created_at: chrono::DateTime<chrono::Utc>,
+}
 
 /// Local filesystem storage backend
 pub struct LocalBackend {
@@ -70,6 +83,36 @@ impl LocalBackend {
             fs::create_dir_all(parent).await?;
         }
         Ok(())
+    }
+
+    /// Get the path to multipart uploads directory
+    fn uploads_path(&self, bucket: &str) -> PathBuf {
+        self.bucket_path(bucket).join(".uploads")
+    }
+
+    /// Get the path to a specific upload directory
+    fn upload_path(&self, key: &ObjectKey, upload_id: &str) -> PathBuf {
+        self.uploads_path(key.bucket()).join(upload_id)
+    }
+
+    /// Get the path to a part file
+    fn part_path(&self, key: &ObjectKey, upload_id: &str, part_number: u32) -> PathBuf {
+        self.upload_path(key, upload_id).join(format!("part.{:05}", part_number))
+    }
+
+    /// Get the path to upload metadata
+    fn upload_meta_path(&self, key: &ObjectKey, upload_id: &str) -> PathBuf {
+        self.upload_path(key, upload_id).join("meta.msgpack")
+    }
+
+    /// Generate a unique upload ID
+    fn generate_upload_id() -> String {
+        use std::time::{SystemTime, UNIX_EPOCH};
+        let timestamp = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        format!("{:032x}", timestamp)
     }
 }
 
@@ -309,6 +352,159 @@ impl StorageBackend for LocalBackend {
     async fn bucket_exists(&self, name: &str) -> Result<bool> {
         Ok(self.bucket_path(name).exists())
     }
+
+    async fn create_multipart(&self, key: &ObjectKey) -> Result<MultipartUpload> {
+        // Verify bucket exists
+        if !self.bucket_exists(key.bucket()).await? {
+            return Err(Error::BucketNotFound(key.bucket().to_string()));
+        }
+
+        let upload_id = Self::generate_upload_id();
+        let now = chrono::Utc::now();
+
+        // Create upload directory
+        let upload_dir = self.upload_path(key, &upload_id);
+        fs::create_dir_all(&upload_dir).await?;
+
+        // Save upload metadata
+        let meta = UploadMeta {
+            bucket: key.bucket().to_string(),
+            key: key.key().to_string(),
+            upload_id: upload_id.clone(),
+            created_at: now,
+        };
+        let meta_path = self.upload_meta_path(key, &upload_id);
+        let meta_bytes = rmp_serde::to_vec(&meta)?;
+        fs::write(&meta_path, &meta_bytes).await?;
+
+        debug!(
+            bucket = key.bucket(),
+            key = key.key(),
+            upload_id = %upload_id,
+            "Created multipart upload"
+        );
+
+        Ok(MultipartUpload {
+            upload_id,
+            key: key.clone(),
+            created_at: now,
+        })
+    }
+
+    async fn upload_part(
+        &self,
+        upload: &MultipartUpload,
+        part_number: u32,
+        data: ObjectData,
+    ) -> Result<PartInfo> {
+        // Validate part number (S3 uses 1-10000)
+        if part_number == 0 || part_number > 10000 {
+            return Err(Error::Backend(format!(
+                "Invalid part number: {}. Must be between 1 and 10000",
+                part_number
+            )));
+        }
+
+        // Check upload exists
+        let upload_dir = self.upload_path(&upload.key, &upload.upload_id);
+        if !upload_dir.exists() {
+            return Err(Error::Backend(format!(
+                "Upload {} not found",
+                upload.upload_id
+            )));
+        }
+
+        // Compute etag (hash of part data)
+        let hash = blake3::hash(data.as_ref());
+        let etag = format!("\"{}\"", hash.to_hex());
+        let size = data.len() as u64;
+
+        // Write part data
+        let part_path = self.part_path(&upload.key, &upload.upload_id, part_number);
+        fs::write(&part_path, data.as_ref()).await?;
+
+        trace!(
+            upload_id = %upload.upload_id,
+            part_number,
+            size,
+            "Uploaded part"
+        );
+
+        Ok(PartInfo {
+            part_number,
+            etag,
+            size,
+        })
+    }
+
+    async fn complete_multipart(
+        &self,
+        upload: &MultipartUpload,
+        parts: Vec<PartInfo>,
+    ) -> Result<ObjectMeta> {
+        let upload_dir = self.upload_path(&upload.key, &upload.upload_id);
+        if !upload_dir.exists() {
+            return Err(Error::Backend(format!(
+                "Upload {} not found",
+                upload.upload_id
+            )));
+        }
+
+        // Verify all parts exist and collect them in order
+        let mut sorted_parts = parts.clone();
+        sorted_parts.sort_by_key(|p| p.part_number);
+
+        // Assemble data from parts
+        let mut assembled = Vec::new();
+        for part in &sorted_parts {
+            let part_path = self.part_path(&upload.key, &upload.upload_id, part.part_number);
+            if !part_path.exists() {
+                return Err(Error::Backend(format!(
+                    "Part {} not found for upload {}",
+                    part.part_number, upload.upload_id
+                )));
+            }
+            let part_data = fs::read(&part_path).await?;
+            assembled.extend_from_slice(&part_data);
+        }
+
+        // Write the final object
+        let data = ObjectData::from(assembled);
+        let meta = self.put(&upload.key, data, PutOptions::default()).await?;
+
+        // Clean up upload directory
+        fs::remove_dir_all(&upload_dir).await?;
+
+        debug!(
+            upload_id = %upload.upload_id,
+            parts = sorted_parts.len(),
+            size = meta.size,
+            "Completed multipart upload"
+        );
+
+        Ok(meta)
+    }
+
+    async fn abort_multipart(&self, upload: &MultipartUpload) -> Result<()> {
+        let upload_dir = self.upload_path(&upload.key, &upload.upload_id);
+
+        if !upload_dir.exists() {
+            return Err(Error::Backend(format!(
+                "Upload {} not found",
+                upload.upload_id
+            )));
+        }
+
+        // Remove entire upload directory
+        fs::remove_dir_all(&upload_dir).await?;
+
+        debug!(
+            upload_id = %upload.upload_id,
+            "Aborted multipart upload"
+        );
+
+        Ok(())
+    }
 }
 
 #[async_trait]
@@ -336,12 +532,11 @@ impl HpcStorageBackend for LocalBackend {
     async fn pinned_store(
         &self,
         key: &ObjectKey,
-        gpu_ptr: warp_gpu::GpuPtr,
-        size: usize,
+        gpu_buffer: &warp_gpu::GpuBuffer<u8>,
     ) -> Result<ObjectMeta> {
         // For local backend, copy from GPU to CPU then store
-        let mut buffer = vec![0u8; size];
-        gpu_ptr.copy_to_host(&mut buffer)?;
+        let buffer = gpu_buffer.copy_to_host()
+            .map_err(|e| crate::Error::Backend(format!("GPU copy failed: {}", e)))?;
 
         let data = ObjectData::from(buffer);
         self.put(key, data, PutOptions::default()).await
@@ -453,5 +648,119 @@ mod tests {
 
         assert_eq!(chunk_count, 10);
         assert_eq!(total_bytes, 1000);
+    }
+
+    #[tokio::test]
+    async fn test_multipart_upload_basic() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let backend = LocalBackend::new(temp_dir.path()).await.unwrap();
+
+        backend.create_bucket("test").await.unwrap();
+
+        let key = ObjectKey::new("test", "multipart.bin").unwrap();
+
+        // Create multipart upload
+        let upload = backend.create_multipart(&key).await.unwrap();
+        assert!(!upload.upload_id.is_empty());
+        assert_eq!(upload.key.bucket(), "test");
+        assert_eq!(upload.key.key(), "multipart.bin");
+
+        // Upload parts
+        let part1 = backend.upload_part(&upload, 1, ObjectData::from(b"Hello, ".to_vec())).await.unwrap();
+        let part2 = backend.upload_part(&upload, 2, ObjectData::from(b"World!".to_vec())).await.unwrap();
+
+        assert_eq!(part1.part_number, 1);
+        assert_eq!(part1.size, 7);
+        assert_eq!(part2.part_number, 2);
+        assert_eq!(part2.size, 6);
+
+        // Complete upload
+        let meta = backend.complete_multipart(&upload, vec![part1, part2]).await.unwrap();
+        assert_eq!(meta.size, 13);
+
+        // Verify object
+        let data = backend.get(&key).await.unwrap();
+        assert_eq!(data.as_ref(), b"Hello, World!");
+    }
+
+    #[tokio::test]
+    async fn test_multipart_upload_out_of_order() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let backend = LocalBackend::new(temp_dir.path()).await.unwrap();
+
+        backend.create_bucket("test").await.unwrap();
+
+        let key = ObjectKey::new("test", "outoforder.bin").unwrap();
+
+        // Create upload
+        let upload = backend.create_multipart(&key).await.unwrap();
+
+        // Upload parts out of order
+        let part3 = backend.upload_part(&upload, 3, ObjectData::from(b"C".to_vec())).await.unwrap();
+        let part1 = backend.upload_part(&upload, 1, ObjectData::from(b"A".to_vec())).await.unwrap();
+        let part2 = backend.upload_part(&upload, 2, ObjectData::from(b"B".to_vec())).await.unwrap();
+
+        // Complete - parts should be sorted
+        let meta = backend.complete_multipart(&upload, vec![part3, part1, part2]).await.unwrap();
+        assert_eq!(meta.size, 3);
+
+        // Verify correct order
+        let data = backend.get(&key).await.unwrap();
+        assert_eq!(data.as_ref(), b"ABC");
+    }
+
+    #[tokio::test]
+    async fn test_multipart_upload_abort() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let backend = LocalBackend::new(temp_dir.path()).await.unwrap();
+
+        backend.create_bucket("test").await.unwrap();
+
+        let key = ObjectKey::new("test", "aborted.bin").unwrap();
+
+        // Create upload
+        let upload = backend.create_multipart(&key).await.unwrap();
+
+        // Upload a part
+        backend.upload_part(&upload, 1, ObjectData::from(b"data".to_vec())).await.unwrap();
+
+        // Abort upload
+        backend.abort_multipart(&upload).await.unwrap();
+
+        // Object should not exist
+        assert!(backend.get(&key).await.is_err());
+
+        // Trying to abort again should fail
+        assert!(backend.abort_multipart(&upload).await.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_multipart_upload_large() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let backend = LocalBackend::new(temp_dir.path()).await.unwrap();
+
+        backend.create_bucket("test").await.unwrap();
+
+        let key = ObjectKey::new("test", "large_multipart.bin").unwrap();
+
+        // Create upload
+        let upload = backend.create_multipart(&key).await.unwrap();
+
+        // Upload 10 parts of 100KB each = 1MB total
+        let mut parts = Vec::new();
+        for i in 1..=10 {
+            let data: Vec<u8> = (0..100_000).map(|j| ((i + j) % 256) as u8).collect();
+            let part = backend.upload_part(&upload, i as u32, ObjectData::from(data)).await.unwrap();
+            assert_eq!(part.size, 100_000);
+            parts.push(part);
+        }
+
+        // Complete upload
+        let meta = backend.complete_multipart(&upload, parts).await.unwrap();
+        assert_eq!(meta.size, 1_000_000);
+
+        // Verify object
+        let data = backend.get(&key).await.unwrap();
+        assert_eq!(data.len(), 1_000_000);
     }
 }

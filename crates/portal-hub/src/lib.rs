@@ -39,11 +39,15 @@
 
 pub mod auth;
 pub mod ephemeral_auth;
+pub mod persistence;
+pub mod replication;
 pub mod routes;
 pub mod server;
 pub mod storage;
 
 // Re-exports
+pub use persistence::{HybridStorage, PersistentStorage};
+pub use replication::{ReplicationConfig, ReplicationManager};
 pub use server::{HubConfig, HubServer};
 pub use storage::HubStorage;
 

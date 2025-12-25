@@ -294,10 +294,10 @@ pub struct ObjectSummary {
 }
 
 /// Field value types for lazy-loading
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub enum FieldValue {
-    /// Raw bytes
-    Bytes(Bytes),
+    /// Raw bytes (stored as Vec<u8> for serde compatibility)
+    Bytes(#[serde(with = "bytes_serde")] Bytes),
     /// UTF-8 string
     String(String),
     /// Integer value
@@ -308,6 +308,31 @@ pub enum FieldValue {
     Bool(bool),
     /// Null/None
     Null,
+    /// Array of values
+    Array(Vec<FieldValue>),
+    /// JSON/structured value
+    Json(serde_json::Value),
+}
+
+/// Custom serialization for Bytes that converts to/from Vec<u8>
+mod bytes_serde {
+    use bytes::Bytes;
+    use serde::{Deserialize, Deserializer, Serialize, Serializer};
+
+    pub fn serialize<S>(bytes: &Bytes, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        serde_bytes::serialize(bytes.as_ref(), serializer)
+    }
+
+    pub fn deserialize<'de, D>(deserializer: D) -> Result<Bytes, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let vec: Vec<u8> = serde_bytes::deserialize(deserializer)?;
+        Ok(Bytes::from(vec))
+    }
 }
 
 impl From<Bytes> for FieldValue {

@@ -6,15 +6,14 @@
 //! - ListObjectsV2 with prefix and delimiter support
 
 use axum::{
-    body::Body,
     extract::{Path, Query, State},
-    http::{header, HeaderMap, Method, Request, StatusCode},
+    http::{header, HeaderMap, StatusCode},
     response::{IntoResponse, Response},
-    routing::{delete, get, head, put},
+    routing::{delete, get, head, post, put},
     Router,
 };
 use bytes::Bytes;
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 
 use warp_store::backend::StorageBackend;
 use warp_store::{ObjectKey, ObjectData, PutOptions, ListOptions};
@@ -32,9 +31,10 @@ pub fn routes<B: StorageBackend>(state: AppState<B>) -> Router {
         .route("/{bucket}", get(list_objects::<B>))
         // Object operations
         .route("/{bucket}/{*key}", get(get_object::<B>))
-        .route("/{bucket}/{*key}", put(put_object::<B>))
-        .route("/{bucket}/{*key}", delete(delete_object::<B>))
+        .route("/{bucket}/{*key}", put(put_or_upload_part::<B>))
+        .route("/{bucket}/{*key}", delete(delete_or_abort::<B>))
         .route("/{bucket}/{*key}", head(head_object::<B>))
+        .route("/{bucket}/{*key}", post(multipart_handler::<B>))
         .with_state(state)
 }
 
@@ -42,7 +42,7 @@ pub fn routes<B: StorageBackend>(state: AppState<B>) -> Router {
 async fn list_buckets<B: StorageBackend>(
     State(state): State<AppState<B>>,
 ) -> ApiResult<Response> {
-    let buckets = state.store.list_buckets();
+    let buckets = state.store.list_buckets().await;
 
     let bucket_xml: String = buckets
         .iter()
@@ -195,10 +195,65 @@ async fn get_object<B: StorageBackend>(
     ).into_response())
 }
 
-/// Put an object
-async fn put_object<B: StorageBackend>(
+/// Head an object (get metadata only)
+async fn head_object<B: StorageBackend>(
     State(state): State<AppState<B>>,
     Path((bucket, key)): Path<(String, String)>,
+) -> ApiResult<Response> {
+    let object_key = ObjectKey::new(&bucket, &key)?;
+    let meta = state.store.head(&object_key).await?;
+
+    let content_type = meta.content_type.unwrap_or_else(|| "application/octet-stream".to_string());
+
+    Ok((
+        StatusCode::OK,
+        [
+            (header::CONTENT_LENGTH, meta.size.to_string()),
+            (header::ETAG, meta.etag),
+            (header::CONTENT_TYPE, content_type),
+        ],
+    ).into_response())
+}
+
+// =============================================================================
+// Multipart Upload API
+// =============================================================================
+
+/// Query parameters for multipart operations
+#[derive(Debug, Deserialize, Default)]
+struct MultipartQuery {
+    /// Upload ID for existing uploads
+    #[serde(rename = "uploadId")]
+    upload_id: Option<String>,
+    /// Part number for part uploads
+    #[serde(rename = "partNumber")]
+    part_number: Option<u32>,
+    /// Flag to initiate upload (presence of "uploads" key)
+    uploads: Option<String>,
+}
+
+/// PUT handler that handles both regular puts and part uploads
+async fn put_or_upload_part<B: StorageBackend>(
+    State(state): State<AppState<B>>,
+    Path((bucket, key)): Path<(String, String)>,
+    Query(query): Query<MultipartQuery>,
+    headers: HeaderMap,
+    body: Bytes,
+) -> ApiResult<Response> {
+    // Check if this is a part upload
+    if let (Some(upload_id), Some(part_number)) = (query.upload_id, query.part_number) {
+        return upload_part_handler(&state, &bucket, &key, &upload_id, part_number, body).await;
+    }
+
+    // Regular PUT object
+    put_object(state, bucket, key, headers, body).await
+}
+
+/// Regular put object handler (extracted)
+async fn put_object<B: StorageBackend>(
+    state: AppState<B>,
+    bucket: String,
+    key: String,
     headers: HeaderMap,
     body: Bytes,
 ) -> ApiResult<Response> {
@@ -224,33 +279,150 @@ async fn put_object<B: StorageBackend>(
     ).into_response())
 }
 
-/// Delete an object
-async fn delete_object<B: StorageBackend>(
+/// Upload a part to a multipart upload
+async fn upload_part_handler<B: StorageBackend>(
+    state: &AppState<B>,
+    _bucket: &str,
+    _key: &str,
+    upload_id: &str,
+    part_number: u32,
+    body: Bytes,
+) -> ApiResult<Response> {
+
+    // Get upload from state
+    let upload = state.get_upload(upload_id).ok_or_else(|| {
+        crate::error::ApiError::InvalidRequest(format!("Upload {} not found", upload_id))
+    })?;
+
+    let data = ObjectData::from(body.to_vec());
+    let part_info = state.store.upload_part(&upload, part_number, data).await?;
+
+    // Store part info
+    state.add_part(upload_id, part_info.clone());
+
+    Ok((
+        StatusCode::OK,
+        [(header::ETAG, part_info.etag)],
+        "",
+    ).into_response())
+}
+
+/// DELETE handler that handles both regular deletes and abort multipart
+async fn delete_or_abort<B: StorageBackend>(
     State(state): State<AppState<B>>,
     Path((bucket, key)): Path<(String, String)>,
+    Query(query): Query<MultipartQuery>,
 ) -> ApiResult<Response> {
+    // Check if this is an abort multipart
+    if let Some(upload_id) = query.upload_id {
+        return abort_multipart_handler(&state, &bucket, &key, &upload_id).await;
+    }
+
+    // Regular DELETE object
     let object_key = ObjectKey::new(&bucket, &key)?;
     state.store.delete(&object_key).await?;
 
     Ok(StatusCode::NO_CONTENT.into_response())
 }
 
-/// Head an object (get metadata only)
-async fn head_object<B: StorageBackend>(
+/// Abort a multipart upload
+async fn abort_multipart_handler<B: StorageBackend>(
+    state: &AppState<B>,
+    bucket: &str,
+    key: &str,
+    upload_id: &str,
+) -> ApiResult<Response> {
+    let upload = state.get_upload(upload_id).ok_or_else(|| {
+        crate::error::ApiError::InvalidRequest(format!("Upload {} not found", upload_id))
+    })?;
+
+    state.store.abort_multipart(&upload).await?;
+    state.remove_upload(upload_id);
+
+    Ok(StatusCode::NO_CONTENT.into_response())
+}
+
+/// POST handler for multipart operations (create and complete)
+async fn multipart_handler<B: StorageBackend>(
     State(state): State<AppState<B>>,
     Path((bucket, key)): Path<(String, String)>,
+    Query(query): Query<MultipartQuery>,
+    body: Bytes,
 ) -> ApiResult<Response> {
-    let object_key = ObjectKey::new(&bucket, &key)?;
-    let meta = state.store.head(&object_key).await?;
+    // Check if this is create multipart (POST with ?uploads)
+    if query.uploads.is_some() {
+        return create_multipart_handler(&state, &bucket, &key).await;
+    }
 
-    let content_type = meta.content_type.unwrap_or_else(|| "application/octet-stream".to_string());
+    // Otherwise it's complete multipart (POST with ?uploadId=xxx)
+    if let Some(upload_id) = query.upload_id {
+        return complete_multipart_handler(&state, &bucket, &key, &upload_id, body).await;
+    }
+
+    Err(crate::error::ApiError::InvalidRequest("Invalid multipart request".to_string()))
+}
+
+/// Create a new multipart upload
+async fn create_multipart_handler<B: StorageBackend>(
+    state: &AppState<B>,
+    bucket: &str,
+    key: &str,
+) -> ApiResult<Response> {
+    let object_key = ObjectKey::new(bucket, key)?;
+    let upload = state.store.create_multipart(&object_key).await?;
+
+    // Store upload in state
+    state.add_upload(upload.upload_id.clone(), upload.clone());
+
+    let xml = format!(
+        r#"<?xml version="1.0" encoding="UTF-8"?>
+<InitiateMultipartUploadResult>
+    <Bucket>{}</Bucket>
+    <Key>{}</Key>
+    <UploadId>{}</UploadId>
+</InitiateMultipartUploadResult>"#,
+        bucket, key, upload.upload_id
+    );
 
     Ok((
         StatusCode::OK,
-        [
-            (header::CONTENT_LENGTH, meta.size.to_string()),
-            (header::ETAG, meta.etag),
-            (header::CONTENT_TYPE, content_type),
-        ],
+        [(header::CONTENT_TYPE, "application/xml")],
+        xml,
+    ).into_response())
+}
+
+/// Complete a multipart upload
+async fn complete_multipart_handler<B: StorageBackend>(
+    state: &AppState<B>,
+    bucket: &str,
+    key: &str,
+    upload_id: &str,
+    _body: Bytes,
+) -> ApiResult<Response> {
+    let upload = state.get_upload(upload_id).ok_or_else(|| {
+        crate::error::ApiError::InvalidRequest(format!("Upload {} not found", upload_id))
+    })?;
+
+    // Get parts from state (we track them as they're uploaded)
+    let parts = state.get_parts(upload_id);
+
+    let meta = state.store.complete_multipart(&upload, parts).await?;
+    state.remove_upload(upload_id);
+
+    let xml = format!(
+        r#"<?xml version="1.0" encoding="UTF-8"?>
+<CompleteMultipartUploadResult>
+    <Location>/{}/{}</Location>
+    <Bucket>{}</Bucket>
+    <Key>{}</Key>
+    <ETag>{}</ETag>
+</CompleteMultipartUploadResult>"#,
+        bucket, key, bucket, key, meta.etag
+    );
+
+    Ok((
+        StatusCode::OK,
+        [(header::CONTENT_TYPE, "application/xml")],
+        xml,
     ).into_response())
 }

@@ -53,13 +53,14 @@ use std::net::SocketAddr;
 use std::sync::Arc;
 
 use axum::Router;
+use dashmap::DashMap;
 use tokio::net::TcpListener;
 use tower_http::cors::CorsLayer;
 use tower_http::trace::TraceLayer;
 use tracing::info;
 
-use warp_store::{Store, StoreConfig};
-use warp_store::backend::StorageBackend;
+use warp_store::{Store, StoreConfig, MetricsCollector};
+use warp_store::backend::{StorageBackend, MultipartUpload, PartInfo};
 
 /// API server configuration
 #[derive(Debug, Clone)]
@@ -103,6 +104,15 @@ pub struct AppState<B: StorageBackend> {
 
     /// API configuration
     pub config: ApiConfig,
+
+    /// Metrics collector
+    pub metrics: Option<Arc<MetricsCollector>>,
+
+    /// Active multipart uploads (upload_id -> MultipartUpload)
+    uploads: Arc<DashMap<String, MultipartUpload>>,
+
+    /// Parts for each upload (upload_id -> Vec<PartInfo>)
+    parts: Arc<DashMap<String, Vec<PartInfo>>>,
 }
 
 impl<B: StorageBackend> Clone for AppState<B> {
@@ -110,7 +120,44 @@ impl<B: StorageBackend> Clone for AppState<B> {
         Self {
             store: Arc::clone(&self.store),
             config: self.config.clone(),
+            metrics: self.metrics.clone(),
+            uploads: Arc::clone(&self.uploads),
+            parts: Arc::clone(&self.parts),
         }
+    }
+}
+
+impl<B: StorageBackend> AppState<B> {
+    /// Add a new multipart upload
+    pub fn add_upload(&self, upload_id: String, upload: MultipartUpload) {
+        self.uploads.insert(upload_id.clone(), upload);
+        self.parts.insert(upload_id, Vec::new());
+    }
+
+    /// Get an existing upload
+    pub fn get_upload(&self, upload_id: &str) -> Option<MultipartUpload> {
+        self.uploads.get(upload_id).map(|u: dashmap::mapref::one::Ref<'_, String, MultipartUpload>| u.value().clone())
+    }
+
+    /// Add a part to an upload
+    pub fn add_part(&self, upload_id: &str, part: PartInfo) {
+        if let Some(mut parts) = self.parts.get_mut(upload_id) {
+            parts.value_mut().push(part);
+        }
+    }
+
+    /// Get all parts for an upload
+    pub fn get_parts(&self, upload_id: &str) -> Vec<PartInfo> {
+        self.parts
+            .get(upload_id)
+            .map(|p: dashmap::mapref::one::Ref<'_, String, Vec<PartInfo>>| p.value().clone())
+            .unwrap_or_default()
+    }
+
+    /// Remove an upload and its parts
+    pub fn remove_upload(&self, upload_id: &str) {
+        self.uploads.remove(upload_id);
+        self.parts.remove(upload_id);
     }
 }
 
@@ -126,6 +173,9 @@ impl ApiServer<warp_store::backend::LocalBackend> {
             state: AppState {
                 store: Arc::new(store),
                 config,
+                metrics: Some(Arc::new(MetricsCollector::new())),
+                uploads: Arc::new(DashMap::new()),
+                parts: Arc::new(DashMap::new()),
             },
         }
     }
@@ -138,6 +188,22 @@ impl<B: StorageBackend> ApiServer<B> {
             state: AppState {
                 store: Arc::new(store),
                 config,
+                metrics: Some(Arc::new(MetricsCollector::new())),
+                uploads: Arc::new(DashMap::new()),
+                parts: Arc::new(DashMap::new()),
+            },
+        }
+    }
+
+    /// Create with custom backend and optional metrics
+    pub fn with_backend_and_metrics(store: Store<B>, config: ApiConfig, metrics: Option<Arc<MetricsCollector>>) -> Self {
+        Self {
+            state: AppState {
+                store: Arc::new(store),
+                config,
+                metrics,
+                uploads: Arc::new(DashMap::new()),
+                parts: Arc::new(DashMap::new()),
             },
         }
     }

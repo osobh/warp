@@ -490,3 +490,137 @@ async fn test_large_object() {
     assert_eq!(received.len(), data.len());
     assert_eq!(received.as_ref(), data.as_slice());
 }
+
+// =============================================================================
+// Multipart Upload Tests
+// =============================================================================
+
+#[tokio::test]
+async fn test_s3_multipart_upload() {
+    let server = TestServer::new().await;
+
+    // Create bucket
+    server.client.put(server.url("/multipart")).send().await.unwrap();
+
+    // 1. Create multipart upload
+    let resp = server.client
+        .post(server.url("/multipart/large-file.bin?uploads"))
+        .send()
+        .await
+        .unwrap();
+
+    assert_eq!(resp.status(), 200);
+    let body = resp.text().await.unwrap();
+    assert!(body.contains("<InitiateMultipartUploadResult>"));
+    assert!(body.contains("<UploadId>"));
+
+    // Extract upload ID from XML
+    let upload_id = body
+        .split("<UploadId>")
+        .nth(1)
+        .and_then(|s| s.split("</UploadId>").next())
+        .unwrap();
+
+    // 2. Upload parts
+    let part1_data = b"Part 1 data ".to_vec();
+    let resp = server.client
+        .put(server.url(&format!(
+            "/multipart/large-file.bin?uploadId={}&partNumber=1",
+            upload_id
+        )))
+        .body(part1_data.clone())
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 200);
+    assert!(resp.headers().contains_key("etag"));
+
+    let part2_data = b"Part 2 data".to_vec();
+    let resp = server.client
+        .put(server.url(&format!(
+            "/multipart/large-file.bin?uploadId={}&partNumber=2",
+            upload_id
+        )))
+        .body(part2_data.clone())
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 200);
+
+    // 3. Complete multipart upload
+    let resp = server.client
+        .post(server.url(&format!(
+            "/multipart/large-file.bin?uploadId={}",
+            upload_id
+        )))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 200);
+    let body = resp.text().await.unwrap();
+    assert!(body.contains("<CompleteMultipartUploadResult>"));
+
+    // 4. Verify final object
+    let resp = server.client
+        .get(server.url("/multipart/large-file.bin"))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 200);
+    let data = resp.bytes().await.unwrap();
+    let expected: Vec<u8> = [part1_data, part2_data].concat();
+    assert_eq!(data.as_ref(), expected.as_slice());
+}
+
+#[tokio::test]
+async fn test_s3_multipart_upload_abort() {
+    let server = TestServer::new().await;
+
+    // Create bucket
+    server.client.put(server.url("/abort-test")).send().await.unwrap();
+
+    // Create multipart upload
+    let resp = server.client
+        .post(server.url("/abort-test/to-abort.bin?uploads"))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 200);
+    let body = resp.text().await.unwrap();
+
+    let upload_id = body
+        .split("<UploadId>")
+        .nth(1)
+        .and_then(|s| s.split("</UploadId>").next())
+        .unwrap();
+
+    // Upload a part
+    server.client
+        .put(server.url(&format!(
+            "/abort-test/to-abort.bin?uploadId={}&partNumber=1",
+            upload_id
+        )))
+        .body("some data")
+        .send()
+        .await
+        .unwrap();
+
+    // Abort the upload
+    let resp = server.client
+        .delete(server.url(&format!(
+            "/abort-test/to-abort.bin?uploadId={}",
+            upload_id
+        )))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 204);
+
+    // Object should not exist
+    let resp = server.client
+        .get(server.url("/abort-test/to-abort.bin"))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 404);
+}

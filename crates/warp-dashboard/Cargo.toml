@@ -18,10 +18,12 @@ thiserror.workspace = true
 tracing.workspace = true
 warp-config = { workspace = true }
 warp-telemetry = { workspace = true }
+warp-ipc = { workspace = true }
 askama = "0.12"
 askama_axum = "0.4"
 uuid = { version = "1.16", features = ["v4", "serde"] }
 tokio-stream = { version = "0.1", features = ["sync"] }
+chrono = { version = "0.4", features = ["serde"] }
 
 [dev-dependencies]
 tokio-test = "0.4"

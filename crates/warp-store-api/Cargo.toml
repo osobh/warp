@@ -43,6 +43,7 @@ bytes = { workspace = true }
 tracing = { workspace = true }
 hex = "0.4"
 percent-encoding = "2.3"
+dashmap = { workspace = true }
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["test-util", "macros", "rt-multi-thread"] }
