@@ -1,0 +1,86 @@
+[package]
+name = "warp-store"
+description = "Next-generation HPC object storage - modern S3 replacement with RDMA, GPUDirect, and ephemeral URLs"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[features]
+default = ["local"]
+local = []
+portal = ["portal-hub", "portal-core"]
+parcode = []
+erasure = ["warp-ec"]
+gpu = ["warp-gpu"]
+raft = ["openraft", "sled"]
+# WireGuard tunnel management (currently simulated - boringtun has x25519-dalek version conflict)
+wireguard = []
+# RMPI collective operations for distributed storage
+rmpi = ["dep:rmpi"]
+full = ["local", "portal", "parcode", "erasure", "gpu", "raft", "wireguard", "rmpi"]
+
+[dependencies]
+# Core warp crates
+warp-core = { workspace = true }
+warp-hash = { workspace = true }
+warp-crypto = { workspace = true }
+
+# Optional integrations
+warp-gpu = { workspace = true, optional = true }
+warp-ec = { workspace = true, optional = true }
+portal-hub = { workspace = true, optional = true }
+portal-core = { workspace = true, optional = true }
+openraft = { workspace = true, optional = true }
+sled = { workspace = true, optional = true }
+rmpi = { workspace = true, optional = true }
+
+# Async runtime
+tokio = { workspace = true }
+
+# Cryptography for ephemeral tokens and WireGuard
+ed25519-dalek = { workspace = true }
+x25519-dalek = { version = "2.0", features = ["static_secrets"] }
+rand = { workspace = true }
+
+# Serialization
+serde = { workspace = true }
+serde_json = { workspace = true }
+rmp-serde = { workspace = true }
+
+# Compression
+zstd = { workspace = true }
+
+# Time handling
+chrono = { version = "0.4", features = ["serde"] }
+
+# IP network for access restrictions
+ipnet = { version = "2.9", features = ["serde"] }
+
+# Concurrent data structures
+dashmap = { workspace = true }
+
+# Error handling
+thiserror = { workspace = true }
+
+# Hashing
+blake3 = { workspace = true }
+
+# Utilities
+bytes = { workspace = true }
+tracing = { workspace = true }
+async-trait = "0.1"
+base64 = "0.22"
+serde_bytes = "0.11"
+hex = "0.4"
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["test-util", "macros", "rt-multi-thread"] }
+tempfile = { workspace = true }
+proptest = { workspace = true }
+criterion = { version = "0.5", features = ["async_tokio"] }
+
+[[bench]]
+name = "storage"
+harness = false

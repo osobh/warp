@@ -22,6 +22,9 @@ members = [
     "crates/warp-config",
     "crates/warp-api",
     "crates/warp-dashboard",
+    "crates/warp-store",
+    "crates/warp-store-api",
+    "crates/warp-ipc",
 ]
 
 [workspace.package]
@@ -59,6 +62,9 @@ warp-telemetry = { path = "crates/warp-telemetry" }
 warp-config = { path = "crates/warp-config" }
 warp-api = { path = "crates/warp-api" }
 warp-dashboard = { path = "crates/warp-dashboard" }
+warp-store = { path = "crates/warp-store" }
+warp-store-api = { path = "crates/warp-store-api" }
+warp-ipc = { path = "crates/warp-ipc" }
 
 # Async runtime
 tokio = { version = "1.48", features = ["full"] }
@@ -81,14 +87,18 @@ ed25519-dalek = { version = "2.1", features = ["rand_core", "serde"] }
 x25519-dalek = { version = "2.0", features = ["static_secrets"] }
 argon2 = "0.5"
 rand = "0.8"
+# Note: boringtun requires x25519-dalek 2.0.0-rc.3 which conflicts with stable 2.0.x
+# WireGuard feature uses simulated tunnels until boringtun updates dependencies
 
 # Serialization
 serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
 rmp-serde = "1.3"
 
 # Parallelism
 rayon = "1.11"
 dashmap = "6.1"
+crossbeam-utils = "0.8"
 
 # CLI
 clap = { version = "4.5", features = ["derive", "env", "wrap_help"] }
@@ -116,6 +126,17 @@ cudarc = { version = "0.18", default-features = false, features = ["driver", "nv
 criterion = { version = "0.5", features = ["html_reports"] }
 proptest = "1.5"
 test-case = "3.3"
+
+# Embedded databases
+sled = "0.34"
+
+# Distributed consensus
+openraft = { version = "0.9", features = ["serde", "storage-v2"] }
+
+# HPC-AI integration
+hpc-channels = { path = "../01-hpc-channels", features = ["rkyv-codec"] }
+rmpi = { path = "../03-rmpi" }
+slai = { path = "../04-slai", default-features = false }
 
 [workspace.lints.rust]
 unsafe_code = "warn"

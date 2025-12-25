@@ -23,6 +23,7 @@ pub mod dispatch;
 pub mod scheduler;
 pub mod reoptimize;
 pub mod constraints;
+pub mod brain_link;
 
 pub use types::{
     ChunkId, EdgeIdx, ChunkState, ChunkStatus, EdgeStateGpu,
@@ -43,6 +44,10 @@ pub use constraints::{
     TimeWindow, TimeConstraint, CostConstraint, PowerConstraint,
     EdgeConstraints, ViolationSeverity, ConstraintViolation,
     ConstraintEvaluator, SchedulePolicy, PolicyEngine,
+};
+pub use brain_link::{
+    BrainLink, BrainLinkStats, ChunkPlacement, ChunkPlacementRequest,
+    CommunicationPattern, EdgeNodeInfo, NetworkLink, TransportType,
 };
 
 use thiserror::Error;

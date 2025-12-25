@@ -7,6 +7,7 @@
 //! - Access analytics and insights
 
 use chrono::{Datelike, Timelike};
+use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, VecDeque};
 use warp_sched::{ChunkId, EdgeIdx};
@@ -178,12 +179,14 @@ impl PatternDetector {
 
     /// Get hot chunks with access count above threshold
     pub fn get_hot_chunks(&self, threshold: usize) -> Vec<(ChunkId, usize)> {
+        // Use parallel iteration for large access count maps
         let mut hot_chunks: Vec<_> = self
             .access_counts
-            .iter()
+            .par_iter()
             .filter(|&(_, &count)| count >= threshold)
             .map(|(&id, &count)| (id, count))
             .collect();
+        // Sort is sequential (parallel sort available via par_sort_by but overkill here)
         hot_chunks.sort_by(|a, b| b.1.cmp(&a.1));
         hot_chunks
     }
@@ -580,9 +583,10 @@ impl Predictor {
 
     /// Get top prefetch candidates
     pub fn get_prefetch_candidates(&self, count: usize) -> Vec<ChunkId> {
+        // Use parallel iteration for filtering and mapping
         let mut candidates: Vec<_> = self
             .recent_predictions
-            .iter()
+            .par_iter()
             .filter(|&(_, &score)| score >= self.config.prefetch_threshold)
             .map(|(&id, &score)| (id, score))
             .collect();

@@ -24,6 +24,13 @@ rmp-serde.workspace = true
 dirs.workspace = true
 tempfile.workspace = true
 
+# HPC-AI integration (optional)
+hpc-channels = { workspace = true, optional = true }
+
+[features]
+default = []
+hpc-channels = ["dep:hpc-channels"]
+
 [dev-dependencies]
 tokio = { workspace = true, features = ["test-util"] }
 tempfile.workspace = true

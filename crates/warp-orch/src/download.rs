@@ -264,9 +264,11 @@ impl SwarmDownloader {
     }
 
     async fn process_active_chunks(&self, session: &mut DownloadSession, completed: &mut Vec<ChunkId>) {
-        let mut to_retry = Vec::new();
-        let mut to_complete = Vec::new();
-        let mut to_fail = Vec::new();
+        let active_count = session.active_chunks.len();
+        // Pre-allocate with estimated rates: ~25% complete, ~10% retry, ~5% fail per tick
+        let mut to_retry = Vec::with_capacity(active_count / 10 + 1);
+        let mut to_complete = Vec::with_capacity(active_count / 4 + 1);
+        let mut to_fail = Vec::with_capacity(active_count / 20 + 1);
 
         for (chunk_id, active) in session.active_chunks.iter_mut() {
             if active.is_complete() {
@@ -436,7 +438,8 @@ fn current_time_ms() -> u64 {
 fn generate_transfer_id() -> u64 {
     use std::sync::atomic::{AtomicU64, Ordering};
     static COUNTER: AtomicU64 = AtomicU64::new(1);
-    COUNTER.fetch_add(1, Ordering::SeqCst)
+    // Relaxed is sufficient for ID generation
+    COUNTER.fetch_add(1, Ordering::Relaxed)
 }
 
 #[cfg(test)]

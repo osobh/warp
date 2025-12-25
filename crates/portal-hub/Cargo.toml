@@ -6,6 +6,10 @@ rust-version.workspace = true
 license.workspace = true
 description = "Portal Hub server for coordinating distributed storage"
 
+[features]
+default = []
+persistence = []
+
 [dependencies]
 # Internal crates
 portal-core.workspace = true
@@ -43,6 +47,9 @@ dashmap.workspace = true
 tracing.workspace = true
 base64 = "0.22"
 hex = "0.4"
+
+# Persistent storage
+sled.workspace = true
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["test-util", "macros", "rt-multi-thread"] }

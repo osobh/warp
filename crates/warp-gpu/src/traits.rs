@@ -5,6 +5,7 @@
 //! Each trait supports both GPU and CPU fallback implementations.
 
 use crate::{GpuContext, Result};
+use rayon::prelude::*;
 use std::sync::Arc;
 
 /// Base trait for GPU-accelerated operations
@@ -60,8 +61,8 @@ pub trait GpuHasher: GpuOp {
     /// # Returns
     /// Vector of hash digests in same order as inputs
     fn hash_batch(&self, inputs: &[&[u8]]) -> Result<Vec<Vec<u8>>> {
-        // Default implementation: hash sequentially
-        inputs.iter().map(|input| self.hash(input)).collect()
+        // Default implementation: hash in parallel using Rayon
+        inputs.par_iter().map(|input| self.hash(input)).collect()
     }
 
     /// Get hash output size in bytes
@@ -136,8 +137,8 @@ pub trait GpuCipher: GpuOp {
         }
 
         plaintexts
-            .iter()
-            .zip(nonces.iter())
+            .par_iter()
+            .zip(nonces.par_iter())
             .map(|(pt, nonce)| self.encrypt(pt, key, nonce, associated_data))
             .collect()
     }
@@ -157,8 +158,8 @@ pub trait GpuCipher: GpuOp {
         }
 
         ciphertexts
-            .iter()
-            .zip(nonces.iter())
+            .par_iter()
+            .zip(nonces.par_iter())
             .map(|(ct, nonce)| self.decrypt(ct, key, nonce, associated_data))
             .collect()
     }
@@ -209,12 +210,12 @@ pub trait GpuCompressor: GpuOp {
     /// # Returns
     /// Vector of compressed buffers in same order
     fn compress_batch(&self, inputs: &[&[u8]]) -> Result<Vec<Vec<u8>>> {
-        inputs.iter().map(|input| self.compress(input)).collect()
+        inputs.par_iter().map(|input| self.compress(input)).collect()
     }
 
     /// Decompress multiple chunks in batch
     fn decompress_batch(&self, inputs: &[&[u8]]) -> Result<Vec<Vec<u8>>> {
-        inputs.iter().map(|input| self.decompress(input)).collect()
+        inputs.par_iter().map(|input| self.decompress(input)).collect()
     }
 
     /// Algorithm name (e.g., "lz4", "zstd")
