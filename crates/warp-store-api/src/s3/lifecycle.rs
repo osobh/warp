@@ -6,7 +6,7 @@
 //! - DELETE /{bucket}?lifecycle - Delete bucket lifecycle configuration
 
 use axum::{
-    extract::{Path, Query, State},
+    extract::{Path, State},
     http::{header, StatusCode},
     response::{IntoResponse, Response},
 };

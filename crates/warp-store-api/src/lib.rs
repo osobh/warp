@@ -61,10 +61,11 @@ use tower_http::cors::CorsLayer;
 use tower_http::trace::TraceLayer;
 use tracing::info;
 
-use warp_store::{Store, StoreConfig, MetricsCollector};
+use warp_store::{Store, MetricsCollector};
 use warp_store::backend::{StorageBackend, MultipartUpload, PartInfo};
 use warp_store::bucket::LifecycleRule;
 use warp_store::events::NotificationConfiguration;
+use warp_store::object_lock::ObjectLockManager;
 
 use s3::BucketPolicyManager;
 
@@ -144,6 +145,9 @@ pub struct AppState<B: StorageBackend> {
     /// Bucket policy manager
     pub policy_manager: Option<Arc<BucketPolicyManager>>,
 
+    /// Object Lock manager for WORM compliance
+    pub object_lock_manager: Option<Arc<ObjectLockManager>>,
+
     /// IAM managers for authentication and authorization
     #[cfg(feature = "iam")]
     pub iam: Option<Arc<IamManagers>>,
@@ -160,6 +164,7 @@ impl<B: StorageBackend> Clone for AppState<B> {
             lifecycle_rules: Arc::clone(&self.lifecycle_rules),
             notification_configs: Arc::clone(&self.notification_configs),
             policy_manager: self.policy_manager.clone(),
+            object_lock_manager: self.object_lock_manager.clone(),
             #[cfg(feature = "iam")]
             iam: self.iam.clone(),
         }
@@ -264,6 +269,7 @@ impl ApiServer<warp_store::backend::LocalBackend> {
                 lifecycle_rules: Arc::new(DashMap::new()),
                 notification_configs: Arc::new(DashMap::new()),
                 policy_manager: Some(Arc::new(BucketPolicyManager::new())),
+                object_lock_manager: Some(Arc::new(ObjectLockManager::new())),
                 #[cfg(feature = "iam")]
                 iam,
             },
@@ -291,6 +297,7 @@ impl<B: StorageBackend> ApiServer<B> {
                 lifecycle_rules: Arc::new(DashMap::new()),
                 notification_configs: Arc::new(DashMap::new()),
                 policy_manager: Some(Arc::new(BucketPolicyManager::new())),
+                object_lock_manager: Some(Arc::new(ObjectLockManager::new())),
                 #[cfg(feature = "iam")]
                 iam,
             },
@@ -316,6 +323,7 @@ impl<B: StorageBackend> ApiServer<B> {
                 lifecycle_rules: Arc::new(DashMap::new()),
                 notification_configs: Arc::new(DashMap::new()),
                 policy_manager: Some(Arc::new(BucketPolicyManager::new())),
+                object_lock_manager: Some(Arc::new(ObjectLockManager::new())),
                 #[cfg(feature = "iam")]
                 iam,
             },

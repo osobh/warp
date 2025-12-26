@@ -27,6 +27,7 @@ mod select;
 
 mod lifecycle;
 mod notifications;
+mod object_lock;
 mod policy;
 
 #[cfg(feature = "s3-select")]
@@ -34,6 +35,7 @@ pub use select::{SelectObjectContentRequest, SelectQuery};
 
 pub use lifecycle::{LifecycleConfigurationXml, LifecycleQuery};
 pub use notifications::NotificationConfigurationXml;
+pub use object_lock::{ObjectLockConfigurationXml, RetentionXml, LegalHoldXml};
 pub use policy::{BucketPolicyManager, PolicyDocument, get_s3_action};
 
 /// Create S3 API routes
@@ -88,9 +90,12 @@ struct BucketPutQuery {
     notification: Option<String>,
     /// Policy query parameter (presence indicates policy request)
     policy: Option<String>,
+    /// Object Lock query parameter (presence indicates object-lock request)
+    #[serde(rename = "object-lock")]
+    object_lock: Option<String>,
 }
 
-/// Create a bucket or set lifecycle/notification/policy configuration
+/// Create a bucket or set lifecycle/notification/policy/object-lock configuration
 async fn create_bucket<B: StorageBackend>(
     State(state): State<AppState<B>>,
     Path(bucket): Path<String>,
@@ -110,6 +115,11 @@ async fn create_bucket<B: StorageBackend>(
     // Check if this is a policy request
     if query.policy.is_some() {
         return policy::put_policy(State(state), Path(bucket), body).await;
+    }
+
+    // Check if this is an object-lock request
+    if query.object_lock.is_some() {
+        return object_lock::put_object_lock_config(State(state), Path(bucket), body).await;
     }
 
     state.store.create_bucket(&bucket, Default::default()).await?;
@@ -158,7 +168,7 @@ async fn delete_bucket<B: StorageBackend>(
     Ok(StatusCode::NO_CONTENT.into_response())
 }
 
-/// List objects query parameters (also handles lifecycle, notification, and policy requests)
+/// List objects query parameters (also handles lifecycle, notification, policy, and object-lock requests)
 #[derive(Debug, Deserialize, Default)]
 #[serde(rename_all = "kebab-case")]
 struct ListObjectsQuery {
@@ -176,9 +186,11 @@ struct ListObjectsQuery {
     notification: Option<String>,
     /// Policy query parameter (presence indicates policy request)
     policy: Option<String>,
+    /// Object Lock query parameter (presence indicates object-lock request)
+    object_lock: Option<String>,
 }
 
-/// List objects in a bucket (ListObjectsV2) or get lifecycle/notification/policy configuration
+/// List objects in a bucket (ListObjectsV2) or get lifecycle/notification/policy/object-lock configuration
 async fn list_objects<B: StorageBackend>(
     State(state): State<AppState<B>>,
     Path(bucket): Path<String>,
@@ -197,6 +209,11 @@ async fn list_objects<B: StorageBackend>(
     // Check if this is a policy request
     if query.policy.is_some() {
         return policy::get_policy(State(state), Path(bucket)).await;
+    }
+
+    // Check if this is an object-lock request
+    if query.object_lock.is_some() {
+        return object_lock::get_object_lock_config(State(state), Path(bucket)).await;
     }
 
     let prefix = query.prefix.unwrap_or_default();
@@ -264,11 +281,41 @@ async fn list_objects<B: StorageBackend>(
     ).into_response())
 }
 
-/// Get an object
+/// Query parameters for object GET operations
+#[derive(Debug, Deserialize, Default)]
+#[serde(rename_all = "kebab-case")]
+struct ObjectGetQuery {
+    /// Retention query parameter (presence indicates retention request)
+    retention: Option<String>,
+    /// Legal hold query parameter (presence indicates legal-hold request)
+    legal_hold: Option<String>,
+    /// Version ID for versioned objects
+    #[serde(rename = "versionId")]
+    version_id: Option<String>,
+}
+
+/// Get an object (or retention/legal-hold status)
 async fn get_object<B: StorageBackend>(
     State(state): State<AppState<B>>,
     Path((bucket, key)): Path<(String, String)>,
+    Query(query): Query<ObjectGetQuery>,
 ) -> ApiResult<Response> {
+    // Check if this is a retention request
+    if query.retention.is_some() {
+        let lock_query = object_lock::ObjectLockQuery {
+            version_id: query.version_id,
+        };
+        return object_lock::get_retention(State(state), Path((bucket, key)), Query(lock_query)).await;
+    }
+
+    // Check if this is a legal-hold request
+    if query.legal_hold.is_some() {
+        let lock_query = object_lock::ObjectLockQuery {
+            version_id: query.version_id,
+        };
+        return object_lock::get_legal_hold(State(state), Path((bucket, key)), Query(lock_query)).await;
+    }
+
     let object_key = ObjectKey::new(&bucket, &key)?;
     let data = state.store.get(&object_key).await?;
     let meta = state.store.head(&object_key).await?;
@@ -310,8 +357,9 @@ async fn head_object<B: StorageBackend>(
 // Multipart Upload API
 // =============================================================================
 
-/// Query parameters for multipart operations and S3 Select
+/// Query parameters for multipart operations, S3 Select, and Object Lock
 #[derive(Debug, Deserialize, Default)]
+#[serde(rename_all = "kebab-case")]
 struct MultipartQuery {
     /// Upload ID for existing uploads
     #[serde(rename = "uploadId")]
@@ -328,9 +376,16 @@ struct MultipartQuery {
     #[cfg(feature = "s3-select")]
     #[serde(rename = "select-type")]
     select_type: Option<String>,
+    /// Retention query parameter (presence indicates retention request)
+    retention: Option<String>,
+    /// Legal hold query parameter (presence indicates legal-hold request)
+    legal_hold: Option<String>,
+    /// Version ID for versioned objects
+    #[serde(rename = "versionId")]
+    version_id: Option<String>,
 }
 
-/// PUT handler that handles both regular puts and part uploads
+/// PUT handler that handles regular puts, part uploads, retention, and legal-hold
 async fn put_or_upload_part<B: StorageBackend>(
     State(state): State<AppState<B>>,
     Path((bucket, key)): Path<(String, String)>,
@@ -338,6 +393,22 @@ async fn put_or_upload_part<B: StorageBackend>(
     headers: HeaderMap,
     body: Bytes,
 ) -> ApiResult<Response> {
+    // Check if this is a retention request
+    if query.retention.is_some() {
+        let lock_query = object_lock::ObjectLockQuery {
+            version_id: query.version_id,
+        };
+        return object_lock::put_retention(State(state), Path((bucket, key)), Query(lock_query), headers, body).await;
+    }
+
+    // Check if this is a legal-hold request
+    if query.legal_hold.is_some() {
+        let lock_query = object_lock::ObjectLockQuery {
+            version_id: query.version_id,
+        };
+        return object_lock::put_legal_hold(State(state), Path((bucket, key)), Query(lock_query), body).await;
+    }
+
     // Check if this is a part upload
     if let (Some(upload_id), Some(part_number)) = (query.upload_id, query.part_number) {
         return upload_part_handler(&state, &bucket, &key, &upload_id, part_number, body).await;
