@@ -44,6 +44,12 @@ use serde::{Deserialize, Serialize};
 use tokio::sync::broadcast;
 use tracing::{debug, info, warn};
 
+#[cfg(feature = "hpc-channels")]
+use hpc_channels::{
+    channels, broadcast as hpc_broadcast,
+    StorageEventMessage, StorageEventRecord, StorageBucketInfo, StorageObjectInfo, StorageUserIdentity,
+};
+
 use crate::ObjectKey;
 
 /// Channel capacity for event broadcast
@@ -784,7 +790,11 @@ impl Default for EventConfig {
         Self {
             enabled: true,
             channel_capacity: EVENT_CHANNEL_CAPACITY,
-            hpc_channels_enabled: false, // Disabled by default until hpc-channels dependency is added
+            // Enable HPC-Channels by default when the feature is enabled
+            #[cfg(feature = "hpc-channels")]
+            hpc_channels_enabled: true,
+            #[cfg(not(feature = "hpc-channels"))]
+            hpc_channels_enabled: false,
             region: "warp-local".to_string(),
         }
     }
@@ -800,6 +810,10 @@ pub struct EventEmitter {
 
     /// Notification configurations per bucket
     notifications: Arc<dashmap::DashMap<String, NotificationConfiguration>>,
+
+    /// HPC-Channels broadcast sender (when feature is enabled)
+    #[cfg(feature = "hpc-channels")]
+    hpc_sender: tokio::sync::broadcast::Sender<StorageEventMessage>,
 }
 
 impl EventEmitter {
@@ -807,16 +821,37 @@ impl EventEmitter {
     pub fn new(config: EventConfig) -> Self {
         let (sender, _) = broadcast::channel(config.channel_capacity);
 
+        #[cfg(feature = "hpc-channels")]
+        let hpc_sender = if config.hpc_channels_enabled {
+            // Register with global HPC-Channels registry
+            hpc_broadcast::<StorageEventMessage>(channels::STORAGE_EVENTS, config.channel_capacity)
+        } else {
+            // Create a dummy sender that won't be used
+            let (tx, _) = tokio::sync::broadcast::channel(1);
+            tx
+        };
+
         Self {
             config,
             sender,
             notifications: Arc::new(dashmap::DashMap::new()),
+            #[cfg(feature = "hpc-channels")]
+            hpc_sender,
         }
     }
 
-    /// Subscribe to all events
+    /// Subscribe to all events (local broadcast channel)
     pub fn subscribe(&self) -> broadcast::Receiver<S3Event> {
         self.sender.subscribe()
+    }
+
+    /// Subscribe to HPC-Channels storage events
+    ///
+    /// This allows receiving events from the global HPC-Channels registry,
+    /// which can include events from multiple warp-store instances.
+    #[cfg(feature = "hpc-channels")]
+    pub fn subscribe_hpc_channels(&self) -> tokio::sync::broadcast::Receiver<StorageEventMessage> {
+        self.hpc_sender.subscribe()
     }
 
     /// Set notification configuration for a bucket
@@ -896,13 +931,61 @@ impl EventEmitter {
     }
 
     /// Send event to HPC-Channels global broadcast
+    #[cfg(feature = "hpc-channels")]
     fn send_to_hpc_channels(&self, event: &S3Event) {
-        // This would use hpc_channels::broadcast to send the event
-        // For now, just log it
+        // Convert S3Event to StorageEventMessage for HPC-Channels
+        let record = StorageEventRecord {
+            event_version: event.event_version.clone(),
+            event_source: event.event_source.clone(),
+            aws_region: event.aws_region.clone(),
+            event_time: event.event_time.to_rfc3339(),
+            event_name: event.event_name.clone(),
+            user_identity: StorageUserIdentity {
+                principal_id: event.user_identity.principal_id.clone(),
+            },
+            bucket: StorageBucketInfo {
+                name: event.s3.bucket.name.clone(),
+                arn: event.s3.bucket.arn.clone(),
+            },
+            object: StorageObjectInfo {
+                key: event.s3.object.key.clone(),
+                size: event.s3.object.size,
+                etag: event.s3.object.etag.clone(),
+                version_id: event.s3.object.version_id.clone(),
+                sequencer: event.s3.object.sequencer.clone(),
+            },
+        };
+
+        let message = StorageEventMessage::from_record(record);
+
+        // Broadcast to HPC-Channels
+        match self.hpc_sender.send(message) {
+            Ok(receivers) => {
+                debug!(
+                    channel = STORAGE_EVENTS_CHANNEL,
+                    event = event.event_name.as_str(),
+                    receivers = receivers,
+                    "Broadcast to HPC-Channels"
+                );
+            }
+            Err(e) => {
+                debug!(
+                    channel = STORAGE_EVENTS_CHANNEL,
+                    event = event.event_name.as_str(),
+                    error = ?e,
+                    "No active HPC-Channels subscribers"
+                );
+            }
+        }
+    }
+
+    /// Send event to HPC-Channels global broadcast (stub when feature disabled)
+    #[cfg(not(feature = "hpc-channels"))]
+    fn send_to_hpc_channels(&self, event: &S3Event) {
         debug!(
             channel = STORAGE_EVENTS_CHANNEL,
             event = event.event_name.as_str(),
-            "Would broadcast to HPC-Channels"
+            "HPC-Channels feature not enabled"
         );
     }
 
@@ -1047,5 +1130,53 @@ mod tests {
             retrieved.hpc_channel_configurations[0].channel_id,
             "hpc.storage.events"
         );
+    }
+
+    #[cfg(feature = "hpc-channels")]
+    #[test]
+    fn test_hpc_channels_event_publishing() {
+        let config = EventConfig {
+            enabled: true,
+            channel_capacity: 16,
+            hpc_channels_enabled: true,
+            region: "test-region".to_string(),
+        };
+        let emitter = EventEmitter::new(config);
+        let mut hpc_rx = emitter.subscribe_hpc_channels();
+
+        // Emit an event
+        let key = ObjectKey::new("test-bucket", "test-key.txt").unwrap();
+        emitter.emit_object_created(&key, 1024, "\"test-etag\"");
+
+        // Check that the event was received via HPC-Channels
+        let message = hpc_rx.try_recv().unwrap();
+        assert_eq!(message.records.len(), 1);
+
+        let record = &message.records[0];
+        assert_eq!(record.event_name, "s3:ObjectCreated:Put");
+        assert_eq!(record.bucket.name, "test-bucket");
+        assert_eq!(record.object.key, "test-key.txt");
+        assert_eq!(record.object.size, 1024);
+        assert_eq!(record.object.etag, "\"test-etag\"");
+    }
+
+    #[cfg(feature = "hpc-channels")]
+    #[test]
+    fn test_hpc_channels_disabled() {
+        let config = EventConfig {
+            enabled: true,
+            channel_capacity: 16,
+            hpc_channels_enabled: false,  // HPC-Channels disabled
+            region: "test-region".to_string(),
+        };
+        let emitter = EventEmitter::new(config);
+        let mut hpc_rx = emitter.subscribe_hpc_channels();
+
+        // Emit an event - should NOT be sent to HPC-Channels
+        let key = ObjectKey::new("test-bucket", "test-key.txt").unwrap();
+        emitter.emit_object_created(&key, 1024, "\"test-etag\"");
+
+        // Should not receive anything (hpc_channels_enabled is false)
+        assert!(hpc_rx.try_recv().is_err());
     }
 }

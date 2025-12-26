@@ -19,7 +19,9 @@ raft = ["openraft", "sled"]
 wireguard = []
 # RMPI collective operations for distributed storage
 rmpi = ["dep:rmpi"]
-full = ["local", "portal", "parcode", "erasure", "gpu", "raft", "wireguard", "rmpi"]
+# HPC-Channels integration for event publishing
+hpc-channels = ["dep:hpc-channels"]
+full = ["local", "portal", "parcode", "erasure", "gpu", "raft", "wireguard", "rmpi", "hpc-channels"]
 
 [dependencies]
 # Core warp crates
@@ -35,6 +37,7 @@ portal-core = { workspace = true, optional = true }
 openraft = { workspace = true, optional = true }
 sled = { workspace = true, optional = true }
 rmpi = { workspace = true, optional = true }
+hpc-channels = { workspace = true, optional = true }
 
 # Async runtime
 tokio = { workspace = true }
