@@ -104,11 +104,11 @@ pub use traits::{GpuOp, GpuHasher, GpuCipher, GpuCompressor};
 #[cfg(feature = "cuda")]
 pub use blake3::{Blake3Hasher, Blake3Batch};
 #[cfg(feature = "metal")]
-pub use blake3_metal::BLAKE3_METAL_KERNEL;
+pub use blake3_metal::{BLAKE3_METAL_KERNEL, MetalBlake3Hasher};
 #[cfg(feature = "cuda")]
 pub use chacha20::{ChaCha20Poly1305, EncryptionBatch};
 #[cfg(feature = "metal")]
-pub use chacha20_metal::CHACHA20_METAL_KERNEL;
+pub use chacha20_metal::{CHACHA20_METAL_KERNEL, MetalChaCha20Cipher};
 #[cfg(feature = "cuda")]
 pub use stream::{StreamConfig, StreamManager, StreamGuard, PipelineExecutor};
 #[cfg(feature = "cuda")]

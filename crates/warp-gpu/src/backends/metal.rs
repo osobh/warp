@@ -12,8 +12,8 @@ use objc2::rc::Retained;
 use objc2::runtime::ProtocolObject;
 use objc2_foundation::NSString;
 use objc2_metal::{
-    MTLBuffer, MTLCommandBuffer, MTLCommandQueue, MTLComputePipelineState, MTLDevice,
-    MTLFunction, MTLLibrary, MTLResourceOptions,
+    MTLBuffer, MTLCommandBuffer, MTLCommandEncoder, MTLCommandQueue, MTLComputeCommandEncoder,
+    MTLComputePipelineState, MTLDevice, MTLFunction, MTLLibrary, MTLResourceOptions, MTLSize,
 };
 use std::ptr::NonNull;
 use tracing::{debug, info};
@@ -249,6 +249,198 @@ impl MetalBackend {
     pub fn command_queue(&self) -> &Retained<ProtocolObject<dyn MTLCommandQueue>> {
         &self.command_queue
     }
+
+    /// Dispatch a compute kernel
+    ///
+    /// This is the core method for executing Metal compute kernels. It creates a command
+    /// buffer, sets up the compute encoder, binds buffers and constants, dispatches the
+    /// kernel, and waits for completion.
+    ///
+    /// # Arguments
+    ///
+    /// * `function` - The compiled compute pipeline to execute
+    /// * `buffers` - Slice of buffers to bind (in order: buffer(0), buffer(1), ...)
+    /// * `constants` - Raw bytes for constant buffer (bound after all buffers)
+    /// * `grid_size` - Number of threadgroups in (x, y, z)
+    /// * `threadgroup_size` - Threads per threadgroup in (x, y, z)
+    ///
+    /// # Returns
+    ///
+    /// Ok(()) on success, or an error if kernel dispatch fails
+    pub fn dispatch_kernel(
+        &self,
+        function: &MetalFunction,
+        buffers: &[&MetalBuffer],
+        constants: &[u8],
+        grid_size: (u32, u32, u32),
+        threadgroup_size: (u32, u32, u32),
+    ) -> Result<()> {
+        // Create command buffer
+        let cmd_buffer = self.command_queue.commandBuffer()
+            .ok_or_else(|| Error::MetalOperation("Failed to create command buffer".into()))?;
+
+        // Create compute command encoder
+        let encoder = cmd_buffer.computeCommandEncoder()
+            .ok_or_else(|| Error::MetalOperation("Failed to create compute command encoder".into()))?;
+
+        // Set the compute pipeline state
+        encoder.setComputePipelineState(&function.pipeline);
+
+        // Bind buffers in order
+        // SAFETY: buffers are valid Metal buffers from this backend
+        for (idx, buffer) in buffers.iter().enumerate() {
+            unsafe {
+                encoder.setBuffer_offset_atIndex(
+                    Some(&buffer.buffer),
+                    0,
+                    idx as usize,
+                );
+            }
+        }
+
+        // Set constants if provided (bound after all buffers)
+        if !constants.is_empty() {
+            let ptr = NonNull::new(constants.as_ptr() as *mut std::ffi::c_void)
+                .ok_or_else(|| Error::InvalidOperation("Null pointer in constants".into()))?;
+
+            // SAFETY: ptr points to valid constant data for the duration of this call
+            unsafe {
+                encoder.setBytes_length_atIndex(
+                    ptr,
+                    constants.len(),
+                    buffers.len(),
+                );
+            }
+        }
+
+        // Create MTLSize structs for dispatch
+        let grid = MTLSize {
+            width: grid_size.0 as usize,
+            height: grid_size.1 as usize,
+            depth: grid_size.2 as usize,
+        };
+
+        let threadgroup = MTLSize {
+            width: threadgroup_size.0 as usize,
+            height: threadgroup_size.1 as usize,
+            depth: threadgroup_size.2 as usize,
+        };
+
+        // Dispatch the compute kernel
+        encoder.dispatchThreadgroups_threadsPerThreadgroup(grid, threadgroup);
+
+        // End encoding
+        encoder.endEncoding();
+
+        // Commit and wait for completion
+        cmd_buffer.commit();
+        cmd_buffer.waitUntilCompleted();
+
+        debug!(
+            "Metal kernel dispatched: grid={:?} threadgroup={:?}",
+            grid_size, threadgroup_size
+        );
+
+        Ok(())
+    }
+
+    /// Dispatch a compute kernel with automatic threadgroup sizing
+    ///
+    /// This variant automatically calculates the optimal threadgroup size based on
+    /// the pipeline's execution width and the total number of threads needed.
+    ///
+    /// # Arguments
+    ///
+    /// * `function` - The compiled compute pipeline to execute
+    /// * `buffers` - Slice of buffers to bind
+    /// * `constants` - Raw bytes for constant buffer
+    /// * `total_threads` - Total number of threads to dispatch in (x, y, z)
+    pub fn dispatch_kernel_auto(
+        &self,
+        function: &MetalFunction,
+        buffers: &[&MetalBuffer],
+        constants: &[u8],
+        total_threads: (u32, u32, u32),
+    ) -> Result<()> {
+        // Get the pipeline's thread execution width
+        let thread_execution_width = function.pipeline.threadExecutionWidth() as u32;
+
+        // Calculate optimal threadgroup size (use execution width for x, 1 for y/z)
+        let tg_x = thread_execution_width.min(total_threads.0);
+        let tg_y = 1u32.min(total_threads.1);
+        let tg_z = 1u32.min(total_threads.2);
+
+        // Calculate grid size (number of threadgroups)
+        let grid_x = (total_threads.0 + tg_x - 1) / tg_x;
+        let grid_y = (total_threads.1 + tg_y - 1) / tg_y;
+        let grid_z = (total_threads.2 + tg_z - 1) / tg_z;
+
+        self.dispatch_kernel(
+            function,
+            buffers,
+            constants,
+            (grid_x, grid_y, grid_z),
+            (tg_x, tg_y, tg_z),
+        )
+    }
+
+    /// Write data directly to a Metal buffer
+    ///
+    /// # Arguments
+    ///
+    /// * `buffer` - The buffer to write to
+    /// * `data` - The data to write
+    /// * `offset` - Byte offset in the buffer
+    pub fn write_buffer(&self, buffer: &MetalBuffer, data: &[u8], offset: usize) -> Result<()> {
+        if offset + data.len() > buffer.size {
+            return Err(Error::InvalidOperation(format!(
+                "Write exceeds buffer size: {} + {} > {}",
+                offset, data.len(), buffer.size
+            )));
+        }
+
+        let ptr = buffer.buffer.contents();
+        // SAFETY: We've verified the bounds, and ptr is valid for buffer.size bytes
+        unsafe {
+            std::ptr::copy_nonoverlapping(
+                data.as_ptr(),
+                ptr.as_ptr().cast::<u8>().add(offset),
+                data.len(),
+            );
+        }
+
+        Ok(())
+    }
+
+    /// Read data from a Metal buffer
+    ///
+    /// # Arguments
+    ///
+    /// * `buffer` - The buffer to read from
+    /// * `offset` - Byte offset in the buffer
+    /// * `len` - Number of bytes to read
+    pub fn read_buffer(&self, buffer: &MetalBuffer, offset: usize, len: usize) -> Result<Vec<u8>> {
+        if offset + len > buffer.size {
+            return Err(Error::InvalidOperation(format!(
+                "Read exceeds buffer size: {} + {} > {}",
+                offset, len, buffer.size
+            )));
+        }
+
+        let ptr = buffer.buffer.contents();
+        let mut result = vec![0u8; len];
+
+        // SAFETY: We've verified the bounds, and ptr is valid for buffer.size bytes
+        unsafe {
+            std::ptr::copy_nonoverlapping(
+                ptr.as_ptr().cast::<u8>().add(offset),
+                result.as_mut_ptr(),
+                len,
+            );
+        }
+
+        Ok(result)
+    }
 }
 
 impl GpuBackend for MetalBackend {
@@ -446,5 +638,151 @@ mod tests {
 
         let module = backend.compile(&source).expect("Failed to compile shader");
         let _func = backend.get_function(&module, "test_kernel").expect("Failed to get function");
+    }
+
+    #[test]
+    fn test_metal_kernel_dispatch() {
+        if !MetalBackend::is_available() {
+            println!("Skipping test - no Metal device available");
+            return;
+        }
+
+        let backend = MetalBackend::new().expect("Failed to create Metal backend");
+
+        // Simple kernel that doubles each element
+        let source = KernelSource::metal_only(r#"
+            #include <metal_stdlib>
+            using namespace metal;
+
+            kernel void double_values(
+                device float* data [[buffer(0)]],
+                uint idx [[thread_position_in_grid]]
+            ) {
+                data[idx] *= 2.0f;
+            }
+        "#);
+
+        let module = backend.compile(&source).expect("Failed to compile shader");
+        let function = backend.get_function(&module, "double_values").expect("Failed to get function");
+
+        // Create input data: [1.0, 2.0, 3.0, 4.0]
+        let input_data: Vec<f32> = vec![1.0, 2.0, 3.0, 4.0];
+        let input_bytes: Vec<u8> = input_data.iter()
+            .flat_map(|f| f.to_le_bytes())
+            .collect();
+
+        let buffer = backend.copy_to_device(&input_bytes).expect("Failed to copy to device");
+
+        // Dispatch kernel: 4 threads (one per element)
+        backend.dispatch_kernel(
+            &function,
+            &[&buffer],
+            &[],
+            (1, 1, 1),  // 1 threadgroup
+            (4, 1, 1),  // 4 threads per threadgroup
+        ).expect("Failed to dispatch kernel");
+
+        // Read back result
+        let result_bytes = backend.copy_to_host(&buffer).expect("Failed to copy to host");
+        let result: Vec<f32> = result_bytes
+            .chunks(4)
+            .map(|chunk| f32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]))
+            .collect();
+
+        // Verify: each value should be doubled
+        assert_eq!(result, vec![2.0, 4.0, 6.0, 8.0]);
+        println!("Kernel dispatch test passed: {:?} -> {:?}", input_data, result);
+    }
+
+    #[test]
+    fn test_metal_kernel_dispatch_auto() {
+        if !MetalBackend::is_available() {
+            println!("Skipping test - no Metal device available");
+            return;
+        }
+
+        let backend = MetalBackend::new().expect("Failed to create Metal backend");
+
+        // Kernel that adds 10 to each element
+        let source = KernelSource::metal_only(r#"
+            #include <metal_stdlib>
+            using namespace metal;
+
+            kernel void add_ten(
+                device int* data [[buffer(0)]],
+                constant uint& count [[buffer(1)]],
+                uint idx [[thread_position_in_grid]]
+            ) {
+                if (idx < count) {
+                    data[idx] += 10;
+                }
+            }
+        "#);
+
+        let module = backend.compile(&source).expect("Failed to compile shader");
+        let function = backend.get_function(&module, "add_ten").expect("Failed to get function");
+
+        // Create input data: [0, 1, 2, 3, ..., 99]
+        let count = 100u32;
+        let input_data: Vec<i32> = (0..count as i32).collect();
+        let input_bytes: Vec<u8> = input_data.iter()
+            .flat_map(|i| i.to_le_bytes())
+            .collect();
+
+        let buffer = backend.copy_to_device(&input_bytes).expect("Failed to copy to device");
+
+        // Use auto dispatch with constants
+        backend.dispatch_kernel_auto(
+            &function,
+            &[&buffer],
+            &count.to_le_bytes(),  // Pass count as constant
+            (count, 1, 1),         // Total threads
+        ).expect("Failed to dispatch kernel");
+
+        // Read back result
+        let result_bytes = backend.copy_to_host(&buffer).expect("Failed to copy to host");
+        let result: Vec<i32> = result_bytes
+            .chunks(4)
+            .map(|chunk| i32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]))
+            .collect();
+
+        // Verify: each value should have 10 added
+        for (i, &val) in result.iter().enumerate() {
+            assert_eq!(val, i as i32 + 10, "Mismatch at index {}", i);
+        }
+        println!("Auto dispatch test passed with {} elements", count);
+    }
+
+    #[test]
+    fn test_metal_buffer_write_read() {
+        if !MetalBackend::is_available() {
+            println!("Skipping test - no Metal device available");
+            return;
+        }
+
+        let backend = MetalBackend::new().expect("Failed to create Metal backend");
+
+        // Allocate buffer
+        let buffer = backend.allocate(256).expect("Failed to allocate");
+
+        // Write data at different offsets
+        let data1 = vec![0xAAu8; 64];
+        let data2 = vec![0xBBu8; 64];
+
+        backend.write_buffer(&buffer, &data1, 0).expect("Failed to write data1");
+        backend.write_buffer(&buffer, &data2, 128).expect("Failed to write data2");
+
+        // Read back and verify
+        let read1 = backend.read_buffer(&buffer, 0, 64).expect("Failed to read data1");
+        let read2 = backend.read_buffer(&buffer, 128, 64).expect("Failed to read data2");
+
+        assert_eq!(read1, data1);
+        assert_eq!(read2, data2);
+
+        // Verify gap is zeroed
+        let gap = backend.read_buffer(&buffer, 64, 64).expect("Failed to read gap");
+        assert!(gap.iter().all(|&b| b == 0));
+
+        println!("Buffer write/read test passed");
     }
 }
