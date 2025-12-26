@@ -25,6 +25,7 @@ members = [
     "crates/warp-store",
     "crates/warp-store-api",
     "crates/warp-ipc",
+    "crates/warp-iam",
 ]
 
 [workspace.package]
@@ -65,10 +66,12 @@ warp-dashboard = { path = "crates/warp-dashboard" }
 warp-store = { path = "crates/warp-store" }
 warp-store-api = { path = "crates/warp-store-api" }
 warp-ipc = { path = "crates/warp-ipc" }
+warp-iam = { path = "crates/warp-iam" }
 
 # Async runtime
 tokio = { version = "1.48", features = ["full"] }
 tokio-util = { version = "0.7", features = ["codec", "io"] }
+async-trait = "0.1"
 
 # QUIC transport
 quinn = "0.11"

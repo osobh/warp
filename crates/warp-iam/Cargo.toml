@@ -1,0 +1,56 @@
+[package]
+name = "warp-iam"
+description = "Identity and Access Management for WARP storage with OIDC/LDAP support"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[features]
+default = []
+# OIDC provider support (Keycloak, Auth0, Okta, etc.)
+oidc = ["reqwest"]
+# LDAP/Active Directory support
+ldap = ["ldap3"]
+# Full enterprise IAM
+enterprise = ["oidc", "ldap"]
+
+[dependencies]
+# Async runtime
+tokio = { workspace = true }
+async-trait = { workspace = true }
+
+# Serialization
+serde = { workspace = true }
+serde_json = "1.0"
+
+# Error handling
+thiserror = { workspace = true }
+
+# Cryptography
+ed25519-dalek = { version = "2.1", features = ["rand_core"] }
+blake3 = { workspace = true }
+rand = "0.8"
+
+# Time handling
+chrono = { version = "0.4", features = ["serde"] }
+
+# Utilities
+uuid = { version = "1.11", features = ["v4", "serde"] }
+dashmap = { workspace = true }
+tracing = { workspace = true }
+regex = "1.11"
+base64 = "0.22"
+
+# URL encoding
+urlencoding = "2.1"
+
+# OIDC support (optional) - uses simple reqwest-based implementation
+reqwest = { version = "0.12", features = ["json"], optional = true }
+
+# LDAP support (optional)
+ldap3 = { version = "0.11", optional = true }
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["test-util", "macros", "rt-multi-thread"] }
