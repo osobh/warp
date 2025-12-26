@@ -165,6 +165,99 @@ impl Frame {
         Ok(buf)
     }
 
+    /// Fast-path encoding for Chunk frames (most common data transfer frame)
+    ///
+    /// This bypasses the generic encode path for maximum performance.
+    /// Pre-allocates exact buffer size and writes directly.
+    #[inline(always)]
+    pub fn encode_chunk_fast(buf: &mut BytesMut, chunk_id: u32, data: &[u8]) {
+        let payload_len = 8 + data.len();
+        buf.reserve(FrameHeader::SIZE + payload_len);
+
+        // Header: type(1) + flags(1) + stream_id(2) + length(4)
+        buf.put_u8(frame_type::CHUNK);
+        buf.put_u8(0); // flags
+        buf.put_u16_le(0); // stream_id
+        buf.put_u32_le(payload_len as u32);
+
+        // Payload: chunk_id(4) + data_len(4) + data
+        buf.put_u32_le(chunk_id);
+        buf.put_u32_le(data.len() as u32);
+        buf.put_slice(data);
+    }
+
+    /// Fast-path encoding for Ack frames (high frequency acknowledgments)
+    ///
+    /// This bypasses the generic encode path for maximum performance.
+    #[inline(always)]
+    pub fn encode_ack_fast(buf: &mut BytesMut, chunk_ids: &[u32]) {
+        let payload_len = 4 + chunk_ids.len() * 4;
+        buf.reserve(FrameHeader::SIZE + payload_len);
+
+        // Header
+        buf.put_u8(frame_type::ACK);
+        buf.put_u8(0);
+        buf.put_u16_le(0);
+        buf.put_u32_le(payload_len as u32);
+
+        // Payload: count(4) + chunk_ids
+        buf.put_u32_le(chunk_ids.len() as u32);
+        for &id in chunk_ids {
+            buf.put_u32_le(id);
+        }
+    }
+
+    /// Fast-path encoding for Shard frames (erasure-coded transfers)
+    ///
+    /// This bypasses the generic encode path for maximum performance.
+    #[inline(always)]
+    pub fn encode_shard_fast(
+        buf: &mut BytesMut,
+        chunk_id: u32,
+        shard_idx: u16,
+        total_shards: u16,
+        data: &[u8],
+    ) {
+        let payload_len = 12 + data.len();
+        buf.reserve(FrameHeader::SIZE + payload_len);
+
+        // Header
+        buf.put_u8(frame_type::SHARD);
+        buf.put_u8(0);
+        buf.put_u16_le(0);
+        buf.put_u32_le(payload_len as u32);
+
+        // Payload: chunk_id(4) + shard_idx(2) + total_shards(2) + data_len(4) + data
+        buf.put_u32_le(chunk_id);
+        buf.put_u16_le(shard_idx);
+        buf.put_u16_le(total_shards);
+        buf.put_u32_le(data.len() as u32);
+        buf.put_slice(data);
+    }
+
+    /// Fast-path encoding for ChunkBatch frames
+    ///
+    /// Encodes multiple chunks in a single frame for reduced per-frame overhead.
+    #[inline(always)]
+    pub fn encode_chunk_batch_fast(buf: &mut BytesMut, chunks: &[(u32, &[u8])]) {
+        let payload_len: usize = 4 + chunks.iter().map(|(_, d)| 8 + d.len()).sum::<usize>();
+        buf.reserve(FrameHeader::SIZE + payload_len);
+
+        // Header
+        buf.put_u8(frame_type::CHUNK_BATCH);
+        buf.put_u8(0);
+        buf.put_u16_le(0);
+        buf.put_u32_le(payload_len as u32);
+
+        // Payload: count(4) + (chunk_id(4) + data_len(4) + data)*
+        buf.put_u32_le(chunks.len() as u32);
+        for &(chunk_id, data) in chunks {
+            buf.put_u32_le(chunk_id);
+            buf.put_u32_le(data.len() as u32);
+            buf.put_slice(data);
+        }
+    }
+
     /// Get frame type identifier
     pub fn frame_type(&self) -> u8 {
         match self {
@@ -783,5 +876,142 @@ mod tests {
 
         // Verify capacity matches length (no excess allocation)
         assert_eq!(buf.len(), buf.capacity());
+    }
+
+    #[test]
+    fn test_encode_chunk_fast() {
+        let data = vec![1u8, 2, 3, 4, 5];
+        let chunk_id = 42u32;
+
+        // Encode with fast path
+        let mut fast_buf = BytesMut::new();
+        Frame::encode_chunk_fast(&mut fast_buf, chunk_id, &data);
+
+        // Encode with generic path
+        let frame = Frame::Chunk {
+            chunk_id,
+            data: Bytes::from(data.clone()),
+        };
+        let mut generic_buf = BytesMut::new();
+        frame.encode(&mut generic_buf).unwrap();
+
+        // Should produce identical output
+        assert_eq!(fast_buf, generic_buf, "Fast and generic encode should match");
+
+        // Verify it decodes correctly
+        let decoded = Frame::decode(&mut fast_buf).unwrap().unwrap();
+        match decoded {
+            Frame::Chunk { chunk_id: id, data: decoded_data } => {
+                assert_eq!(id, 42);
+                assert_eq!(&decoded_data[..], &data[..]);
+            }
+            _ => panic!("Wrong frame type"),
+        }
+    }
+
+    #[test]
+    fn test_encode_ack_fast() {
+        let chunk_ids = vec![1u32, 5, 10, 42];
+
+        // Encode with fast path
+        let mut fast_buf = BytesMut::new();
+        Frame::encode_ack_fast(&mut fast_buf, &chunk_ids);
+
+        // Encode with generic path
+        let frame = Frame::Ack { chunk_ids: chunk_ids.clone() };
+        let mut generic_buf = BytesMut::new();
+        frame.encode(&mut generic_buf).unwrap();
+
+        // Should produce identical output
+        assert_eq!(fast_buf, generic_buf, "Fast and generic encode should match");
+
+        // Verify it decodes correctly
+        let decoded = Frame::decode(&mut fast_buf).unwrap().unwrap();
+        match decoded {
+            Frame::Ack { chunk_ids: decoded_ids } => {
+                assert_eq!(decoded_ids, chunk_ids);
+            }
+            _ => panic!("Wrong frame type"),
+        }
+    }
+
+    #[test]
+    fn test_encode_shard_fast() {
+        let data = vec![10u8, 20, 30, 40, 50];
+        let chunk_id = 100u32;
+        let shard_idx = 3u16;
+        let total_shards = 14u16;
+
+        // Encode with fast path
+        let mut fast_buf = BytesMut::new();
+        Frame::encode_shard_fast(&mut fast_buf, chunk_id, shard_idx, total_shards, &data);
+
+        // Encode with generic path
+        let frame = Frame::Shard {
+            chunk_id,
+            shard_idx,
+            total_shards,
+            data: Bytes::from(data.clone()),
+        };
+        let mut generic_buf = BytesMut::new();
+        frame.encode(&mut generic_buf).unwrap();
+
+        // Should produce identical output
+        assert_eq!(fast_buf, generic_buf, "Fast and generic encode should match");
+
+        // Verify it decodes correctly
+        let decoded = Frame::decode(&mut fast_buf).unwrap().unwrap();
+        match decoded {
+            Frame::Shard {
+                chunk_id: id,
+                shard_idx: idx,
+                total_shards: total,
+                data: decoded_data,
+            } => {
+                assert_eq!(id, 100);
+                assert_eq!(idx, 3);
+                assert_eq!(total, 14);
+                assert_eq!(&decoded_data[..], &data[..]);
+            }
+            _ => panic!("Wrong frame type"),
+        }
+    }
+
+    #[test]
+    fn test_encode_chunk_batch_fast() {
+        let chunks: Vec<(u32, &[u8])> = vec![
+            (1, &[1u8, 2, 3]),
+            (2, &[4, 5, 6, 7]),
+            (3, &[8, 9]),
+        ];
+
+        // Encode with fast path
+        let mut fast_buf = BytesMut::new();
+        Frame::encode_chunk_batch_fast(&mut fast_buf, &chunks);
+
+        // Encode with generic path
+        let frame = Frame::ChunkBatch {
+            chunks: chunks.iter().map(|(id, d)| (*id, Bytes::copy_from_slice(d))).collect(),
+        };
+        let mut generic_buf = BytesMut::new();
+        frame.encode(&mut generic_buf).unwrap();
+
+        // Should produce identical output
+        assert_eq!(fast_buf, generic_buf, "Fast and generic encode should match");
+
+        // Verify it decodes correctly
+        let decoded = Frame::decode(&mut fast_buf).unwrap().unwrap();
+        match decoded {
+            Frame::ChunkBatch { chunks: decoded_chunks } => {
+                assert_eq!(decoded_chunks.len(), 3);
+                assert_eq!(decoded_chunks[0].0, 1);
+                assert_eq!(&decoded_chunks[0].1[..], &[1u8, 2, 3]);
+                assert_eq!(decoded_chunks[1].0, 2);
+                assert_eq!(&decoded_chunks[1].1[..], &[4, 5, 6, 7]);
+                assert_eq!(decoded_chunks[2].0, 3);
+                assert_eq!(&decoded_chunks[2].1[..], &[8, 9]);
+            }
+            _ => panic!("Wrong frame type"),
+        }
     }
 }
