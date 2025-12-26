@@ -61,6 +61,8 @@ use tracing::info;
 
 use warp_store::{Store, StoreConfig, MetricsCollector};
 use warp_store::backend::{StorageBackend, MultipartUpload, PartInfo};
+use warp_store::bucket::LifecycleRule;
+use warp_store::events::NotificationConfiguration;
 
 /// API server configuration
 #[derive(Debug, Clone)]
@@ -113,6 +115,12 @@ pub struct AppState<B: StorageBackend> {
 
     /// Parts for each upload (upload_id -> Vec<PartInfo>)
     parts: Arc<DashMap<String, Vec<PartInfo>>>,
+
+    /// Lifecycle rules per bucket (bucket_name -> Vec<LifecycleRule>)
+    lifecycle_rules: Arc<DashMap<String, Vec<LifecycleRule>>>,
+
+    /// Notification configurations per bucket (bucket_name -> NotificationConfiguration)
+    notification_configs: Arc<DashMap<String, NotificationConfiguration>>,
 }
 
 impl<B: StorageBackend> Clone for AppState<B> {
@@ -123,6 +131,8 @@ impl<B: StorageBackend> Clone for AppState<B> {
             metrics: self.metrics.clone(),
             uploads: Arc::clone(&self.uploads),
             parts: Arc::clone(&self.parts),
+            lifecycle_rules: Arc::clone(&self.lifecycle_rules),
+            notification_configs: Arc::clone(&self.notification_configs),
         }
     }
 }
@@ -159,6 +169,45 @@ impl<B: StorageBackend> AppState<B> {
         self.uploads.remove(upload_id);
         self.parts.remove(upload_id);
     }
+
+    /// Get lifecycle rules for a bucket
+    pub fn get_lifecycle_rules(&self, bucket: &str) -> Vec<LifecycleRule> {
+        self.lifecycle_rules
+            .get(bucket)
+            .map(|r| r.value().clone())
+            .unwrap_or_default()
+    }
+
+    /// Set lifecycle rules for a bucket
+    pub fn set_lifecycle_rules(&self, bucket: &str, rules: Vec<LifecycleRule>) {
+        if rules.is_empty() {
+            self.lifecycle_rules.remove(bucket);
+        } else {
+            self.lifecycle_rules.insert(bucket.to_string(), rules);
+        }
+    }
+
+    /// Get notification configuration for a bucket
+    pub fn get_notification_config(&self, bucket: &str) -> Option<NotificationConfiguration> {
+        self.notification_configs
+            .get(bucket)
+            .map(|r| r.value().clone())
+    }
+
+    /// Set notification configuration for a bucket
+    pub fn set_notification_config(&self, bucket: &str, config: NotificationConfiguration) {
+        // Check if config is empty (no configurations of any type)
+        let is_empty = config.topic_configurations.is_empty()
+            && config.queue_configurations.is_empty()
+            && config.lambda_function_configurations.is_empty()
+            && config.hpc_channel_configurations.is_empty();
+
+        if is_empty {
+            self.notification_configs.remove(bucket);
+        } else {
+            self.notification_configs.insert(bucket.to_string(), config);
+        }
+    }
 }
 
 /// The API server
@@ -176,6 +225,8 @@ impl ApiServer<warp_store::backend::LocalBackend> {
                 metrics: Some(Arc::new(MetricsCollector::new())),
                 uploads: Arc::new(DashMap::new()),
                 parts: Arc::new(DashMap::new()),
+                lifecycle_rules: Arc::new(DashMap::new()),
+                notification_configs: Arc::new(DashMap::new()),
             },
         }
     }
@@ -191,6 +242,8 @@ impl<B: StorageBackend> ApiServer<B> {
                 metrics: Some(Arc::new(MetricsCollector::new())),
                 uploads: Arc::new(DashMap::new()),
                 parts: Arc::new(DashMap::new()),
+                lifecycle_rules: Arc::new(DashMap::new()),
+                notification_configs: Arc::new(DashMap::new()),
             },
         }
     }
@@ -204,6 +257,8 @@ impl<B: StorageBackend> ApiServer<B> {
                 metrics,
                 uploads: Arc::new(DashMap::new()),
                 parts: Arc::new(DashMap::new()),
+                lifecycle_rules: Arc::new(DashMap::new()),
+                notification_configs: Arc::new(DashMap::new()),
             },
         }
     }

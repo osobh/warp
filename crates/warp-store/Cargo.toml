@@ -74,6 +74,7 @@ async-trait = "0.1"
 base64 = "0.22"
 serde_bytes = "0.11"
 hex = "0.4"
+uuid = { version = "1.11", features = ["v4"] }
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["test-util", "macros", "rt-multi-thread"] }

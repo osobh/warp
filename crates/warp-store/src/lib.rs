@@ -44,7 +44,9 @@ pub mod collective;
 pub mod consistency;
 pub mod ephemeral;
 pub mod error;
+pub mod events;
 pub mod key;
+pub mod lifecycle;
 pub mod metrics;
 pub mod object;
 pub mod replication;
@@ -69,6 +71,8 @@ pub use key::ObjectKey;
 pub use metrics::{MetricsCollector, MetricsSnapshot, LatencyTimer};
 pub use object::{ObjectData, ObjectMeta, PutOptions, ListOptions, ObjectList, ObjectSummary, FieldData, FieldValue};
 pub use version::{Version, VersionId, VersioningMode};
+pub use lifecycle::{LifecycleExecutor, LifecycleConfig, LifecycleStats, LifecycleRuleBuilder};
+pub use events::{EventEmitter, EventConfig, S3Event, EventType, NotificationConfiguration};
 
 use std::sync::Arc;
 use dashmap::DashMap;
@@ -314,6 +318,23 @@ impl<B: StorageBackend> Store<B> {
     pub async fn get(&self, key: &ObjectKey) -> Result<ObjectData> {
         debug!(key = %key, "Getting object");
         self.backend.get(key).await
+    }
+
+    /// Get specific fields from an object (lazy loading)
+    ///
+    /// For backends that support lazy loading (like Parcode), this efficiently
+    /// retrieves only the requested fields without loading the entire object.
+    /// This is critical for checkpoint resume where only metadata or specific
+    /// layer weights need to be accessed.
+    ///
+    /// # Example
+    /// ```ignore
+    /// // Resume from checkpoint by loading only needed fields
+    /// let fields = store.get_fields(&checkpoint_key, &["epoch", "step", "optimizer_state"]).await?;
+    /// ```
+    pub async fn get_fields(&self, key: &ObjectKey, fields: &[&str]) -> Result<FieldData> {
+        debug!(key = %key, fields = ?fields, "Getting object fields (lazy)");
+        self.backend.get_fields(key, fields).await
     }
 
     /// Get object metadata without data

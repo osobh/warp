@@ -4,6 +4,7 @@
 //! - Object operations: GET, PUT, DELETE, HEAD
 //! - Bucket operations: GET (list), PUT (create), DELETE
 //! - ListObjectsV2 with prefix and delimiter support
+//! - SelectObjectContent (S3 Select) for SQL queries on objects
 
 use axum::{
     extract::{Path, Query, State},
@@ -20,6 +21,18 @@ use warp_store::{ObjectKey, ObjectData, PutOptions, ListOptions};
 
 use crate::error::ApiResult;
 use crate::AppState;
+
+#[cfg(feature = "s3-select")]
+mod select;
+
+mod lifecycle;
+mod notifications;
+
+#[cfg(feature = "s3-select")]
+pub use select::{SelectObjectContentRequest, SelectQuery};
+
+pub use lifecycle::{LifecycleConfigurationXml, LifecycleQuery};
+pub use notifications::NotificationConfigurationXml;
 
 /// Create S3 API routes
 pub fn routes<B: StorageBackend>(state: AppState<B>) -> Router {
@@ -64,11 +77,32 @@ async fn list_buckets<B: StorageBackend>(
     ).into_response())
 }
 
-/// Create a bucket
+/// Query parameters for bucket PUT operations
+#[derive(Debug, Deserialize, Default)]
+struct BucketPutQuery {
+    /// Lifecycle query parameter (presence indicates lifecycle request)
+    lifecycle: Option<String>,
+    /// Notification query parameter (presence indicates notification request)
+    notification: Option<String>,
+}
+
+/// Create a bucket or set lifecycle/notification configuration
 async fn create_bucket<B: StorageBackend>(
     State(state): State<AppState<B>>,
     Path(bucket): Path<String>,
+    Query(query): Query<BucketPutQuery>,
+    body: Bytes,
 ) -> ApiResult<Response> {
+    // Check if this is a lifecycle request
+    if query.lifecycle.is_some() {
+        return lifecycle::put_lifecycle(State(state), Path(bucket), body).await;
+    }
+
+    // Check if this is a notification request
+    if query.notification.is_some() {
+        return notifications::put_notifications(State(state), Path(bucket), body).await;
+    }
+
     state.store.create_bucket(&bucket, Default::default()).await?;
 
     Ok((
@@ -78,18 +112,38 @@ async fn create_bucket<B: StorageBackend>(
     ).into_response())
 }
 
-/// Delete a bucket
+/// Query parameters for bucket DELETE operations
+#[derive(Debug, Deserialize, Default)]
+struct BucketDeleteQuery {
+    /// Lifecycle query parameter (presence indicates lifecycle request)
+    lifecycle: Option<String>,
+    /// Notification query parameter (presence indicates notification request)
+    notification: Option<String>,
+}
+
+/// Delete a bucket or delete lifecycle/notification configuration
 async fn delete_bucket<B: StorageBackend>(
     State(state): State<AppState<B>>,
     Path(bucket): Path<String>,
+    Query(query): Query<BucketDeleteQuery>,
 ) -> ApiResult<Response> {
+    // Check if this is a lifecycle request
+    if query.lifecycle.is_some() {
+        return lifecycle::delete_lifecycle(State(state), Path(bucket)).await;
+    }
+
+    // Check if this is a notification request
+    if query.notification.is_some() {
+        return notifications::delete_notifications(State(state), Path(bucket)).await;
+    }
+
     state.store.delete_bucket(&bucket).await?;
 
     Ok(StatusCode::NO_CONTENT.into_response())
 }
 
-/// List objects query parameters
-#[derive(Debug, Deserialize)]
+/// List objects query parameters (also handles lifecycle and notification requests)
+#[derive(Debug, Deserialize, Default)]
 #[serde(rename_all = "kebab-case")]
 struct ListObjectsQuery {
     prefix: Option<String>,
@@ -100,14 +154,28 @@ struct ListObjectsQuery {
     #[serde(rename = "list-type")]
     #[allow(dead_code)]
     list_type: Option<String>,
+    /// Lifecycle query parameter (presence indicates lifecycle request)
+    lifecycle: Option<String>,
+    /// Notification query parameter (presence indicates notification request)
+    notification: Option<String>,
 }
 
-/// List objects in a bucket (ListObjectsV2)
+/// List objects in a bucket (ListObjectsV2) or get lifecycle/notification configuration
 async fn list_objects<B: StorageBackend>(
     State(state): State<AppState<B>>,
     Path(bucket): Path<String>,
     Query(query): Query<ListObjectsQuery>,
 ) -> ApiResult<Response> {
+    // Check if this is a lifecycle request
+    if query.lifecycle.is_some() {
+        return lifecycle::get_lifecycle(State(state), Path(bucket)).await;
+    }
+
+    // Check if this is a notification request
+    if query.notification.is_some() {
+        return notifications::get_notifications(State(state), Path(bucket)).await;
+    }
+
     let prefix = query.prefix.unwrap_or_default();
     let opts = ListOptions {
         max_keys: query.max_keys.unwrap_or(1000),
@@ -219,7 +287,7 @@ async fn head_object<B: StorageBackend>(
 // Multipart Upload API
 // =============================================================================
 
-/// Query parameters for multipart operations
+/// Query parameters for multipart operations and S3 Select
 #[derive(Debug, Deserialize, Default)]
 struct MultipartQuery {
     /// Upload ID for existing uploads
@@ -230,6 +298,13 @@ struct MultipartQuery {
     part_number: Option<u32>,
     /// Flag to initiate upload (presence of "uploads" key)
     uploads: Option<String>,
+    /// Flag for S3 Select (presence of "select" key)
+    #[cfg(feature = "s3-select")]
+    select: Option<String>,
+    /// S3 Select type
+    #[cfg(feature = "s3-select")]
+    #[serde(rename = "select-type")]
+    select_type: Option<String>,
 }
 
 /// PUT handler that handles both regular puts and part uploads
@@ -342,13 +417,28 @@ async fn abort_multipart_handler<B: StorageBackend>(
     Ok(StatusCode::NO_CONTENT.into_response())
 }
 
-/// POST handler for multipart operations (create and complete)
+/// POST handler for multipart operations (create and complete) and S3 Select
 async fn multipart_handler<B: StorageBackend>(
     State(state): State<AppState<B>>,
     Path((bucket, key)): Path<(String, String)>,
     Query(query): Query<MultipartQuery>,
     body: Bytes,
 ) -> ApiResult<Response> {
+    // Check if this is an S3 Select request (POST with ?select or ?select-type)
+    #[cfg(feature = "s3-select")]
+    if query.select.is_some() || query.select_type.is_some() {
+        let select_query = select::SelectQuery {
+            select: query.select,
+            select_type: query.select_type,
+        };
+        return select::select_object_content(
+            State(state),
+            Path((bucket, key)),
+            Query(select_query),
+            body,
+        ).await;
+    }
+
     // Check if this is create multipart (POST with ?uploads)
     if query.uploads.is_some() {
         return create_multipart_handler(&state, &bucket, &key).await;

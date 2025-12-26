@@ -624,3 +624,751 @@ async fn test_s3_multipart_upload_abort() {
         .unwrap();
     assert_eq!(resp.status(), 404);
 }
+
+// =============================================================================
+// S3 Select Tests
+// =============================================================================
+
+#[cfg(feature = "s3-select")]
+#[tokio::test]
+async fn test_s3_select_json_simple() {
+    let server = TestServer::new().await;
+
+    // Create bucket
+    server.client
+        .put(server.url("/select-bucket"))
+        .send()
+        .await
+        .unwrap();
+
+    // Upload JSON data
+    let json_data = r#"{"name":"Alice","age":30}
+{"name":"Bob","age":25}
+{"name":"Charlie","age":35}"#;
+
+    server.client
+        .put(server.url("/select-bucket/users.json"))
+        .header("Content-Type", "application/json")
+        .body(json_data)
+        .send()
+        .await
+        .unwrap();
+
+    // Execute S3 Select with WHERE filter
+    let select_request = serde_json::json!({
+        "Expression": "SELECT * FROM s3object WHERE age > 28",
+        "ExpressionType": "SQL",
+        "InputSerialization": {
+            "JSON": { "Type": "LINES" }
+        },
+        "OutputSerialization": {
+            "JSON": { "RecordDelimiter": "\n" }
+        }
+    });
+
+    let resp = server.client
+        .post(server.url("/select-bucket/users.json?select"))
+        .json(&select_request)
+        .send()
+        .await
+        .unwrap();
+
+    assert_eq!(resp.status(), 200);
+    let result = resp.text().await.unwrap();
+
+    // Should contain Alice (30) and Charlie (35), but not Bob (25)
+    assert!(result.contains("Alice"), "Should contain Alice");
+    assert!(result.contains("Charlie"), "Should contain Charlie");
+    assert!(!result.contains("Bob"), "Should NOT contain Bob (age <= 28)");
+}
+
+#[cfg(feature = "s3-select")]
+#[tokio::test]
+async fn test_s3_select_csv() {
+    let server = TestServer::new().await;
+
+    // Create bucket
+    server.client
+        .put(server.url("/csv-bucket"))
+        .send()
+        .await
+        .unwrap();
+
+    // Upload CSV data
+    let csv_data = "name,age,city\nAlice,30,NYC\nBob,25,LA\nCharlie,35,Chicago";
+
+    server.client
+        .put(server.url("/csv-bucket/users.csv"))
+        .header("Content-Type", "text/csv")
+        .body(csv_data)
+        .send()
+        .await
+        .unwrap();
+
+    // Execute S3 Select with projection
+    let select_request = serde_json::json!({
+        "Expression": "SELECT name, city FROM s3object WHERE age > 26",
+        "ExpressionType": "SQL",
+        "InputSerialization": {
+            "CSV": {
+                "FileHeaderInfo": "USE",
+                "FieldDelimiter": ",",
+                "RecordDelimiter": "\n"
+            }
+        },
+        "OutputSerialization": {
+            "JSON": { "RecordDelimiter": "\n" }
+        }
+    });
+
+    let resp = server.client
+        .post(server.url("/csv-bucket/users.csv?select"))
+        .json(&select_request)
+        .send()
+        .await
+        .unwrap();
+
+    assert_eq!(resp.status(), 200);
+    let result = resp.text().await.unwrap();
+
+    // Should contain Alice and Charlie
+    assert!(result.contains("Alice"), "Should contain Alice");
+    assert!(result.contains("Charlie"), "Should contain Charlie");
+    // Bob should be filtered out (age 25 <= 26)
+    assert!(!result.contains("Bob"), "Should NOT contain Bob");
+}
+
+#[cfg(feature = "s3-select")]
+#[tokio::test]
+async fn test_s3_select_limit() {
+    let server = TestServer::new().await;
+
+    // Create bucket
+    server.client
+        .put(server.url("/limit-bucket"))
+        .send()
+        .await
+        .unwrap();
+
+    // Upload JSON data with many records
+    let json_data = (1..=10)
+        .map(|i| format!(r#"{{"id":{},"value":"item{}"}}"#, i, i))
+        .collect::<Vec<_>>()
+        .join("\n");
+
+    server.client
+        .put(server.url("/limit-bucket/items.json"))
+        .header("Content-Type", "application/json")
+        .body(json_data)
+        .send()
+        .await
+        .unwrap();
+
+    // Execute S3 Select with LIMIT
+    let select_request = serde_json::json!({
+        "Expression": "SELECT * FROM s3object LIMIT 3",
+        "ExpressionType": "SQL",
+        "InputSerialization": {
+            "JSON": { "Type": "LINES" }
+        },
+        "OutputSerialization": {
+            "JSON": { "RecordDelimiter": "\n" }
+        }
+    });
+
+    let resp = server.client
+        .post(server.url("/limit-bucket/items.json?select"))
+        .json(&select_request)
+        .send()
+        .await
+        .unwrap();
+
+    assert_eq!(resp.status(), 200);
+    let result = resp.text().await.unwrap();
+
+    // Count the number of JSON objects (lines with "id")
+    let count = result.lines()
+        .filter(|line| line.contains("\"id\""))
+        .count();
+    assert_eq!(count, 3, "Should return exactly 3 records");
+}
+
+// =============================================================================
+// Lifecycle Management Tests
+// =============================================================================
+
+#[tokio::test]
+async fn test_lifecycle_get_no_config() {
+    let server = TestServer::new().await;
+
+    // Create bucket
+    server.client.put(server.url("/lifecycle-bucket")).send().await.unwrap();
+
+    // Get lifecycle (should return 404 when no config exists)
+    let resp = server.client
+        .get(server.url("/lifecycle-bucket?lifecycle"))
+        .send()
+        .await
+        .unwrap();
+
+    assert_eq!(resp.status(), 404);
+}
+
+#[tokio::test]
+async fn test_lifecycle_put_and_get() {
+    let server = TestServer::new().await;
+
+    // Create bucket
+    server.client.put(server.url("/lifecycle-test")).send().await.unwrap();
+
+    // Put lifecycle configuration
+    let lifecycle_xml = r#"<?xml version="1.0" encoding="UTF-8"?>
+<LifecycleConfiguration>
+    <Rule>
+        <ID>ExpireLogs</ID>
+        <Status>Enabled</Status>
+        <Filter>
+            <Prefix>logs/</Prefix>
+        </Filter>
+        <Expiration>
+            <Days>30</Days>
+        </Expiration>
+    </Rule>
+    <Rule>
+        <ID>ArchiveData</ID>
+        <Status>Enabled</Status>
+        <Filter>
+            <Prefix>data/</Prefix>
+        </Filter>
+        <Transition>
+            <Days>90</Days>
+            <StorageClass>GLACIER</StorageClass>
+        </Transition>
+    </Rule>
+</LifecycleConfiguration>"#;
+
+    let resp = server.client
+        .put(server.url("/lifecycle-test?lifecycle"))
+        .header("Content-Type", "application/xml")
+        .body(lifecycle_xml)
+        .send()
+        .await
+        .unwrap();
+
+    assert_eq!(resp.status(), 200);
+
+    // Get lifecycle configuration
+    let resp = server.client
+        .get(server.url("/lifecycle-test?lifecycle"))
+        .send()
+        .await
+        .unwrap();
+
+    assert_eq!(resp.status(), 200);
+    let body = resp.text().await.unwrap();
+
+    // Verify the response contains our rules
+    assert!(body.contains("<LifecycleConfiguration>"), "Should have LifecycleConfiguration");
+    assert!(body.contains("ExpireLogs"), "Should contain ExpireLogs rule");
+    assert!(body.contains("ArchiveData"), "Should contain ArchiveData rule");
+    assert!(body.contains("logs/"), "Should contain logs/ prefix");
+    assert!(body.contains("data/"), "Should contain data/ prefix");
+    assert!(body.contains("<Days>30</Days>"), "Should contain 30 days expiration");
+    assert!(body.contains("GLACIER"), "Should contain GLACIER storage class");
+}
+
+#[tokio::test]
+async fn test_lifecycle_delete() {
+    let server = TestServer::new().await;
+
+    // Create bucket
+    server.client.put(server.url("/delete-lifecycle")).send().await.unwrap();
+
+    // Put lifecycle configuration
+    let lifecycle_xml = r#"<?xml version="1.0" encoding="UTF-8"?>
+<LifecycleConfiguration>
+    <Rule>
+        <ID>TestRule</ID>
+        <Status>Enabled</Status>
+        <Expiration>
+            <Days>7</Days>
+        </Expiration>
+    </Rule>
+</LifecycleConfiguration>"#;
+
+    server.client
+        .put(server.url("/delete-lifecycle?lifecycle"))
+        .header("Content-Type", "application/xml")
+        .body(lifecycle_xml)
+        .send()
+        .await
+        .unwrap();
+
+    // Verify it was set
+    let resp = server.client
+        .get(server.url("/delete-lifecycle?lifecycle"))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 200);
+
+    // Delete lifecycle configuration
+    let resp = server.client
+        .delete(server.url("/delete-lifecycle?lifecycle"))
+        .send()
+        .await
+        .unwrap();
+
+    assert_eq!(resp.status(), 204);
+
+    // Verify it was deleted (should return 404)
+    let resp = server.client
+        .get(server.url("/delete-lifecycle?lifecycle"))
+        .send()
+        .await
+        .unwrap();
+
+    assert_eq!(resp.status(), 404);
+}
+
+#[tokio::test]
+async fn test_lifecycle_noncurrent_version_rules() {
+    let server = TestServer::new().await;
+
+    // Create bucket
+    server.client.put(server.url("/version-lifecycle")).send().await.unwrap();
+
+    // Put lifecycle with noncurrent version rules
+    let lifecycle_xml = r#"<?xml version="1.0" encoding="UTF-8"?>
+<LifecycleConfiguration>
+    <Rule>
+        <ID>CleanOldVersions</ID>
+        <Status>Enabled</Status>
+        <NoncurrentVersionExpiration>
+            <NoncurrentDays>30</NoncurrentDays>
+            <NewerNoncurrentVersions>3</NewerNoncurrentVersions>
+        </NoncurrentVersionExpiration>
+        <NoncurrentVersionTransition>
+            <NoncurrentDays>7</NoncurrentDays>
+            <StorageClass>STANDARD_IA</StorageClass>
+        </NoncurrentVersionTransition>
+    </Rule>
+</LifecycleConfiguration>"#;
+
+    let resp = server.client
+        .put(server.url("/version-lifecycle?lifecycle"))
+        .header("Content-Type", "application/xml")
+        .body(lifecycle_xml)
+        .send()
+        .await
+        .unwrap();
+
+    assert_eq!(resp.status(), 200);
+
+    // Get and verify
+    let resp = server.client
+        .get(server.url("/version-lifecycle?lifecycle"))
+        .send()
+        .await
+        .unwrap();
+
+    assert_eq!(resp.status(), 200);
+    let body = resp.text().await.unwrap();
+
+    assert!(body.contains("CleanOldVersions"), "Should contain CleanOldVersions rule");
+    assert!(body.contains("NoncurrentVersionExpiration"), "Should have NoncurrentVersionExpiration");
+    assert!(body.contains("NoncurrentVersionTransition"), "Should have NoncurrentVersionTransition");
+    assert!(body.contains("<NoncurrentDays>30</NoncurrentDays>"), "Should have 30 noncurrent days for expiration");
+    assert!(body.contains("<NewerNoncurrentVersions>3</NewerNoncurrentVersions>"), "Should keep 3 newer versions");
+}
+
+// =============================================================================
+// Notification Configuration Tests
+// =============================================================================
+
+#[tokio::test]
+async fn test_notification_get_empty() {
+    let server = TestServer::new().await;
+
+    // Create bucket
+    server.client.put(server.url("/notif-bucket")).send().await.unwrap();
+
+    // Get notification (should return empty config, not 404)
+    let resp = server.client
+        .get(server.url("/notif-bucket?notification"))
+        .send()
+        .await
+        .unwrap();
+
+    assert_eq!(resp.status(), 200);
+    let body = resp.text().await.unwrap();
+    assert!(body.contains("<NotificationConfiguration>"), "Should have NotificationConfiguration element");
+}
+
+#[tokio::test]
+async fn test_notification_put_and_get() {
+    let server = TestServer::new().await;
+
+    // Create bucket
+    server.client.put(server.url("/notif-test")).send().await.unwrap();
+
+    // Put notification configuration with HPC-Channels
+    let notification_xml = r#"<?xml version="1.0" encoding="UTF-8"?>
+<NotificationConfiguration>
+    <HpcChannelConfiguration>
+        <Id>ml-events</Id>
+        <ChannelId>hpc.storage.events</ChannelId>
+        <Event>s3:ObjectCreated:*</Event>
+        <Event>s3:ObjectRemoved:*</Event>
+        <Filter>
+            <S3Key>
+                <FilterRule>
+                    <Name>prefix</Name>
+                    <Value>checkpoints/</Value>
+                </FilterRule>
+            </S3Key>
+        </Filter>
+    </HpcChannelConfiguration>
+</NotificationConfiguration>"#;
+
+    let resp = server.client
+        .put(server.url("/notif-test?notification"))
+        .header("Content-Type", "application/xml")
+        .body(notification_xml)
+        .send()
+        .await
+        .unwrap();
+
+    assert_eq!(resp.status(), 200);
+
+    // Get notification configuration
+    let resp = server.client
+        .get(server.url("/notif-test?notification"))
+        .send()
+        .await
+        .unwrap();
+
+    assert_eq!(resp.status(), 200);
+    let body = resp.text().await.unwrap();
+
+    assert!(body.contains("ml-events"), "Should contain configuration ID");
+    assert!(body.contains("hpc.storage.events"), "Should contain HPC channel ID");
+    assert!(body.contains("s3:ObjectCreated:*"), "Should contain ObjectCreated event");
+    assert!(body.contains("checkpoints/"), "Should contain prefix filter");
+}
+
+#[tokio::test]
+async fn test_notification_with_topic() {
+    let server = TestServer::new().await;
+
+    // Create bucket
+    server.client.put(server.url("/topic-notif")).send().await.unwrap();
+
+    // Put notification configuration with SNS topic
+    let notification_xml = r#"<?xml version="1.0" encoding="UTF-8"?>
+<NotificationConfiguration>
+    <TopicConfiguration>
+        <Id>image-uploads</Id>
+        <Topic>arn:aws:sns:us-east-1:123456789012:image-notifications</Topic>
+        <Event>s3:ObjectCreated:Put</Event>
+        <Filter>
+            <S3Key>
+                <FilterRule>
+                    <Name>suffix</Name>
+                    <Value>.jpg</Value>
+                </FilterRule>
+            </S3Key>
+        </Filter>
+    </TopicConfiguration>
+</NotificationConfiguration>"#;
+
+    let resp = server.client
+        .put(server.url("/topic-notif?notification"))
+        .header("Content-Type", "application/xml")
+        .body(notification_xml)
+        .send()
+        .await
+        .unwrap();
+
+    assert_eq!(resp.status(), 200);
+
+    // Get and verify
+    let resp = server.client
+        .get(server.url("/topic-notif?notification"))
+        .send()
+        .await
+        .unwrap();
+
+    assert_eq!(resp.status(), 200);
+    let body = resp.text().await.unwrap();
+
+    assert!(body.contains("TopicConfiguration"), "Should have TopicConfiguration");
+    assert!(body.contains("image-uploads"), "Should contain configuration ID");
+    assert!(body.contains("arn:aws:sns"), "Should contain SNS topic ARN");
+}
+
+#[tokio::test]
+async fn test_notification_delete() {
+    let server = TestServer::new().await;
+
+    // Create bucket
+    server.client.put(server.url("/delete-notif")).send().await.unwrap();
+
+    // Put notification configuration
+    let notification_xml = r#"<?xml version="1.0" encoding="UTF-8"?>
+<NotificationConfiguration>
+    <HpcChannelConfiguration>
+        <Id>test</Id>
+        <ChannelId>hpc.test</ChannelId>
+        <Event>s3:ObjectCreated:*</Event>
+    </HpcChannelConfiguration>
+</NotificationConfiguration>"#;
+
+    server.client
+        .put(server.url("/delete-notif?notification"))
+        .header("Content-Type", "application/xml")
+        .body(notification_xml)
+        .send()
+        .await
+        .unwrap();
+
+    // Verify it was set
+    let resp = server.client
+        .get(server.url("/delete-notif?notification"))
+        .send()
+        .await
+        .unwrap();
+    let body = resp.text().await.unwrap();
+    assert!(body.contains("hpc.test"), "Should have the notification config");
+
+    // Delete notification configuration
+    let resp = server.client
+        .delete(server.url("/delete-notif?notification"))
+        .send()
+        .await
+        .unwrap();
+
+    assert_eq!(resp.status(), 204);
+
+    // Verify it was deleted (should return empty config)
+    let resp = server.client
+        .get(server.url("/delete-notif?notification"))
+        .send()
+        .await
+        .unwrap();
+
+    assert_eq!(resp.status(), 200);
+    let body = resp.text().await.unwrap();
+    assert!(!body.contains("hpc.test"), "Should not have the notification config anymore");
+}
+
+// =============================================================================
+// LazyGet Tests (Phase 2: Parcode Integration)
+// =============================================================================
+
+#[tokio::test]
+async fn test_lazy_get_basic() {
+    let server = TestServer::new().await;
+
+    // Create bucket and object
+    server.client.put(server.url("/lazy-test")).send().await.unwrap();
+
+    let content = b"test object data for lazy get";
+    server.client
+        .put(server.url("/lazy-test/checkpoint.bin"))
+        .body(content.to_vec())
+        .send()
+        .await
+        .unwrap();
+
+    // Request specific fields (note: with LocalBackend, get_fields returns empty FieldData)
+    let resp = server.client
+        .post(server.url("/api/v1/lazy/lazy-test/checkpoint.bin"))
+        .json(&serde_json::json!({
+            "fields": ["epoch", "step", "optimizer_state"]
+        }))
+        .send()
+        .await
+        .unwrap();
+
+    assert_eq!(resp.status(), 200);
+
+    let body: serde_json::Value = resp.json().await.unwrap();
+
+    // Verify response structure
+    assert!(body.get("requested").is_some());
+    assert!(body.get("returned").is_some());
+    assert!(body.get("bytes_avoided").is_some());
+    assert!(body.get("object_size").is_some());
+
+    // Check that object_size matches the content size
+    assert_eq!(body["object_size"], content.len() as u64);
+    assert_eq!(body["requested"], 3); // We requested 3 fields
+}
+
+#[tokio::test]
+async fn test_lazy_get_nonexistent_object() {
+    let server = TestServer::new().await;
+
+    // Create bucket
+    server.client.put(server.url("/lazy-error")).send().await.unwrap();
+
+    // Try to lazy get from nonexistent object
+    let resp = server.client
+        .post(server.url("/api/v1/lazy/lazy-error/nonexistent.bin"))
+        .json(&serde_json::json!({
+            "fields": ["field1"]
+        }))
+        .send()
+        .await
+        .unwrap();
+
+    // Should return 404
+    assert_eq!(resp.status(), 404);
+}
+
+// =============================================================================
+// CollectiveRead Tests (Phase 2: RMPI Integration)
+// =============================================================================
+
+#[tokio::test]
+async fn test_collective_read_basic() {
+    let server = TestServer::new().await;
+
+    // Create bucket and multiple objects
+    server.client.put(server.url("/collective-test")).send().await.unwrap();
+
+    for i in 0..4 {
+        let content = format!("shard data {}", i);
+        server.client
+            .put(server.url(&format!("/collective-test/shard_{}.pt", i)))
+            .body(content)
+            .send()
+            .await
+            .unwrap();
+    }
+
+    // Collective read across 2 ranks
+    let resp = server.client
+        .post(server.url("/api/v1/collective/read"))
+        .json(&serde_json::json!({
+            "keys": [
+                {"bucket": "collective-test", "key": "shard_0.pt"},
+                {"bucket": "collective-test", "key": "shard_1.pt"},
+                {"bucket": "collective-test", "key": "shard_2.pt"},
+                {"bucket": "collective-test", "key": "shard_3.pt"}
+            ],
+            "rank_count": 2
+        }))
+        .send()
+        .await
+        .unwrap();
+
+    assert_eq!(resp.status(), 200);
+
+    let body: serde_json::Value = resp.json().await.unwrap();
+
+    // Verify response structure
+    assert_eq!(body["object_count"], 4);
+    assert!(body["total_bytes"].as_u64().unwrap() > 0);
+
+    // Should have results for each rank
+    let results = body["results"].as_array().unwrap();
+    assert_eq!(results.len(), 2);
+
+    // Each rank should have 2 objects (round-robin distribution)
+    assert_eq!(results[0]["objects"].as_array().unwrap().len(), 2);
+    assert_eq!(results[1]["objects"].as_array().unwrap().len(), 2);
+
+    // Check rank IDs
+    assert_eq!(results[0]["rank"], 0);
+    assert_eq!(results[1]["rank"], 1);
+}
+
+#[tokio::test]
+async fn test_collective_read_single_rank() {
+    let server = TestServer::new().await;
+
+    // Create bucket and objects
+    server.client.put(server.url("/single-rank")).send().await.unwrap();
+
+    for i in 0..3 {
+        let content = format!("object {}", i);
+        server.client
+            .put(server.url(&format!("/single-rank/obj_{}.bin", i)))
+            .body(content)
+            .send()
+            .await
+            .unwrap();
+    }
+
+    // Read with single rank (all objects go to rank 0)
+    let resp = server.client
+        .post(server.url("/api/v1/collective/read"))
+        .json(&serde_json::json!({
+            "keys": [
+                {"bucket": "single-rank", "key": "obj_0.bin"},
+                {"bucket": "single-rank", "key": "obj_1.bin"},
+                {"bucket": "single-rank", "key": "obj_2.bin"}
+            ],
+            "rank_count": 1
+        }))
+        .send()
+        .await
+        .unwrap();
+
+    assert_eq!(resp.status(), 200);
+
+    let body: serde_json::Value = resp.json().await.unwrap();
+
+    // All objects should be on rank 0
+    let results = body["results"].as_array().unwrap();
+    assert_eq!(results.len(), 1);
+    assert_eq!(results[0]["objects"].as_array().unwrap().len(), 3);
+}
+
+#[tokio::test]
+async fn test_collective_read_zero_ranks_error() {
+    let server = TestServer::new().await;
+
+    // Create bucket
+    server.client.put(server.url("/zero-ranks")).send().await.unwrap();
+
+    // Try with zero ranks
+    let resp = server.client
+        .post(server.url("/api/v1/collective/read"))
+        .json(&serde_json::json!({
+            "keys": [
+                {"bucket": "zero-ranks", "key": "obj.bin"}
+            ],
+            "rank_count": 0
+        }))
+        .send()
+        .await
+        .unwrap();
+
+    // Should return 400 Bad Request
+    assert_eq!(resp.status(), 400);
+}
+
+#[tokio::test]
+async fn test_collective_read_empty_keys() {
+    let server = TestServer::new().await;
+
+    // Collective read with empty keys
+    let resp = server.client
+        .post(server.url("/api/v1/collective/read"))
+        .json(&serde_json::json!({
+            "keys": [],
+            "rank_count": 4
+        }))
+        .send()
+        .await
+        .unwrap();
+
+    assert_eq!(resp.status(), 200);
+
+    let body: serde_json::Value = resp.json().await.unwrap();
+    assert_eq!(body["object_count"], 0);
+    assert_eq!(body["total_bytes"], 0);
+}

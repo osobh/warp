@@ -156,7 +156,7 @@ pub enum EncryptionAlgorithm {
 }
 
 /// Lifecycle rule for automatic object management
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct LifecycleRule {
     /// Rule ID
     pub id: String,
