@@ -25,18 +25,24 @@ use crate::AppState;
 #[cfg(feature = "s3-select")]
 mod select;
 
+mod encryption;
 mod lifecycle;
 mod notifications;
 mod object_lock;
 mod policy;
+mod replication;
+mod versioning;
 
 #[cfg(feature = "s3-select")]
 pub use select::{SelectObjectContentRequest, SelectQuery};
 
+pub use encryption::ServerSideEncryptionConfigurationXml;
 pub use lifecycle::{LifecycleConfigurationXml, LifecycleQuery};
 pub use notifications::NotificationConfigurationXml;
 pub use object_lock::{ObjectLockConfigurationXml, RetentionXml, LegalHoldXml};
 pub use policy::{BucketPolicyManager, PolicyDocument, get_s3_action};
+pub use replication::ReplicationConfigurationXml;
+pub use versioning::VersioningConfigurationXml;
 
 /// Create S3 API routes
 pub fn routes<B: StorageBackend>(state: AppState<B>) -> Router {
@@ -93,9 +99,15 @@ struct BucketPutQuery {
     /// Object Lock query parameter (presence indicates object-lock request)
     #[serde(rename = "object-lock")]
     object_lock: Option<String>,
+    /// Versioning query parameter (presence indicates versioning request)
+    versioning: Option<String>,
+    /// Encryption query parameter (presence indicates encryption request)
+    encryption: Option<String>,
+    /// Replication query parameter (presence indicates replication request)
+    replication: Option<String>,
 }
 
-/// Create a bucket or set lifecycle/notification/policy/object-lock configuration
+/// Create a bucket or set bucket configuration
 async fn create_bucket<B: StorageBackend>(
     State(state): State<AppState<B>>,
     Path(bucket): Path<String>,
@@ -122,6 +134,21 @@ async fn create_bucket<B: StorageBackend>(
         return object_lock::put_object_lock_config(State(state), Path(bucket), body).await;
     }
 
+    // Check if this is a versioning request
+    if query.versioning.is_some() {
+        return versioning::put_versioning(State(state), Path(bucket), body).await;
+    }
+
+    // Check if this is an encryption request
+    if query.encryption.is_some() {
+        return encryption::put_encryption(State(state), Path(bucket), body).await;
+    }
+
+    // Check if this is a replication request
+    if query.replication.is_some() {
+        return replication::put_replication(State(state), Path(bucket), body).await;
+    }
+
     state.store.create_bucket(&bucket, Default::default()).await?;
 
     Ok((
@@ -140,9 +167,13 @@ struct BucketDeleteQuery {
     notification: Option<String>,
     /// Policy query parameter (presence indicates policy request)
     policy: Option<String>,
+    /// Encryption query parameter (presence indicates encryption request)
+    encryption: Option<String>,
+    /// Replication query parameter (presence indicates replication request)
+    replication: Option<String>,
 }
 
-/// Delete a bucket or delete lifecycle/notification/policy configuration
+/// Delete a bucket or delete bucket configuration
 async fn delete_bucket<B: StorageBackend>(
     State(state): State<AppState<B>>,
     Path(bucket): Path<String>,
@@ -163,12 +194,22 @@ async fn delete_bucket<B: StorageBackend>(
         return policy::delete_policy(State(state), Path(bucket)).await;
     }
 
+    // Check if this is an encryption request
+    if query.encryption.is_some() {
+        return encryption::delete_encryption(State(state), Path(bucket)).await;
+    }
+
+    // Check if this is a replication request
+    if query.replication.is_some() {
+        return replication::delete_replication(State(state), Path(bucket)).await;
+    }
+
     state.store.delete_bucket(&bucket).await?;
 
     Ok(StatusCode::NO_CONTENT.into_response())
 }
 
-/// List objects query parameters (also handles lifecycle, notification, policy, and object-lock requests)
+/// List objects query parameters (also handles bucket configuration requests)
 #[derive(Debug, Deserialize, Default)]
 #[serde(rename_all = "kebab-case")]
 struct ListObjectsQuery {
@@ -188,9 +229,15 @@ struct ListObjectsQuery {
     policy: Option<String>,
     /// Object Lock query parameter (presence indicates object-lock request)
     object_lock: Option<String>,
+    /// Versioning query parameter (presence indicates versioning request)
+    versioning: Option<String>,
+    /// Encryption query parameter (presence indicates encryption request)
+    encryption: Option<String>,
+    /// Replication query parameter (presence indicates replication request)
+    replication: Option<String>,
 }
 
-/// List objects in a bucket (ListObjectsV2) or get lifecycle/notification/policy/object-lock configuration
+/// List objects in a bucket (ListObjectsV2) or get bucket configuration
 async fn list_objects<B: StorageBackend>(
     State(state): State<AppState<B>>,
     Path(bucket): Path<String>,
@@ -214,6 +261,21 @@ async fn list_objects<B: StorageBackend>(
     // Check if this is an object-lock request
     if query.object_lock.is_some() {
         return object_lock::get_object_lock_config(State(state), Path(bucket)).await;
+    }
+
+    // Check if this is a versioning request
+    if query.versioning.is_some() {
+        return versioning::get_versioning(State(state), Path(bucket)).await;
+    }
+
+    // Check if this is an encryption request
+    if query.encryption.is_some() {
+        return encryption::get_encryption(State(state), Path(bucket)).await;
+    }
+
+    // Check if this is a replication request
+    if query.replication.is_some() {
+        return replication::get_replication(State(state), Path(bucket)).await;
     }
 
     let prefix = query.prefix.unwrap_or_default();

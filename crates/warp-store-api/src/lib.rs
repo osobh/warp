@@ -63,9 +63,10 @@ use tracing::info;
 
 use warp_store::{Store, MetricsCollector};
 use warp_store::backend::{StorageBackend, MultipartUpload, PartInfo};
-use warp_store::bucket::LifecycleRule;
+use warp_store::bucket::{EncryptionConfig, LifecycleRule, ReplicationConfig};
 use warp_store::events::NotificationConfiguration;
 use warp_store::object_lock::ObjectLockManager;
+use warp_store::version::VersioningMode;
 
 use s3::BucketPolicyManager;
 
@@ -148,6 +149,15 @@ pub struct AppState<B: StorageBackend> {
     /// Object Lock manager for WORM compliance
     pub object_lock_manager: Option<Arc<ObjectLockManager>>,
 
+    /// Versioning configurations per bucket (bucket_name -> VersioningMode)
+    pub versioning_configs: Arc<DashMap<String, VersioningMode>>,
+
+    /// Encryption configurations per bucket (bucket_name -> EncryptionConfig)
+    pub encryption_configs: Arc<DashMap<String, EncryptionConfig>>,
+
+    /// Replication configurations per bucket (bucket_name -> ReplicationConfig)
+    pub replication_configs: Arc<DashMap<String, ReplicationConfig>>,
+
     /// IAM managers for authentication and authorization
     #[cfg(feature = "iam")]
     pub iam: Option<Arc<IamManagers>>,
@@ -165,6 +175,9 @@ impl<B: StorageBackend> Clone for AppState<B> {
             notification_configs: Arc::clone(&self.notification_configs),
             policy_manager: self.policy_manager.clone(),
             object_lock_manager: self.object_lock_manager.clone(),
+            versioning_configs: Arc::clone(&self.versioning_configs),
+            encryption_configs: Arc::clone(&self.encryption_configs),
+            replication_configs: Arc::clone(&self.replication_configs),
             #[cfg(feature = "iam")]
             iam: self.iam.clone(),
         }
@@ -270,6 +283,9 @@ impl ApiServer<warp_store::backend::LocalBackend> {
                 notification_configs: Arc::new(DashMap::new()),
                 policy_manager: Some(Arc::new(BucketPolicyManager::new())),
                 object_lock_manager: Some(Arc::new(ObjectLockManager::new())),
+                versioning_configs: Arc::new(DashMap::new()),
+                encryption_configs: Arc::new(DashMap::new()),
+                replication_configs: Arc::new(DashMap::new()),
                 #[cfg(feature = "iam")]
                 iam,
             },
@@ -298,6 +314,9 @@ impl<B: StorageBackend> ApiServer<B> {
                 notification_configs: Arc::new(DashMap::new()),
                 policy_manager: Some(Arc::new(BucketPolicyManager::new())),
                 object_lock_manager: Some(Arc::new(ObjectLockManager::new())),
+                versioning_configs: Arc::new(DashMap::new()),
+                encryption_configs: Arc::new(DashMap::new()),
+                replication_configs: Arc::new(DashMap::new()),
                 #[cfg(feature = "iam")]
                 iam,
             },
@@ -324,6 +343,9 @@ impl<B: StorageBackend> ApiServer<B> {
                 notification_configs: Arc::new(DashMap::new()),
                 policy_manager: Some(Arc::new(BucketPolicyManager::new())),
                 object_lock_manager: Some(Arc::new(ObjectLockManager::new())),
+                versioning_configs: Arc::new(DashMap::new()),
+                encryption_configs: Arc::new(DashMap::new()),
+                replication_configs: Arc::new(DashMap::new()),
                 #[cfg(feature = "iam")]
                 iam,
             },
