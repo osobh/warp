@@ -8,6 +8,7 @@ use std::path::Path;
 use std::sync::Arc;
 use std::time::Instant;
 use tokio::sync::Semaphore;
+use std::collections::HashMap;
 use warp_ec::{ErasureConfig, ErasureEncoder, ErasureDecoder};
 use warp_format::{Compression, SparseMerkleTree, WarpReader, WarpWriter, WarpWriterConfig};
 use warp_hash::Hasher;
@@ -621,11 +622,20 @@ impl TransferEngine {
         let start_time = Instant::now();
         let mut received_chunks = 0u32;
 
+        // Erasure decoding state: chunk_id -> (total_shards, received shards)
+        let decoder = self.config.erasure_config.as_ref()
+            .map(|ec| ErasureDecoder::new(ec.clone()));
+        let mut shard_buffers: HashMap<u32, (u16, Vec<Option<Vec<u8>>>)> = HashMap::new();
+        // Track recovered chunk data for writing
+        let mut recovered_chunks: HashMap<u32, Vec<u8>> = HashMap::new();
+
         loop {
             let frame = conn.recv_frame().await?;
 
             match frame {
                 Frame::Chunk { chunk_id, data } => {
+                    // Plain chunk (no erasure coding)
+                    recovered_chunks.insert(chunk_id, data.to_vec());
                     session.complete_chunk(chunk_id as u64);
                     session.transferred_bytes += data.len() as u64;
                     received_chunks += 1;
@@ -646,6 +656,82 @@ impl TransferEngine {
                             current_file: None,
                             bytes_per_second: bps,
                         });
+                    }
+                }
+                Frame::Shard { chunk_id, shard_idx, total_shards, data } => {
+                    // Erasure-coded shard
+                    let (_, shards) = shard_buffers
+                        .entry(chunk_id)
+                        .or_insert_with(|| (total_shards, vec![None; total_shards as usize]));
+
+                    // Store the shard
+                    if (shard_idx as usize) < shards.len() {
+                        shards[shard_idx as usize] = Some(data.to_vec());
+                    }
+
+                    // Check if we can decode (need at least data_shards)
+                    if let Some(ref dec) = decoder {
+                        let received_count = shards.iter().filter(|s| s.is_some()).count();
+                        let data_shards = dec.config().data_shards();
+
+                        if received_count >= data_shards && !recovered_chunks.contains_key(&chunk_id) {
+                            // Try to decode
+                            match dec.decode(shards) {
+                                Ok(recovered) => {
+                                    let chunk_size = recovered.len();
+                                    recovered_chunks.insert(chunk_id, recovered);
+                                    session.complete_chunk(chunk_id as u64);
+                                    session.transferred_bytes += chunk_size as u64;
+                                    received_chunks += 1;
+
+                                    tracing::trace!(
+                                        "Recovered chunk {} from {} shards",
+                                        chunk_id, received_count
+                                    );
+
+                                    if let Some(ref callback) = self.progress_callback {
+                                        let elapsed = start_time.elapsed().as_secs_f64();
+                                        let bps = if elapsed > 0.0 {
+                                            session.transferred_bytes as f64 / elapsed
+                                        } else {
+                                            0.0
+                                        };
+
+                                        callback(TransferProgress {
+                                            bytes_transferred: session.transferred_bytes,
+                                            total_bytes: session.total_bytes,
+                                            chunks_completed: received_chunks as u64,
+                                            total_chunks: num_chunks as u64,
+                                            current_file: None,
+                                            bytes_per_second: bps,
+                                        });
+                                    }
+                                }
+                                Err(e) => {
+                                    tracing::warn!(
+                                        "Failed to decode chunk {}: {} (have {}/{} shards)",
+                                        chunk_id, e, received_count, total_shards
+                                    );
+                                }
+                            }
+                        }
+                    }
+                }
+                Frame::ChunkVerify { chunk_id, chunk_hash, .. } => {
+                    // Verify chunk hash if we have the chunk
+                    if let Some(chunk_data) = recovered_chunks.get(&chunk_id) {
+                        let mut hasher = Hasher::new();
+                        hasher.update(chunk_data);
+                        let computed_hash = hasher.finalize();
+
+                        if computed_hash != chunk_hash {
+                            tracing::warn!(
+                                "Chunk {} hash mismatch! Expected {:?}, got {:?}",
+                                chunk_id, chunk_hash, computed_hash
+                            );
+                        } else {
+                            tracing::trace!("Chunk {} verified", chunk_id);
+                        }
                     }
                 }
                 Frame::Done => {
@@ -837,5 +923,61 @@ mod tests {
 
         assert_eq!(session.state, SessionState::Completed);
         assert!(dest_dir.path().join("test.txt").exists());
+    }
+
+    #[test]
+    fn test_erasure_roundtrip() {
+        // Test erasure encode -> decode round-trip
+        let config = ErasureConfig::new(4, 2).expect("valid config"); // 4 data shards, 2 parity
+        let encoder = ErasureEncoder::new(config.clone());
+        let decoder = ErasureDecoder::new(config);
+
+        // Create test chunk data
+        let chunk_data = vec![0xABu8; 4096];
+
+        // Encode to shards
+        let shards = encoder.encode(&chunk_data).expect("encode failed");
+        assert_eq!(shards.len(), 6); // 4 data + 2 parity
+
+        // Test 1: Recover with all shards
+        let mut all_shards: Vec<Option<Vec<u8>>> = shards.iter()
+            .map(|s| Some(s.clone()))
+            .collect();
+        let recovered = decoder.decode(&mut all_shards).expect("decode with all shards failed");
+        assert_eq!(recovered, chunk_data);
+
+        // Test 2: Recover with 2 shards missing (within tolerance)
+        let mut partial_shards: Vec<Option<Vec<u8>>> = shards.iter()
+            .map(|s| Some(s.clone()))
+            .collect();
+        partial_shards[0] = None; // Drop first data shard
+        partial_shards[5] = None; // Drop last parity shard
+        let recovered = decoder.decode(&mut partial_shards).expect("decode with 2 missing failed");
+        assert_eq!(recovered, chunk_data);
+
+        // Test 3: Try to recover with too many shards missing (should fail)
+        let mut too_few_shards: Vec<Option<Vec<u8>>> = shards.iter()
+            .map(|s| Some(s.clone()))
+            .collect();
+        too_few_shards[0] = None;
+        too_few_shards[1] = None;
+        too_few_shards[2] = None; // 3 missing = only 3 remaining, need 4
+        let result = decoder.decode(&mut too_few_shards);
+        assert!(result.is_err(), "should fail with 3 missing shards");
+    }
+
+    #[test]
+    fn test_config_with_erasure() {
+        // Test TransferConfig with erasure enabled
+        let config = TransferConfig {
+            erasure_config: Some(ErasureConfig::new(8, 4).expect("valid config")), // 8:4 ratio
+            ..Default::default()
+        };
+
+        assert!(config.erasure_config.is_some());
+        let ec = config.erasure_config.unwrap();
+        assert_eq!(ec.data_shards(), 8);
+        assert_eq!(ec.parity_shards(), 4);
+        assert_eq!(ec.total_shards(), 12);
     }
 }
