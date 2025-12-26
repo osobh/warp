@@ -73,6 +73,14 @@ pub struct MetricsCollector {
     decode_count: AtomicU64,
     recovery_count: AtomicU64,
 
+    // Erasure coding - shard level metrics
+    shard_sent_count: AtomicU64,
+    shard_recv_count: AtomicU64,
+    shard_loss_count: AtomicU64,
+    decode_success_count: AtomicU64,
+    decode_failure_count: AtomicU64,
+    recovery_latency_total_us: AtomicU64,
+
     // Cross-domain
     remote_reads: AtomicU64,
     remote_writes: AtomicU64,
@@ -119,6 +127,12 @@ impl MetricsCollector {
             encode_count: AtomicU64::new(0),
             decode_count: AtomicU64::new(0),
             recovery_count: AtomicU64::new(0),
+            shard_sent_count: AtomicU64::new(0),
+            shard_recv_count: AtomicU64::new(0),
+            shard_loss_count: AtomicU64::new(0),
+            decode_success_count: AtomicU64::new(0),
+            decode_failure_count: AtomicU64::new(0),
+            recovery_latency_total_us: AtomicU64::new(0),
             remote_reads: AtomicU64::new(0),
             remote_writes: AtomicU64::new(0),
             tunnel_bytes_sent: AtomicU64::new(0),
@@ -218,6 +232,48 @@ impl MetricsCollector {
         self.recovery_count.fetch_add(1, Ordering::Relaxed);
     }
 
+    /// Record a shard sent
+    pub fn record_shard_sent(&self) {
+        self.shard_sent_count.fetch_add(1, Ordering::Relaxed);
+    }
+
+    /// Record shards sent (batch)
+    pub fn record_shards_sent(&self, count: u64) {
+        self.shard_sent_count.fetch_add(count, Ordering::Relaxed);
+    }
+
+    /// Record a shard received
+    pub fn record_shard_received(&self) {
+        self.shard_recv_count.fetch_add(1, Ordering::Relaxed);
+    }
+
+    /// Record a shard loss (timeout/missing)
+    pub fn record_shard_loss(&self) {
+        self.shard_loss_count.fetch_add(1, Ordering::Relaxed);
+    }
+
+    /// Record shards lost (batch)
+    pub fn record_shards_lost(&self, count: u64) {
+        self.shard_loss_count.fetch_add(count, Ordering::Relaxed);
+    }
+
+    /// Record a successful decode
+    pub fn record_decode_success(&self) {
+        self.decode_success_count.fetch_add(1, Ordering::Relaxed);
+        self.decode_count.fetch_add(1, Ordering::Relaxed);
+    }
+
+    /// Record a failed decode
+    pub fn record_decode_failure(&self) {
+        self.decode_failure_count.fetch_add(1, Ordering::Relaxed);
+    }
+
+    /// Record recovery latency (decode with missing shards)
+    pub fn record_recovery_latency(&self, latency: Duration) {
+        self.recovery_latency_total_us.fetch_add(latency.as_micros() as u64, Ordering::Relaxed);
+        self.recovery_count.fetch_add(1, Ordering::Relaxed);
+    }
+
     /// Record a remote read
     pub fn record_remote_read(&self, bytes: u64) {
         self.remote_reads.fetch_add(1, Ordering::Relaxed);
@@ -313,6 +369,21 @@ impl MetricsCollector {
             decode_count: self.decode_count.load(Ordering::Relaxed),
             recovery_count: self.recovery_count.load(Ordering::Relaxed),
 
+            // Erasure coding - shard level metrics
+            shard_sent_count: self.shard_sent_count.load(Ordering::Relaxed),
+            shard_recv_count: self.shard_recv_count.load(Ordering::Relaxed),
+            shard_loss_count: self.shard_loss_count.load(Ordering::Relaxed),
+            decode_success_count: self.decode_success_count.load(Ordering::Relaxed),
+            decode_failure_count: self.decode_failure_count.load(Ordering::Relaxed),
+            recovery_latency_avg_us: {
+                let recovery_count = self.recovery_count.load(Ordering::Relaxed);
+                if recovery_count > 0 {
+                    self.recovery_latency_total_us.load(Ordering::Relaxed) / recovery_count
+                } else {
+                    0
+                }
+            },
+
             // Cross-domain
             remote_reads: self.remote_reads.load(Ordering::Relaxed),
             remote_writes: self.remote_writes.load(Ordering::Relaxed),
@@ -345,6 +416,12 @@ impl MetricsCollector {
         self.encode_count.store(0, Ordering::Relaxed);
         self.decode_count.store(0, Ordering::Relaxed);
         self.recovery_count.store(0, Ordering::Relaxed);
+        self.shard_sent_count.store(0, Ordering::Relaxed);
+        self.shard_recv_count.store(0, Ordering::Relaxed);
+        self.shard_loss_count.store(0, Ordering::Relaxed);
+        self.decode_success_count.store(0, Ordering::Relaxed);
+        self.decode_failure_count.store(0, Ordering::Relaxed);
+        self.recovery_latency_total_us.store(0, Ordering::Relaxed);
         self.remote_reads.store(0, Ordering::Relaxed);
         self.remote_writes.store(0, Ordering::Relaxed);
         self.tunnel_bytes_sent.store(0, Ordering::Relaxed);
@@ -448,6 +525,20 @@ pub struct MetricsSnapshot {
     /// Recovery operations (decode with missing shards)
     pub recovery_count: u64,
 
+    // Erasure coding - shard level metrics
+    /// Shards sent
+    pub shard_sent_count: u64,
+    /// Shards received
+    pub shard_recv_count: u64,
+    /// Shards lost
+    pub shard_loss_count: u64,
+    /// Successful decode operations
+    pub decode_success_count: u64,
+    /// Failed decode operations
+    pub decode_failure_count: u64,
+    /// Average recovery latency in microseconds
+    pub recovery_latency_avg_us: u64,
+
     // Cross-domain
     /// Remote read operations
     pub remote_reads: u64,
@@ -487,6 +578,28 @@ impl MetricsSnapshot {
             self.shards_healthy as f64 / total as f64
         } else {
             1.0
+        }
+    }
+
+    /// Get shard loss rate (0.0 - 1.0)
+    /// Returns the ratio of lost shards to total shards sent
+    pub fn shard_loss_rate(&self) -> f64 {
+        let total = self.shard_sent_count + self.shard_loss_count;
+        if total > 0 {
+            self.shard_loss_count as f64 / total as f64
+        } else {
+            0.0
+        }
+    }
+
+    /// Get decode success rate (0.0 - 1.0)
+    /// Returns the ratio of successful decodes to total decode attempts
+    pub fn decode_success_rate(&self) -> f64 {
+        let total = self.decode_success_count + self.decode_failure_count;
+        if total > 0 {
+            self.decode_success_count as f64 / total as f64
+        } else {
+            1.0 // No decode attempts = 100% success (no failures)
         }
     }
 
@@ -607,5 +720,58 @@ mod tests {
         assert_eq!(snapshot.get_count, 0);
         assert_eq!(snapshot.put_count, 0);
         assert_eq!(snapshot.bytes_read, 0);
+    }
+
+    #[test]
+    fn test_shard_metrics() {
+        let collector = MetricsCollector::new();
+
+        // Record shard operations
+        collector.record_shards_sent(10);
+        collector.record_shard_received();
+        collector.record_shard_received();
+        collector.record_shard_received();
+        collector.record_shard_received();
+        collector.record_shard_loss();
+        collector.record_shards_lost(2);
+
+        let snapshot = collector.snapshot();
+        assert_eq!(snapshot.shard_sent_count, 10);
+        assert_eq!(snapshot.shard_recv_count, 4);
+        assert_eq!(snapshot.shard_loss_count, 3);
+        // Loss rate = 3 / (10 + 3) = 0.2308
+        assert!((snapshot.shard_loss_rate() - 0.2308).abs() < 0.01);
+    }
+
+    #[test]
+    fn test_decode_metrics() {
+        let collector = MetricsCollector::new();
+
+        // Record decode operations
+        collector.record_decode_success();
+        collector.record_decode_success();
+        collector.record_decode_success();
+        collector.record_decode_failure();
+
+        let snapshot = collector.snapshot();
+        assert_eq!(snapshot.decode_success_count, 3);
+        assert_eq!(snapshot.decode_failure_count, 1);
+        // Success rate = 3 / 4 = 0.75
+        assert!((snapshot.decode_success_rate() - 0.75).abs() < 0.01);
+    }
+
+    #[test]
+    fn test_recovery_latency() {
+        let collector = MetricsCollector::new();
+
+        // Record recovery operations with latencies
+        collector.record_recovery_latency(Duration::from_micros(100));
+        collector.record_recovery_latency(Duration::from_micros(200));
+        collector.record_recovery_latency(Duration::from_micros(300));
+
+        let snapshot = collector.snapshot();
+        assert_eq!(snapshot.recovery_count, 3);
+        // Avg = (100 + 200 + 300) / 3 = 200
+        assert_eq!(snapshot.recovery_latency_avg_us, 200);
     }
 }

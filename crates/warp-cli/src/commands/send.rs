@@ -7,7 +7,7 @@ use indicatif::{ProgressBar, ProgressStyle};
 use std::io::{self, Write};
 use std::path::PathBuf;
 use std::sync::Arc;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 use tokio::fs::File;
 use tokio::io::AsyncReadExt;
 use tokio::sync::Semaphore;
@@ -15,8 +15,9 @@ use warp_crypto::kdf::{derive_key, generate_salt};
 use warp_ec::{ErasureConfig, ErasureEncoder};
 use warp_format::merkle::MerkleTree;
 use warp_format::{Compression, EncryptionKey, WarpReader, WarpWriter, WarpWriterConfig};
-use warp_net::{Frame, WarpEndpoint};
 use warp_net::codec::WireMerkleProof;
+use warp_net::{Frame, WarpEndpoint};
+use warp_orch::{AdaptiveErasure, AdaptiveErasureConfig, ErasureParameters};
 
 /// Erasure coding options for transfers
 #[derive(Debug, Clone)]
@@ -232,6 +233,19 @@ async fn send_remote(
         None
     };
 
+    // Setup adaptive erasure controller if enabled
+    let mut adaptive_controller = if erasure_opts.enabled && erasure_opts.adaptive {
+        let mut controller = AdaptiveErasure::new(AdaptiveErasureConfig::default());
+        controller.set_parameters(ErasureParameters {
+            data_shards: erasure_opts.data_shards as usize,
+            parity_shards: erasure_opts.parity_shards as usize,
+            parallel_streams: erasure_opts.parallel_streams as usize,
+        });
+        Some(controller)
+    } else {
+        None
+    };
+
     // Create temporary archive
     let temp_dir = std::env::temp_dir();
     let temp_archive_path = temp_dir.join(format!("warp_send_{}.warp", std::process::id()));
@@ -404,8 +418,13 @@ async fn send_remote(
     // Collect chunk hashes for Merkle tree verification
     let mut chunk_hashes: Vec<[u8; 32]> = Vec::with_capacity(num_chunks);
 
+    // Adaptive erasure tracking
+    let mut last_adaptive_eval = Instant::now();
+    const ADAPTIVE_EVAL_INTERVAL: Duration = Duration::from_secs(5);
+
     // Send chunks (with optional erasure coding)
     for chunk_id in 0..num_chunks {
+        let chunk_start_time = Instant::now();
         let start = chunk_id * CHUNK_SIZE;
         let end = std::cmp::min(start + CHUNK_SIZE, archive_data.len());
         let chunk_data = &archive_data[start..end];
@@ -497,6 +516,46 @@ async fn send_remote(
             }
             _ => {
                 anyhow::bail!("Expected ACK frame");
+            }
+        }
+
+        // Record metrics for adaptive controller
+        if let Some(ref mut controller) = adaptive_controller {
+            let chunk_duration = chunk_start_time.elapsed();
+            let chunk_bytes = (end - start) as u64;
+            let total_shards = erasure_opts.data_shards + erasure_opts.parity_shards;
+
+            controller.record_transfer_metrics(
+                chunk_duration.as_millis() as f64, // latency_ms
+                chunk_bytes,                        // bytes_sent
+                chunk_duration,                     // duration
+                0,                                  // shards_lost
+                total_shards as usize,              // total_shards
+            );
+
+            // Periodically evaluate and potentially adjust parameters
+            if last_adaptive_eval.elapsed() >= ADAPTIVE_EVAL_INTERVAL {
+                let old_params = controller.current_parameters();
+                let new_params = controller.evaluate();
+                last_adaptive_eval = Instant::now();
+
+                // Detect if parameters changed
+                if new_params.data_shards != old_params.data_shards
+                    || new_params.parity_shards != old_params.parity_shards
+                    || new_params.parallel_streams != old_params.parallel_streams
+                {
+                    let avg_metrics = controller.get_average_metrics();
+                    tracing::info!(
+                        data_shards = new_params.data_shards,
+                        parity_shards = new_params.parity_shards,
+                        parallel_streams = new_params.parallel_streams,
+                        quality = %format!("{:.1}%", avg_metrics.quality_score * 100.0),
+                        "Adaptive erasure adjustment suggested"
+                    );
+                    // Note: For this implementation, we log the suggestion but don't
+                    // dynamically change the encoder mid-transfer. A more sophisticated
+                    // implementation could recreate the encoder with new parameters.
+                }
             }
         }
     }

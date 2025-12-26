@@ -296,7 +296,16 @@ impl Session {
     }
 
     /// Check if chunk is completed
+    ///
+    /// For erasure-coded transfers, a chunk is considered completed if it
+    /// has been decoded (present in erasure_state.decoded_chunks).
+    /// For regular transfers, it checks completed_chunks.
     pub fn is_chunk_completed(&self, chunk_id: u64) -> bool {
+        // For erasure-coded transfers, check decoded_chunks
+        if let Some(ref erasure_state) = self.erasure_state {
+            return erasure_state.decoded_chunks.contains(&chunk_id);
+        }
+        // For regular transfers, check completed_chunks
         self.completed_chunks.contains(&chunk_id)
     }
 
@@ -314,16 +323,33 @@ impl Session {
     }
 
     /// Calculate progress percentage
+    ///
+    /// For erasure-coded transfers, uses decoded_chunks count.
+    /// For regular transfers, uses completed_chunks count.
     pub fn progress(&self) -> f64 {
         if self.total_chunks == 0 {
-            0.0
-        } else {
-            self.completed_chunks.len() as f64 / self.total_chunks as f64 * 100.0
+            return 0.0;
         }
+        // For erasure-coded transfers, use decoded_chunks
+        if let Some(ref erasure_state) = self.erasure_state {
+            return erasure_state.decoded_chunks.len() as f64 / self.total_chunks as f64 * 100.0;
+        }
+        // For regular transfers, use completed_chunks
+        self.completed_chunks.len() as f64 / self.total_chunks as f64 * 100.0
     }
 
     /// Get remaining chunks
+    ///
+    /// For erasure-coded transfers, returns chunks not yet decoded.
+    /// For regular transfers, returns chunks not yet completed.
     pub fn remaining_chunks(&self) -> Vec<u64> {
+        // For erasure-coded transfers, check decoded_chunks
+        if let Some(ref erasure_state) = self.erasure_state {
+            return (0..self.total_chunks)
+                .filter(|i| !erasure_state.decoded_chunks.contains(i))
+                .collect();
+        }
+        // For regular transfers, check completed_chunks
         let completed_set: HashSet<u64> = self.completed_chunks.iter().copied().collect();
         (0..self.total_chunks)
             .filter(|i| !completed_set.contains(i))

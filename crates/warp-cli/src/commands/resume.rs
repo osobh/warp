@@ -59,6 +59,31 @@ pub async fn execute(session_id: &str) -> Result<()> {
         println!("Last Error:  {}", error);
     }
 
+    // Display erasure coding state if present
+    if let Some(ref erasure_state) = session.erasure_state {
+        println!();
+        println!("Erasure Coding: {}:{} (data:parity shards)",
+            erasure_state.data_shards, erasure_state.parity_shards);
+        println!("Decoded chunks: {}", erasure_state.decoded_chunks.len());
+
+        let partial = erasure_state.partial_chunks();
+        if !partial.is_empty() {
+            println!("Partial chunks: {} (need more shards)", partial.len());
+            // Show details for up to 5 partial chunks
+            for chunk_id in partial.iter().take(5) {
+                let needed = erasure_state.shards_needed(*chunk_id);
+                let received = erasure_state.received_shards.get(chunk_id)
+                    .map(|v| v.len())
+                    .unwrap_or(0);
+                println!("  Chunk {}: {}/{} shards ({} more needed)",
+                    chunk_id, received, erasure_state.data_shards, needed);
+            }
+            if partial.len() > 5 {
+                println!("  ... and {} more partial chunks", partial.len() - 5);
+            }
+        }
+    }
+
     println!();
 
     // Create progress bar
@@ -138,12 +163,12 @@ async fn list_sessions(sessions_dir: &PathBuf) -> Result<()> {
     }
 
     println!("Available Sessions");
-    println!("{}", "=".repeat(90));
+    println!("{}", "=".repeat(95));
     println!(
-        "{:<14} {:<25} {:<10} {:<15} {:<10}",
-        "Session ID", "Source", "Progress", "State", "Chunks"
+        "{:<14} {:<23} {:<10} {:<15} {:<10} {:<8}",
+        "Session ID", "Source", "Progress", "State", "Chunks", "Erasure"
     );
-    println!("{}", "-".repeat(90));
+    println!("{}", "-".repeat(95));
 
     for session in sessions {
         let source_name = session
@@ -153,20 +178,35 @@ async fn list_sessions(sessions_dir: &PathBuf) -> Result<()> {
             .unwrap_or("unknown");
 
         // Truncate source name if too long
-        let source_display = if source_name.len() > 24 {
-            format!("{}...", &source_name[..21])
+        let source_display = if source_name.len() > 22 {
+            format!("{}...", &source_name[..19])
         } else {
             source_name.to_string()
         };
 
+        // For erasure-coded sessions, use decoded_chunks count
+        let completed = if let Some(ref es) = session.erasure_state {
+            es.decoded_chunks.len()
+        } else {
+            session.completed_chunks.len()
+        };
+
+        // Show erasure coding status
+        let erasure_status = if let Some(ref es) = session.erasure_state {
+            format!("{}:{}", es.data_shards, es.parity_shards)
+        } else {
+            "-".to_string()
+        };
+
         println!(
-            "{:<14} {:<25} {:>9.1}% {:<15} {:>4}/{:<4}",
+            "{:<14} {:<23} {:>9.1}% {:<15} {:>4}/{:<4} {:<8}",
             &session.id[..12],
             source_display,
             session.progress(),
             format!("{:?}", session.state),
-            session.completed_chunks.len(),
-            session.total_chunks
+            completed,
+            session.total_chunks,
+            erasure_status
         );
     }
 
