@@ -193,7 +193,7 @@ WARP is part of the HPC-AI ecosystem. Here's the integration status with all pro
 
 ## Crate Catalog
 
-WARP consists of 24 crates organized by function:
+WARP consists of 33 crates organized by function:
 
 ### Core
 
@@ -202,6 +202,7 @@ WARP consists of 24 crates organized by function:
 | `warp-core` | Orchestration and transfer engine |
 | `warp-io` | SeqCDC chunking (31 GB/s), SIMD I/O, file operations |
 | `warp-format` | Native `.warp` archive format with sparse Merkle verification |
+| `warp-config` | Configuration management and validation |
 
 ### Cryptography & Encoding
 
@@ -211,6 +212,8 @@ WARP consists of 24 crates organized by function:
 | `warp-hash` | BLAKE3 parallel cryptographic hashing |
 | `warp-compress` | Zstd/LZ4 adaptive compression |
 | `warp-ec` | Reed-Solomon erasure coding (RS(4,2) to RS(16,4)) |
+| `warp-oprf` | OPRF privacy-preserving protocols for blind dedup |
+| `warp-kms` | Key management service integration |
 
 ### Networking
 
@@ -218,6 +221,7 @@ WARP consists of 24 crates organized by function:
 |-------|-------------|
 | `warp-net` | QUIC transport with TLS 1.3, zero-copy |
 | `warp-edge` | Edge transport with metrics and monitoring |
+| `warp-ipc` | Inter-process communication primitives |
 
 ### Storage
 
@@ -225,6 +229,7 @@ WARP consists of 24 crates organized by function:
 |-------|-------------|
 | `warp-store` | S3-compatible object storage with HPC extensions |
 | `warp-store-api` | REST API server (S3 + Native HPC endpoints) |
+| `warp-chonkers` | Versioned content-defined deduplication |
 
 ### Orchestration
 
@@ -232,7 +237,7 @@ WARP consists of 24 crates organized by function:
 |-------|-------------|
 | `warp-orch` | Multi-source download orchestration |
 | `warp-sched` | Transfer scheduling and prioritization |
-| `warp-pool` | Connection pooling |
+| `warp-stream` | Triple-buffer streaming pipeline |
 
 ### Portal System (Zero-Knowledge P2P)
 
@@ -241,14 +246,24 @@ WARP consists of 24 crates organized by function:
 | `portal-core` | Convergent encryption, Merkle proofs |
 | `portal-hub` | P2P coordination hub |
 | `portal-net` | WireGuard mesh networking |
-| `portal-store` | Distributed content-addressed storage |
 
-### CLI & GPU
+### Acceleration
+
+| Crate | Description |
+|-------|-------------|
+| `warp-gpu` | CUDA/Metal GPU acceleration |
+| `warp-dpu` | DPU offload (BlueField, Pensando, Intel IPU) |
+| `warp-neural` | WaLLoC neural compression with ONNX Runtime |
+
+### CLI & Operations
 
 | Crate | Description |
 |-------|-------------|
 | `warp-cli` | Command-line interface |
-| `warp-gpu` | nvCOMP GPU acceleration |
+| `warp-api` | REST API framework |
+| `warp-dashboard` | Real-time monitoring dashboard |
+| `warp-telemetry` | Metrics and tracing collection |
+| `warp-iam` | Identity and access management |
 
 ---
 
@@ -414,12 +429,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 - [x] hpc-channels integration
 - [x] SeqCDC SIMD chunking (31 GB/s)
 - [x] Sparse Merkle verification
+- [x] Chonkers versioned deduplication
+- [x] OPRF privacy-preserving blind deduplication
+- [x] WaLLoC neural compression (ONNX Runtime)
+- [x] DPU offload framework (BlueField, Pensando, Intel IPU)
+- [x] Portal mesh P2P storage
+- [x] Triple-buffer streaming pipeline
 
 ### In Progress
 
-- [ ] Portal mesh integration for P2P storage
 - [ ] Raft consensus for distributed metadata
 - [ ] Parcode lazy-loading backend
+- [ ] Production hardening and security audit
 
 ### Planned
 

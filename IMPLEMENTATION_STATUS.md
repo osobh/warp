@@ -568,15 +568,6 @@ cargo build --release
 
 ## Git Status
 
-Last commit: `5fcf1c3` - feat(warp-dpu): Add DPU offload crate with scheduler integration
-
-All changes pushed to `origin/main`.
-
----
-
-## Research Plan Reference
-
-Full research plan with additional options is at:
-`~/.claude/plans/sprightly-imagining-wall.md`
+Last commit: `735a63b` - refactor(safety): Improve unsafe code documentation and eliminate raw pointer
 
 All planned features have been implemented (14 total).
