@@ -653,10 +653,31 @@ impl WarpReader {
     }
 }
 
-// SAFETY: WarpReader can be safely sent across threads because:
-// - Mmap is thread-safe for reads
-// - All other fields are immutable after construction
-// - Arc<dyn Compressor> is already Send + Sync
+// SAFETY: WarpReader is Send + Sync because:
+//
+// 1. Mmap (memmap2::Mmap):
+//    - Thread-safe for concurrent reads (immutable mapping)
+//    - The underlying memory is read-only after creation
+//    - No internal mutation occurs during read operations
+//
+// 2. Header, ChunkIndex, FileTable:
+//    - All are immutable after construction in open_internal()
+//    - No interior mutability (no Cell, RefCell, or UnsafeCell)
+//
+// 3. Arc<dyn Compressor>:
+//    - Already requires Send + Sync bound on the trait object
+//    - Compressors (ZstdCompressor, Lz4Compressor) are stateless or thread-safe
+//
+// 4. Option<Key> (decryption_key):
+//    - Key is a simple byte array wrapper, trivially Send + Sync
+//
+// 5. Option<SparseMerkleTree>:
+//    - Built lazily but only via &mut self (build_verification_tree)
+//    - Once built, immutable during concurrent reads
+//
+// Thread-safety guarantee: After construction, WarpReader only performs
+// read operations on its fields. No method takes &mut self except
+// build_verification_tree(), which should be called before sharing.
 unsafe impl Send for WarpReader {}
 unsafe impl Sync for WarpReader {}
 

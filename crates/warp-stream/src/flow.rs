@@ -10,8 +10,10 @@
 //! capacity, the upstream stage blocks until space is available. This
 //! prevents memory exhaustion while maintaining throughput.
 
-use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
-use std::sync::Arc;
+use std::sync::{
+    atomic::{AtomicBool, AtomicUsize, Ordering},
+    Arc,
+};
 use std::time::Duration;
 use tokio::sync::{mpsc, Semaphore};
 use tracing::trace;
@@ -24,7 +26,10 @@ pub struct FlowControl {
     /// Maximum items allowed in flight
     max_in_flight: usize,
     /// Current items in flight
-    in_flight: AtomicUsize,
+    ///
+    /// Arc-wrapped to allow safe sharing with FlowPermit without raw pointers.
+    /// This eliminates the need for unsafe impl Send on FlowPermit.
+    in_flight: Arc<AtomicUsize>,
     /// Semaphore for limiting concurrency
     semaphore: Arc<Semaphore>,
     /// Whether flow control is paused
@@ -38,7 +43,7 @@ impl FlowControl {
     pub fn new(max_in_flight: usize) -> Self {
         Self {
             max_in_flight,
-            in_flight: AtomicUsize::new(0),
+            in_flight: Arc::new(AtomicUsize::new(0)),
             semaphore: Arc::new(Semaphore::new(max_in_flight)),
             paused: AtomicBool::new(false),
             stats: None,
@@ -49,7 +54,7 @@ impl FlowControl {
     pub fn with_stats(max_in_flight: usize, stats: SharedStats) -> Self {
         Self {
             max_in_flight,
-            in_flight: AtomicUsize::new(0),
+            in_flight: Arc::new(AtomicUsize::new(0)),
             semaphore: Arc::new(Semaphore::new(max_in_flight)),
             paused: AtomicBool::new(false),
             stats: Some(stats),
@@ -72,7 +77,7 @@ impl FlowControl {
 
         Ok(FlowPermit {
             _permit: permit,
-            in_flight: &self.in_flight,
+            in_flight: Arc::clone(&self.in_flight),
         })
     }
 
@@ -88,7 +93,7 @@ impl FlowControl {
                 trace!("Flow control try_acquire succeeded, in_flight: {}", count);
                 Some(FlowPermit {
                     _permit: permit,
-                    in_flight: &self.in_flight,
+                    in_flight: Arc::clone(&self.in_flight),
                 })
             }
             Err(_) => {
@@ -133,22 +138,25 @@ impl FlowControl {
 
 /// RAII permit for flow control
 ///
-/// Automatically releases permit when dropped.
+/// Automatically releases permit when dropped. Decrements the in-flight counter
+/// and releases the semaphore permit.
+///
+/// # Thread Safety
+///
+/// FlowPermit is Send because:
+/// - `OwnedSemaphorePermit` is Send (from tokio)
+/// - `Arc<AtomicUsize>` is Send + Sync
+///
+/// No unsafe impl needed - the Arc-based design is inherently safe.
 pub struct FlowPermit {
     _permit: tokio::sync::OwnedSemaphorePermit,
-    in_flight: *const AtomicUsize,
+    in_flight: Arc<AtomicUsize>,
 }
-
-// Safety: FlowPermit is Send because we only decrement the counter on drop
-unsafe impl Send for FlowPermit {}
 
 impl Drop for FlowPermit {
     fn drop(&mut self) {
-        // Safety: in_flight pointer is valid for lifetime of FlowControl
-        unsafe {
-            let count = (*self.in_flight).fetch_sub(1, Ordering::Relaxed) - 1;
-            trace!("Flow control released permit, in_flight: {}", count);
-        }
+        let count = self.in_flight.fetch_sub(1, Ordering::Relaxed) - 1;
+        trace!("Flow control released permit, in_flight: {}", count);
     }
 }
 

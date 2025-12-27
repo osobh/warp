@@ -127,7 +127,12 @@ pub mod avx2 {
     /// Find local minima in 4 u64 weights at once using AVX2
     ///
     /// Compares weights[i] < weights[i-1] && weights[i] < weights[i+1]
-    /// Returns mask of positions that are local minima
+    /// Returns mask of positions that are local minima (bit i set if position i is minimum)
+    ///
+    /// # Safety
+    ///
+    /// - Caller must ensure AVX2 is available: `is_x86_feature_detected!("avx2")`
+    /// - All input arrays must have exactly 4 elements
     #[target_feature(enable = "avx2")]
     #[inline]
     pub unsafe fn find_local_minima_4(
@@ -163,6 +168,11 @@ pub mod avx2 {
     }
 
     /// Compute 4 diffbit priorities at once
+    ///
+    /// # Safety
+    ///
+    /// - Caller must ensure AVX2 is available: `is_x86_feature_detected!("avx2")`
+    /// - Both input arrays must have exactly 4 elements
     #[target_feature(enable = "avx2")]
     #[inline]
     pub unsafe fn compute_priorities_4(
@@ -185,7 +195,14 @@ pub mod avx2 {
 
     /// Optimized kitten finding using AVX2
     ///
-    /// Processes weights in batches of 4 for better cache utilization
+    /// Processes weights in batches of 4 for better cache utilization.
+    /// Falls back to scalar processing for the remaining elements.
+    ///
+    /// # Safety
+    ///
+    /// - Caller must ensure AVX2 is available: `is_x86_feature_detected!("avx2")`
+    ///
+    /// The function handles all weight array sizes safely.
     #[target_feature(enable = "avx2")]
     pub unsafe fn find_kittens_avx2(weights: &[ChunkWeight]) -> KittenScanResult {
         let mut result = KittenScanResult::default();
@@ -265,7 +282,12 @@ pub mod neon {
 
     /// Find local minima using NEON
     ///
-    /// Processes 2 u64 values at a time
+    /// Processes 2 u64 values at a time using 128-bit NEON registers.
+    ///
+    /// # Safety
+    ///
+    /// - This function is only available on aarch64 targets where NEON is guaranteed
+    /// - All input arrays must have exactly 2 elements
     #[inline]
     pub unsafe fn find_local_minima_2(
         prev: &[u64; 2],
@@ -305,6 +327,15 @@ pub mod neon {
     }
 
     /// Optimized kitten finding using NEON
+    ///
+    /// Processes weights in batches of 2 for better cache utilization.
+    /// Falls back to scalar processing for remaining elements.
+    ///
+    /// # Safety
+    ///
+    /// - This function is only available on aarch64 targets where NEON is guaranteed
+    ///
+    /// The function handles all weight array sizes safely.
     #[inline]
     pub unsafe fn find_kittens_neon(weights: &[ChunkWeight]) -> KittenScanResult {
         let mut result = KittenScanResult::default();

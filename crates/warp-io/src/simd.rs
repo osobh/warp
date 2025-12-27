@@ -115,6 +115,14 @@ pub mod avx2 {
     ///
     /// Returns the position of the first monotonic sequence of `seq_length`,
     /// or None if no boundary found in this window.
+    ///
+    /// # Safety
+    ///
+    /// - Caller must ensure AVX2 is available: `is_x86_feature_detected!("avx2")`
+    /// - `data.len()` must be at least 33 bytes (32-byte vector + 1 for offset load)
+    ///
+    /// The function returns `None` if `data.len() < 33`, but this check should not
+    /// be relied upon for safety - ensure preconditions are met before calling.
     #[target_feature(enable = "avx2")]
     #[inline]
     pub unsafe fn find_boundary_in_window(
@@ -147,6 +155,16 @@ pub mod avx2 {
     }
 
     /// Count opposing pairs in a 32-byte window
+    ///
+    /// Returns the number of adjacent byte pairs where the monotonic condition
+    /// is NOT satisfied (i.e., pairs that would break a monotonic sequence).
+    ///
+    /// # Safety
+    ///
+    /// - Caller must ensure AVX2 is available: `is_x86_feature_detected!("avx2")`
+    /// - `data.len()` must be at least 33 bytes (32-byte vector + 1 for offset load)
+    ///
+    /// Returns 0 if `data.len() < 33`, but this should not be relied upon for safety.
     #[target_feature(enable = "avx2")]
     #[inline]
     pub unsafe fn count_opposing_pairs(data: &[u8], mode: SeqMode) -> u32 {
@@ -176,6 +194,27 @@ pub mod avx2 {
     /// This processes data in 32-byte chunks, using SIMD for:
     /// 1. Fast detection of all-opposing regions (skip candidates)
     /// 2. Boundary detection when approaching min_size
+    ///
+    /// # Arguments
+    ///
+    /// * `data` - Input buffer to chunk
+    /// * `min_size` - Minimum chunk size (chunks won't be smaller)
+    /// * `max_size` - Maximum chunk size (forced cut if reached)
+    /// * `seq_length` - Number of consecutive monotonic bytes required for boundary
+    /// * `skip_trigger` - Number of opposing pairs that triggers skip mode
+    /// * `skip_size` - How many bytes to skip in skip mode
+    /// * `mode` - Whether to detect increasing or decreasing sequences
+    ///
+    /// # Returns
+    ///
+    /// Vector of (start, length) tuples representing chunk boundaries.
+    ///
+    /// # Safety
+    ///
+    /// - Caller must ensure AVX2 is available: `is_x86_feature_detected!("avx2")`
+    /// - For best performance, `data` should be at least 64 bytes
+    ///
+    /// The function handles short inputs safely, falling back to scalar paths.
     #[target_feature(enable = "avx2")]
     pub unsafe fn chunk_buffer_avx2(
         data: &[u8],
@@ -286,6 +325,12 @@ pub mod avx512 {
     }
 
     /// Find first boundary in a 64-byte window using AVX-512
+    ///
+    /// # Safety
+    ///
+    /// - Caller must ensure AVX-512F and AVX-512BW are available:
+    ///   `is_x86_feature_detected!("avx512f") && is_x86_feature_detected!("avx512bw")`
+    /// - `data.len()` must be at least 65 bytes (64-byte vector + 1 for offset load)
     #[cfg(target_feature = "avx512f")]
     #[target_feature(enable = "avx512f", enable = "avx512bw")]
     #[inline]
@@ -315,6 +360,12 @@ pub mod avx512 {
     }
 
     /// Count opposing pairs in a 64-byte window using AVX-512
+    ///
+    /// # Safety
+    ///
+    /// - Caller must ensure AVX-512F and AVX-512BW are available:
+    ///   `is_x86_feature_detected!("avx512f") && is_x86_feature_detected!("avx512bw")`
+    /// - `data.len()` must be at least 65 bytes (64-byte vector + 1 for offset load)
     #[cfg(target_feature = "avx512f")]
     #[target_feature(enable = "avx512f", enable = "avx512bw")]
     #[inline]
@@ -359,6 +410,13 @@ pub mod neon {
     ///
     /// Returns the position of the first monotonic sequence of `seq_length`,
     /// or None if no boundary found in this window.
+    ///
+    /// # Safety
+    ///
+    /// - This function is only available on aarch64 targets where NEON is guaranteed
+    /// - `data.len()` must be at least 17 bytes (16-byte vector + 1 for offset load)
+    ///
+    /// Returns `None` if `data.len() < 17`, but callers should ensure this precondition.
     #[inline]
     pub unsafe fn find_boundary_in_window(
         data: &[u8],
@@ -390,6 +448,11 @@ pub mod neon {
     }
 
     /// Count opposing pairs in a 16-byte window using NEON
+    ///
+    /// # Safety
+    ///
+    /// - This function is only available on aarch64 targets where NEON is guaranteed
+    /// - `data.len()` must be at least 17 bytes (16-byte vector + 1 for offset load)
     #[inline]
     pub unsafe fn count_opposing_pairs(data: &[u8], mode: SeqMode) -> u32 {
         unsafe {
@@ -417,6 +480,13 @@ pub mod neon {
     /// Processes data in 16-byte chunks using SIMD for:
     /// 1. Fast detection of all-opposing regions (skip candidates)
     /// 2. Boundary detection when approaching min_size
+    ///
+    /// # Safety
+    ///
+    /// - This function is only available on aarch64 targets where NEON is guaranteed
+    /// - For best performance, `data` should be at least 32 bytes
+    ///
+    /// The function handles short inputs safely, falling back to scalar comparisons.
     #[inline]
     pub unsafe fn chunk_buffer_neon(
         data: &[u8],
