@@ -8,6 +8,8 @@
 //!
 //! Run with: cargo test -p warp-net --test erasure_e2e --features insecure-tls
 
+#![cfg(feature = "insecure-tls")]
+
 use bytes::Bytes;
 use std::collections::HashMap;
 use warp_ec::{ErasureConfig, ErasureDecoder, ErasureEncoder};

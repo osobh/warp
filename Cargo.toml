@@ -30,6 +30,7 @@ members = [
     "crates/warp-iam",
     "crates/warp-kms",
     "crates/warp-oprf",
+    "crates/warp-dpu",
 ]
 
 [workspace.package]
@@ -75,6 +76,7 @@ warp-iam = { path = "crates/warp-iam" }
 warp-kms = { path = "crates/warp-kms" }
 warp-oprf = { path = "crates/warp-oprf" }
 warp-neural = { path = "crates/warp-neural" }
+warp-dpu = { path = "crates/warp-dpu" }
 
 # Async runtime
 tokio = { version = "1.48", features = ["full"] }

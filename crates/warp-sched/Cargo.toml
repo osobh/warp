@@ -11,6 +11,7 @@ description = "GPU-accelerated chunk scheduling for Portal distributed storage"
 warp-gpu.workspace = true
 warp-edge.workspace = true
 warp-hash.workspace = true
+warp-dpu = { workspace = true, optional = true }
 
 # GPU acceleration (optional)
 cudarc = { workspace = true, optional = true }
@@ -58,6 +59,8 @@ default = []
 gpu = ["cudarc"]
 # SLAI Brain-Link integration for GPU-aware scheduling
 slai = ["dep:slai"]
+# DPU offload integration
+dpu = ["dep:warp-dpu"]
 
 [[bench]]
 name = "scheduler"

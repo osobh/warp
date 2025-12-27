@@ -105,6 +105,10 @@ pub enum TransportType {
     SharedMemory,
     /// GPU-Direct Storage.
     GpuDirect,
+    /// DPU inline processing (zero-copy on network path).
+    DpuInline,
+    /// DPU RDMA (RDMA with DPU inline processing).
+    DpuRdma,
 }
 
 impl TransportType {
@@ -113,6 +117,8 @@ impl TransportType {
         match self {
             Self::SharedMemory => 1,
             Self::NvLink => 2,
+            Self::DpuInline => 3,   // DPU inline very low latency
+            Self::DpuRdma => 5,     // DPU RDMA slightly higher
             Self::Pcie => 5,
             Self::GpuDirect => 8,
             Self::Rdma => 10,
@@ -126,8 +132,10 @@ impl TransportType {
     pub fn bandwidth_gbps(&self) -> u32 {
         match self {
             Self::NvLink => 600,
+            Self::DpuRdma => 400,   // BlueField-3 400Gbps
             Self::SharedMemory => 400,
             Self::InfiniBand => 400,
+            Self::DpuInline => 200, // DPU with inline processing
             Self::GpuDirect => 200,
             Self::Rdma => 200,
             Self::Pcie => 128,
@@ -140,8 +148,100 @@ impl TransportType {
     pub fn is_high_performance(&self) -> bool {
         matches!(
             self,
-            Self::NvLink | Self::SharedMemory | Self::InfiniBand | Self::Rdma | Self::GpuDirect
+            Self::NvLink
+                | Self::SharedMemory
+                | Self::InfiniBand
+                | Self::Rdma
+                | Self::GpuDirect
+                | Self::DpuInline
+                | Self::DpuRdma
         )
+    }
+
+    /// Check if this transport uses DPU.
+    pub fn uses_dpu(&self) -> bool {
+        matches!(self, Self::DpuInline | Self::DpuRdma)
+    }
+
+    /// Check if this transport supports inline processing.
+    pub fn supports_inline_processing(&self) -> bool {
+        matches!(self, Self::DpuInline | Self::DpuRdma)
+    }
+}
+
+/// DPU type identifier for scheduling.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, Default)]
+pub enum DpuType {
+    /// No DPU (CPU fallback).
+    #[default]
+    None,
+    /// NVIDIA BlueField DPU.
+    BlueField,
+    /// AMD Pensando DPU.
+    Pensando,
+    /// Intel IPU.
+    IntelIpu,
+}
+
+impl DpuType {
+    /// Check if this is a real DPU (not None).
+    pub fn is_hardware(&self) -> bool {
+        !matches!(self, DpuType::None)
+    }
+}
+
+/// DPU capabilities for scheduling decisions.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct DpuCapabilities {
+    /// DPU has inline crypto acceleration.
+    pub has_inline_crypto: bool,
+    /// DPU has inline compression acceleration.
+    pub has_inline_compress: bool,
+    /// DPU has erasure coding acceleration.
+    pub has_inline_ec: bool,
+    /// DPU has RDMA support.
+    pub has_rdma: bool,
+    /// Network bandwidth in Gbps.
+    pub network_bandwidth_gbps: u32,
+    /// DPU generation (e.g., 3 for BlueField-3).
+    pub generation: u32,
+}
+
+impl DpuCapabilities {
+    /// Create capabilities for BlueField-3.
+    pub fn bluefield3() -> Self {
+        Self {
+            has_inline_crypto: true,
+            has_inline_compress: true,
+            has_inline_ec: true,
+            has_rdma: true,
+            network_bandwidth_gbps: 400,
+            generation: 3,
+        }
+    }
+
+    /// Check if any DPU acceleration is available.
+    pub fn has_any_acceleration(&self) -> bool {
+        self.has_inline_crypto || self.has_inline_compress || self.has_inline_ec
+    }
+
+    /// Calculate DPU score for placement (higher = better).
+    pub fn score(&self) -> f64 {
+        let mut score = 0.0;
+        if self.has_inline_crypto {
+            score += 10.0;
+        }
+        if self.has_inline_compress {
+            score += 10.0;
+        }
+        if self.has_inline_ec {
+            score += 5.0;
+        }
+        if self.has_rdma {
+            score += 15.0;
+        }
+        score += (self.network_bandwidth_gbps as f64 / 100.0).min(10.0);
+        score
     }
 }
 
@@ -219,6 +319,12 @@ pub struct EdgeNodeInfo {
     pub load: f64,
     /// Is healthy.
     pub healthy: bool,
+    /// Number of DPUs available.
+    pub dpu_count: u32,
+    /// DPU type (if available).
+    pub dpu_type: DpuType,
+    /// DPU capabilities.
+    pub dpu_capabilities: DpuCapabilities,
 }
 
 impl EdgeNodeInfo {
@@ -233,6 +339,9 @@ impl EdgeNodeInfo {
             numa_nodes: 1,
             load: 0.0,
             healthy: true,
+            dpu_count: 0,
+            dpu_type: DpuType::None,
+            dpu_capabilities: DpuCapabilities::default(),
         }
     }
 
@@ -251,9 +360,34 @@ impl EdgeNodeInfo {
         self
     }
 
+    /// Set DPU configuration.
+    pub fn with_dpu(mut self, count: u32, dpu_type: DpuType, capabilities: DpuCapabilities) -> Self {
+        self.dpu_count = count;
+        self.dpu_type = dpu_type;
+        // Auto-add DPU transports based on capabilities (before move)
+        if capabilities.has_rdma && !self.transports.contains(&TransportType::DpuRdma) {
+            self.transports.push(TransportType::DpuRdma);
+        }
+        if capabilities.has_any_acceleration() && !self.transports.contains(&TransportType::DpuInline) {
+            self.transports.push(TransportType::DpuInline);
+        }
+        self.dpu_capabilities = capabilities;
+        self
+    }
+
     /// Check if node has high-performance transport.
     pub fn has_high_perf_transport(&self) -> bool {
         self.transports.iter().any(|t| t.is_high_performance())
+    }
+
+    /// Check if node has DPU capabilities.
+    pub fn has_dpu(&self) -> bool {
+        self.dpu_count > 0 && self.dpu_type.is_hardware()
+    }
+
+    /// Check if node has DPU inline processing.
+    pub fn has_dpu_inline(&self) -> bool {
+        self.has_dpu() && self.dpu_capabilities.has_any_acceleration()
     }
 
     /// Calculate node score for placement.
@@ -279,6 +413,20 @@ impl EdgeNodeInfo {
         // Bonus for high-performance transport
         if self.has_high_perf_transport() {
             score += 15.0;
+        }
+
+        // Bonus for DPU availability and capabilities
+        if self.has_dpu() {
+            // Base DPU bonus
+            score += 20.0;
+            // Add DPU capability score (0-50 range)
+            score += self.dpu_capabilities.score();
+            // Extra bonus for DPU transport matching required transport
+            if let Some(required) = request.required_transport {
+                if required.uses_dpu() && self.transports.contains(&required) {
+                    score += 30.0;
+                }
+            }
         }
 
         // Bonus for required transport
@@ -618,6 +766,8 @@ impl BrainLink {
         let total_edges = edges.len();
         let healthy_edges = edges.values().filter(|e| e.healthy).count();
         let gpu_edges = edges.values().filter(|e| e.gpu_count > 0).count();
+        let dpu_edges = edges.values().filter(|e| e.has_dpu()).count();
+        let dpu_inline_edges = edges.values().filter(|e| e.has_dpu_inline()).count();
         let high_perf_edges = edges.values().filter(|e| e.has_high_perf_transport()).count();
 
         let total_links = links.len();
@@ -633,11 +783,23 @@ impl BrainLink {
             total_edges,
             healthy_edges,
             gpu_edges,
+            dpu_edges,
+            dpu_inline_edges,
             high_perf_edges,
             total_links,
             healthy_links,
             average_load: avg_load,
         }
+    }
+
+    /// Get DPU-capable edge count.
+    pub async fn dpu_edge_count(&self) -> usize {
+        self.edges
+            .read()
+            .await
+            .values()
+            .filter(|e| e.has_dpu())
+            .count()
     }
 }
 
@@ -656,6 +818,10 @@ pub struct BrainLinkStats {
     pub healthy_edges: usize,
     /// GPU-capable edges.
     pub gpu_edges: usize,
+    /// DPU-capable edges.
+    pub dpu_edges: usize,
+    /// Edges with DPU inline processing.
+    pub dpu_inline_edges: usize,
     /// Edges with high-performance transport.
     pub high_perf_edges: usize,
     /// Total links.
@@ -852,5 +1018,152 @@ mod tests {
         assert_eq!(stats.high_perf_edges, 1);
         assert_eq!(stats.total_links, 1);
         assert_eq!(stats.healthy_links, 1);
+    }
+
+    #[test]
+    fn test_dpu_type() {
+        assert!(!DpuType::None.is_hardware());
+        assert!(DpuType::BlueField.is_hardware());
+        assert!(DpuType::Pensando.is_hardware());
+        assert!(DpuType::IntelIpu.is_hardware());
+    }
+
+    #[test]
+    fn test_dpu_capabilities() {
+        let caps = DpuCapabilities::bluefield3();
+        assert!(caps.has_inline_crypto);
+        assert!(caps.has_inline_compress);
+        assert!(caps.has_inline_ec);
+        assert!(caps.has_rdma);
+        assert_eq!(caps.network_bandwidth_gbps, 400);
+        assert_eq!(caps.generation, 3);
+        assert!(caps.has_any_acceleration());
+        assert!(caps.score() > 40.0); // Should have high score with all features
+    }
+
+    #[test]
+    fn test_dpu_transport() {
+        assert!(TransportType::DpuInline.uses_dpu());
+        assert!(TransportType::DpuRdma.uses_dpu());
+        assert!(!TransportType::Rdma.uses_dpu());
+        assert!(!TransportType::Tcp.uses_dpu());
+
+        assert!(TransportType::DpuInline.supports_inline_processing());
+        assert!(TransportType::DpuRdma.supports_inline_processing());
+        assert!(!TransportType::Rdma.supports_inline_processing());
+
+        // DPU transports are high-performance
+        assert!(TransportType::DpuInline.is_high_performance());
+        assert!(TransportType::DpuRdma.is_high_performance());
+    }
+
+    #[test]
+    fn test_edge_with_dpu() {
+        let edge = EdgeNodeInfo::new(EdgeIdx(1), "dpu-node")
+            .with_dpu(2, DpuType::BlueField, DpuCapabilities::bluefield3());
+
+        assert!(edge.has_dpu());
+        assert!(edge.has_dpu_inline());
+        assert_eq!(edge.dpu_count, 2);
+        assert_eq!(edge.dpu_type, DpuType::BlueField);
+
+        // Should have DPU transports auto-added
+        assert!(edge.transports.contains(&TransportType::DpuRdma));
+        assert!(edge.transports.contains(&TransportType::DpuInline));
+    }
+
+    #[test]
+    fn test_dpu_placement_score() {
+        let edge_without_dpu = EdgeNodeInfo::new(EdgeIdx(1), "node-1")
+            .with_transport(TransportType::Rdma);
+
+        let edge_with_dpu = EdgeNodeInfo::new(EdgeIdx(2), "node-2")
+            .with_dpu(1, DpuType::BlueField, DpuCapabilities::bluefield3());
+
+        let request = ChunkPlacementRequest {
+            chunk_size: 1024 * 1024,
+            ..Default::default()
+        };
+
+        let score_without = edge_without_dpu.placement_score(&request);
+        let score_with = edge_with_dpu.placement_score(&request);
+
+        // DPU edge should have higher score
+        assert!(score_with > score_without, "DPU edge ({}) should score higher than non-DPU edge ({})", score_with, score_without);
+    }
+
+    #[test]
+    fn test_dpu_transport_preference() {
+        let edge = EdgeNodeInfo::new(EdgeIdx(1), "dpu-node")
+            .with_dpu(1, DpuType::BlueField, DpuCapabilities::bluefield3());
+
+        // Request requiring DPU transport
+        let dpu_request = ChunkPlacementRequest {
+            chunk_size: 1024 * 1024,
+            required_transport: Some(TransportType::DpuRdma),
+            ..Default::default()
+        };
+
+        // Request requiring non-DPU transport
+        let rdma_request = ChunkPlacementRequest {
+            chunk_size: 1024 * 1024,
+            required_transport: Some(TransportType::Rdma),
+            ..Default::default()
+        };
+
+        let dpu_score = edge.placement_score(&dpu_request);
+        let rdma_score = edge.placement_score(&rdma_request);
+
+        // DPU request should score higher on DPU node (DPU bonus + required transport match)
+        assert!(dpu_score > rdma_score);
+    }
+
+    #[tokio::test]
+    async fn test_stats_with_dpu() {
+        let brain = BrainLink::new();
+
+        // Register edge without DPU
+        brain
+            .register_edge(EdgeNodeInfo::new(EdgeIdx(1), "cpu-node"))
+            .await;
+
+        // Register edge with DPU
+        brain
+            .register_edge(
+                EdgeNodeInfo::new(EdgeIdx(2), "dpu-node")
+                    .with_dpu(2, DpuType::BlueField, DpuCapabilities::bluefield3()),
+            )
+            .await;
+
+        let stats = brain.stats().await;
+
+        assert_eq!(stats.total_edges, 2);
+        assert_eq!(stats.dpu_edges, 1);
+        assert_eq!(stats.dpu_inline_edges, 1);
+        assert!(stats.high_perf_edges >= 1); // DPU edge has high-perf transport
+    }
+
+    #[tokio::test]
+    async fn test_dpu_edge_count() {
+        let brain = BrainLink::new();
+
+        brain
+            .register_edge(EdgeNodeInfo::new(EdgeIdx(1), "cpu-node"))
+            .await;
+        brain
+            .register_edge(
+                EdgeNodeInfo::new(EdgeIdx(2), "dpu-node-1")
+                    .with_dpu(1, DpuType::BlueField, DpuCapabilities::bluefield3()),
+            )
+            .await;
+        brain
+            .register_edge(
+                EdgeNodeInfo::new(EdgeIdx(3), "dpu-node-2")
+                    .with_dpu(2, DpuType::BlueField, DpuCapabilities::bluefield3()),
+            )
+            .await;
+
+        assert_eq!(brain.dpu_edge_count().await, 2);
+        assert_eq!(brain.gpu_edge_count().await, 0);
     }
 }

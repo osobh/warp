@@ -6384,6 +6384,25 @@ dependencies = [
 ]
 
 [[package]]
+name = "warp-dpu"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "blake3",
+ "bytes",
+ "chacha20poly1305",
+ "criterion",
+ "lz4_flex",
+ "parking_lot 0.12.5",
+ "proptest",
+ "reed-solomon-simd",
+ "thiserror 2.0.17",
+ "tokio",
+ "tracing",
+ "zstd",
+]
+
+[[package]]
 name = "warp-ec"
 version = "0.1.0"
 dependencies = [
@@ -6651,6 +6670,7 @@ dependencies = [
  "thiserror 2.0.17",
  "tokio",
  "tracing",
+ "warp-dpu",
  "warp-edge",
  "warp-gpu",
  "warp-hash",
