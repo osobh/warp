@@ -213,6 +213,43 @@
   let output = client.finalize(state, &evaluation)?;
   ```
 
+### 12. Blind Dedup Integration (warp-store + warp-oprf)
+- **Status:** DONE
+- **Files:**
+  - `crates/warp-store/src/backend/blind_dedup.rs` - BlindDedupConfig, BlindDedupService trait, EmbeddedDedupService, SledDedupIndex
+  - `crates/warp-store/src/backend/chonkers.rs` - Extended with `with_blind_dedup()` constructor and blind dedup chunk processing
+  - `crates/warp-store/src/backend/mod.rs` - Module exports
+  - `crates/warp-store/Cargo.toml` - Added `blind-dedup` feature
+- **Tests:** 9 integration tests passing
+- **Key Features:**
+  - **Content-blind deduplication** - Server deduplicates without seeing content hashes
+  - **Chunk-level OPRF** - Each chunk hash is blinded before dedup lookup
+  - **Batch processing** - Multiple chunks processed in single OPRF round-trip
+  - **Persistent index** - Sled-backed DedupIndex for cross-restart persistence
+  - **Embedded service** - In-process OPRF server for simple deployments
+- **Usage:**
+  ```rust
+  use warp_store::backend::{ChonkersBackend, BlindDedupConfig, EmbeddedDedupService};
+
+  // Create embedded OPRF service
+  let service = Arc::new(EmbeddedDedupService::new("dedup-key-v1")?);
+
+  // Configure blind dedup with persistent index
+  let config = BlindDedupConfig::new("dedup-key-v1")
+      .with_index_path("/data/dedup-index");
+
+  // Create backend with blind dedup
+  let backend = ChonkersBackend::with_blind_dedup(
+      "/data/store",
+      ChonkersConfig::default(),
+      config,
+      service,
+  ).await?;
+
+  // Use normally - blind dedup happens transparently
+  backend.put(&key, data, PutOptions::default()).await?;
+  ```
+
 ---
 
 ## Future Work (Optional)
@@ -389,6 +426,9 @@ cargo test -p warp-format
 cargo test -p warp-net
 cargo test -p warp-chonkers
 cargo test -p warp-oprf
+
+# Run blind dedup integration tests
+cargo test -p warp-store --features "chonkers,blind-dedup" blind_dedup
 
 # Run benchmarks
 cargo bench -p warp-ec

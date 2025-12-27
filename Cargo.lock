@@ -6514,6 +6514,7 @@ dependencies = [
  "warp-ec",
  "warp-gpu",
  "warp-hash",
+ "warp-oprf",
  "x25519-dalek",
  "zstd",
 ]

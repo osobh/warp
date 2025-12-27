@@ -47,6 +47,18 @@ mod chonkers;
 #[cfg(feature = "chonkers")]
 pub use chonkers::{ChonkersBackend, DedupStats, GcResult};
 
+#[cfg(feature = "blind-dedup")]
+mod blind_dedup;
+
+#[cfg(feature = "blind-dedup")]
+pub use blind_dedup::{
+    BlindDedupConfig, BlindDedupService, BlindDedupStats, EmbeddedDedupService, SledDedupIndex,
+};
+
+// Re-export warp-oprf types for convenience
+#[cfg(feature = "blind-dedup")]
+pub use warp_oprf::dedup::{DedupIndex, DedupReference, DedupToken, MemoryDedupIndex};
+
 use async_trait::async_trait;
 
 use crate::key::ObjectKey;

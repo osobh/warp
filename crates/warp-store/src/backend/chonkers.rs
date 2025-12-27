@@ -36,7 +36,15 @@ use warp_chonkers::{
     MemoryTreeStore, TreeStore, VersionId, VersionTimeline,
 };
 
+#[cfg(feature = "blind-dedup")]
+use super::blind_dedup::BlindDedupContext;
+#[cfg(feature = "blind-dedup")]
+use warp_oprf::dedup::{DedupIndex, DedupReference, MemoryDedupIndex};
+
 use super::{MultipartUpload, PartInfo, StorageBackend};
+
+#[cfg(feature = "blind-dedup")]
+use super::blind_dedup::{BlindDedupConfig, BlindDedupService, SledDedupIndex};
 use crate::key::ObjectKey;
 use crate::object::{
     ListOptions, ObjectData, ObjectEntry, ObjectList, ObjectMeta, PutOptions, StorageClass,
@@ -100,6 +108,10 @@ pub struct ChonkersBackend {
 
     /// Chunk data cache (ChunkId -> raw data)
     chunk_cache: DashMap<ChunkId, Vec<u8>>,
+
+    /// Blind deduplication context (optional, feature-gated)
+    #[cfg(feature = "blind-dedup")]
+    blind_dedup: Option<BlindDedupContext>,
 }
 
 impl ChonkersBackend {
@@ -146,7 +158,45 @@ impl ChonkersBackend {
             timeline,
             buckets: DashMap::new(),
             chunk_cache: DashMap::new(),
+            #[cfg(feature = "blind-dedup")]
+            blind_dedup: None,
         })
+    }
+
+    /// Create a new Chonkers backend with blind deduplication
+    ///
+    /// Blind dedup allows content-aware deduplication without the server
+    /// seeing content hashes. Uses OPRF (Oblivious Pseudorandom Functions).
+    #[cfg(feature = "blind-dedup")]
+    pub async fn with_blind_dedup(
+        root: &Path,
+        config: ChonkersConfig,
+        dedup_config: BlindDedupConfig,
+        service: Arc<dyn BlindDedupService>,
+    ) -> Result<Self> {
+        let mut backend = Self::with_config(root, config).await?;
+
+        // Create or open dedup index
+        let index: Arc<dyn DedupIndex + Send + Sync> =
+            if let Some(ref path) = dedup_config.index_path {
+                Arc::new(SledDedupIndex::new(path)?)
+            } else {
+                Arc::new(MemoryDedupIndex::new())
+            };
+
+        // Create blind dedup context
+        let ctx = BlindDedupContext::new(service, index, dedup_config)?;
+        backend.blind_dedup = Some(ctx);
+
+        debug!(root = %root.display(), "Initialized Chonkers backend with blind dedup");
+
+        Ok(backend)
+    }
+
+    /// Check if blind dedup is enabled
+    #[cfg(feature = "blind-dedup")]
+    pub fn is_blind_dedup_enabled(&self) -> bool {
+        self.blind_dedup.is_some()
     }
 
     /// Get the path to bucket directory
@@ -269,6 +319,109 @@ impl ChonkersBackend {
             bytes_freed: stats.bytes_freed,
         })
     }
+
+    /// Process chunks with standard (non-blind) deduplication
+    async fn process_chunks_standard(
+        &self,
+        chunks: &[warp_chonkers::Chunk],
+        data: &[u8],
+    ) -> Result<Vec<ChunkId>> {
+        let mut chunk_ids = Vec::with_capacity(chunks.len());
+
+        for chunk in chunks {
+            let chunk_data = &data[chunk.offset..chunk.offset + chunk.length];
+
+            // Store chunk (handles dedup internally)
+            self.store_chunk(&chunk.id, chunk_data).await?;
+
+            // Register with chunk registry for reference counting
+            let _ = self.chunk_registry.register(
+                chunk.id.clone(),
+                chunk_data,
+                chunk.weight,
+                VersionId::new(0),
+            );
+
+            chunk_ids.push(chunk.id.clone());
+        }
+
+        Ok(chunk_ids)
+    }
+
+    /// Process chunks with blind deduplication using OPRF
+    #[cfg(feature = "blind-dedup")]
+    async fn process_chunks_blind_dedup(
+        &self,
+        chunks: &[warp_chonkers::Chunk],
+        data: &[u8],
+        key: &ObjectKey,
+        ctx: &BlindDedupContext,
+    ) -> Result<Vec<ChunkId>> {
+        let mut chunk_ids = Vec::with_capacity(chunks.len());
+
+        // Collect all chunk hashes for batch processing
+        let chunk_hashes: Vec<&[u8]> = chunks.iter().map(|c| c.id.0.as_slice()).collect();
+
+        // Get dedup tokens in batch (single OPRF round-trip)
+        let tokens = if ctx.config.batch_enabled && chunks.len() > 1 {
+            ctx.get_dedup_tokens_batch(&chunk_hashes).await?
+        } else {
+            let mut tokens = Vec::with_capacity(chunks.len());
+            for hash in &chunk_hashes {
+                tokens.push(ctx.get_dedup_token(hash).await?);
+            }
+            tokens
+        };
+
+        // Process each chunk
+        for (idx, (chunk, token)) in chunks.iter().zip(tokens.iter()).enumerate() {
+            let chunk_data = &data[chunk.offset..chunk.offset + chunk.length];
+
+            // Check if chunk exists via blind token
+            if let Some(existing_ref) = ctx.lookup(token).await? {
+                // Chunk exists - increment reference count
+                trace!(
+                    chunk_id = %chunk.id.short_hex(),
+                    existing_key = %existing_ref.object_key,
+                    "Blind dedup hit"
+                );
+
+                if let Some(metadata) = self.chunk_registry.get(&chunk.id) {
+                    metadata.inc_ref();
+                }
+            } else {
+                // New chunk - store it
+                self.store_chunk(&chunk.id, chunk_data).await?;
+
+                let _ = self.chunk_registry.register(
+                    chunk.id.clone(),
+                    chunk_data,
+                    chunk.weight,
+                    VersionId::new(0),
+                );
+
+                // Create reference for the dedup index
+                let reference = DedupReference::with_chunk(
+                    format!("{}/{}", key.bucket(), key.key()),
+                    idx as u64,
+                    chunk_data.len() as u64,
+                    ctx.service.key_id(),
+                );
+
+                ctx.store(token, reference).await?;
+
+                trace!(
+                    chunk_id = %chunk.id.short_hex(),
+                    token = %token.to_hex()[..16],
+                    "Stored new blind-deduped chunk"
+                );
+            }
+
+            chunk_ids.push(chunk.id.clone());
+        }
+
+        Ok(chunk_ids)
+    }
 }
 
 /// Deduplication statistics
@@ -357,24 +510,17 @@ impl StorageBackend for ChonkersBackend {
             .chunk(data_bytes)
             .map_err(|e| Error::Backend(format!("Chunking failed: {}", e)))?;
 
-        // Store each chunk and collect IDs
-        let mut chunk_ids = Vec::with_capacity(chunks.len());
-        for chunk in &chunks {
-            let chunk_data = &data_bytes[chunk.offset..chunk.offset + chunk.length];
+        // Process chunks - with or without blind dedup
+        #[cfg(feature = "blind-dedup")]
+        let chunk_ids = if let Some(ref ctx) = self.blind_dedup {
+            self.process_chunks_blind_dedup(&chunks, data_bytes, key, ctx)
+                .await?
+        } else {
+            self.process_chunks_standard(&chunks, data_bytes).await?
+        };
 
-            // Store chunk (handles dedup internally)
-            self.store_chunk(&chunk.id, chunk_data).await?;
-
-            // Register with chunk registry for reference counting
-            let _ = self.chunk_registry.register(
-                chunk.id.clone(),
-                chunk_data,
-                chunk.weight,
-                VersionId::new(0), // We could use a proper version here
-            );
-
-            chunk_ids.push(chunk.id.clone());
-        }
+        #[cfg(not(feature = "blind-dedup"))]
+        let chunk_ids = self.process_chunks_standard(&chunks, data_bytes).await?;
 
         // Create metadata
         let mut meta = ObjectMeta::new(&data);
@@ -926,5 +1072,164 @@ mod tests {
         // Verify object
         let data = backend.get(&key).await.unwrap();
         assert_eq!(data.as_ref(), b"Hello, World!");
+    }
+
+    #[cfg(feature = "blind-dedup")]
+    mod blind_dedup_tests {
+        use super::*;
+        use crate::backend::blind_dedup::{BlindDedupConfig, EmbeddedDedupService};
+
+        #[tokio::test]
+        async fn test_chonkers_with_blind_dedup() {
+            let temp_dir = tempfile::tempdir().unwrap();
+
+            // Create embedded OPRF service
+            let service = Arc::new(EmbeddedDedupService::new("test-key").unwrap());
+
+            // Create backend with blind dedup
+            let config = BlindDedupConfig::new("test-key");
+            let backend = ChonkersBackend::with_blind_dedup(
+                temp_dir.path(),
+                ChonkersConfig::default(),
+                config,
+                service,
+            )
+            .await
+            .unwrap();
+
+            assert!(backend.is_blind_dedup_enabled());
+
+            // Create bucket and store object
+            backend.create_bucket("test").await.unwrap();
+
+            let key = ObjectKey::new("test", "hello.txt").unwrap();
+            let data = ObjectData::from(b"Hello with blind dedup!".to_vec());
+
+            let meta = backend
+                .put(&key, data.clone(), PutOptions::default())
+                .await
+                .unwrap();
+
+            assert_eq!(meta.size, 23);
+
+            // Retrieve and verify
+            let retrieved = backend.get(&key).await.unwrap();
+            assert_eq!(retrieved.as_ref(), b"Hello with blind dedup!");
+        }
+
+        #[tokio::test]
+        async fn test_blind_dedup_cross_object() {
+            let temp_dir = tempfile::tempdir().unwrap();
+
+            let service = Arc::new(EmbeddedDedupService::new("test-key").unwrap());
+            let config = BlindDedupConfig::new("test-key");
+
+            let backend = ChonkersBackend::with_blind_dedup(
+                temp_dir.path(),
+                ChonkersConfig::default(),
+                config,
+                service,
+            )
+            .await
+            .unwrap();
+
+            backend.create_bucket("test").await.unwrap();
+
+            // Store same content in two different objects
+            let data = ObjectData::from(b"Duplicate content for blind dedup test".to_vec());
+
+            let key1 = ObjectKey::new("test", "file1.txt").unwrap();
+            let key2 = ObjectKey::new("test", "file2.txt").unwrap();
+
+            backend
+                .put(&key1, data.clone(), PutOptions::default())
+                .await
+                .unwrap();
+            backend
+                .put(&key2, data.clone(), PutOptions::default())
+                .await
+                .unwrap();
+
+            // Both should be retrievable
+            let retrieved1 = backend.get(&key1).await.unwrap();
+            let retrieved2 = backend.get(&key2).await.unwrap();
+
+            assert_eq!(retrieved1.as_ref(), retrieved2.as_ref());
+            assert_eq!(
+                retrieved1.as_ref(),
+                b"Duplicate content for blind dedup test"
+            );
+        }
+
+        #[tokio::test]
+        async fn test_blind_dedup_large_file() {
+            let temp_dir = tempfile::tempdir().unwrap();
+
+            let service = Arc::new(EmbeddedDedupService::new("test-key").unwrap());
+            let config = BlindDedupConfig::new("test-key");
+
+            let backend = ChonkersBackend::with_blind_dedup(
+                temp_dir.path(),
+                ChonkersConfig::default(),
+                config,
+                service,
+            )
+            .await
+            .unwrap();
+
+            backend.create_bucket("test").await.unwrap();
+
+            // Create a larger file that will be chunked
+            let large_data: Vec<u8> = (0..100_000).map(|i| (i % 256) as u8).collect();
+            let key = ObjectKey::new("test", "large.bin").unwrap();
+
+            backend
+                .put(
+                    &key,
+                    ObjectData::from(large_data.clone()),
+                    PutOptions::default(),
+                )
+                .await
+                .unwrap();
+
+            // Retrieve and verify
+            let retrieved = backend.get(&key).await.unwrap();
+            assert_eq!(retrieved.as_ref(), large_data.as_slice());
+        }
+
+        #[tokio::test]
+        async fn test_blind_dedup_with_persistent_index() {
+            let temp_dir = tempfile::tempdir().unwrap();
+            let index_path = temp_dir.path().join("dedup-index");
+
+            let service = Arc::new(EmbeddedDedupService::new("test-key").unwrap());
+            let config = BlindDedupConfig::new("test-key").with_index_path(&index_path);
+
+            let backend = ChonkersBackend::with_blind_dedup(
+                temp_dir.path(),
+                ChonkersConfig::default(),
+                config,
+                service,
+            )
+            .await
+            .unwrap();
+
+            backend.create_bucket("test").await.unwrap();
+
+            let key = ObjectKey::new("test", "persist.txt").unwrap();
+            let data = ObjectData::from(b"Persistent blind dedup!".to_vec());
+
+            backend
+                .put(&key, data, PutOptions::default())
+                .await
+                .unwrap();
+
+            // Index file should exist
+            assert!(index_path.exists());
+
+            // Retrieve and verify
+            let retrieved = backend.get(&key).await.unwrap();
+            assert_eq!(retrieved.as_ref(), b"Persistent blind dedup!");
+        }
     }
 }
