@@ -72,29 +72,46 @@
 - **Performance:** ~6.3 GiB/s encode throughput for 1MB (SIMD-optimized)
 - **Run with:** `cargo bench -p warp-ec`
 
+### 7. Integrate warp-ec into warp-core
+- **Status:** DONE
+- **Goal:** Use erasure coding in actual transfers
+- **Implementation:**
+  - `TransferConfig.erasure_config: Option<ErasureConfig>` - Configurable RS parameters
+  - `send_remote()` - Encodes each chunk into shards via `ErasureEncoder`, sends `Frame::Shard`
+  - `fetch_remote()` - Collects shards, decodes via `ErasureDecoder` when threshold met
+  - Builder methods: `.with_erasure_coding()`, `.with_erasure_config()`
+- **Usage:**
+  ```rust
+  let config = TransferConfig::default().with_erasure_coding();  // RS(10,4)
+  let engine = TransferEngine::new(config);
+  ```
+
+### 8. Integrate SparseMerkleTree into Transfer Verification
+- **Status:** DONE
+- **Goal:** Use O(log n) verification during transfers
+- **Implementation:**
+  - `VerificationMode` enum: `None`, `Final`, `PerChunk`, `Sampling { percent }`
+  - Sender builds `SparseMerkleTree` from chunk hashes
+  - Sends `Frame::ChunkVerify { chunk_id, chunk_hash, proof }` for each verified chunk
+  - Receiver verifies chunk hash on receipt
+  - Builder methods: `.with_per_chunk_verification()`, `.with_sampling_verification(N)`
+- **Usage:**
+  ```rust
+  let config = TransferConfig::default()
+      .with_per_chunk_verification();  // Verify every chunk
+  // Or: .with_sampling_verification(10)  // Verify 10% of chunks
+  ```
+
 ---
 
-## Pending Tasks (In Order)
+## Future Work (Optional)
 
-### Task 1: Integrate warp-ec into warp-core
-- **Goal:** Use erasure coding in actual transfers
-- **Files to modify:**
-  - `crates/warp-core/Cargo.toml` - Add warp-ec dependency
-  - `crates/warp-core/src/engine.rs` - Add erasure encoding/decoding to pipeline
-- **Design decisions:**
-  - When to apply erasure coding (configurable threshold?)
-  - Shard distribution across streams
-  - Recovery on receiver side
+*All major tasks complete! Potential future enhancements:*
 
-### Task 2: Integrate SparseMerkleTree into Transfer Verification
-- **Goal:** Use O(log n) verification during transfers
-- **Files to modify:**
-  - `crates/warp-core/src/engine.rs` - Use sparse tree for verification
-  - `crates/warp-net/src/codec.rs` - Add `MerkleProof` frame type?
-- **Features:**
-  - Per-chunk verification with proof
-  - Spot-check verification mode
-  - Incremental tree updates
+- Chonkers Algorithm (versioned data dedup)
+- OPRF Key Generation (security)
+- WaLLoC Compression (neural compression)
+- DPU Offload (hardware acceleration)
 
 ---
 
