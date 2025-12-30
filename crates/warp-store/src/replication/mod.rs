@@ -13,7 +13,7 @@ mod wireguard;
 
 pub use domain::{Domain, DomainId, DomainRegistry, DomainHealth, NodeInfo, NodeStatus};
 pub use geo_router::{GeoRouter, LatencyStats, ShardReadPlan, GeoRouterStats};
-pub use shards::{DistributedShardManager, ShardKey, ShardLocation, ShardHealth, ShardIndex, ShardDistributionInfo, ShardManagerStats};
+pub use shards::{DistributedShardManager, ShardKey, ShardLocation, ShardHealth, ShardIndex, ShardDistributionInfo, ShardManagerStats, ShardVerification};
 pub use wireguard::{WireGuardTunnelManager, WireGuardTunnel, WireGuardConfig, WireGuardKeyPair, TunnelStatus, TunnelStats};
 
 use serde::{Deserialize, Serialize};

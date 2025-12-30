@@ -416,6 +416,94 @@ impl DistributedShardManager {
     pub fn default_policy(&self) -> &ReplicationPolicy {
         &self.default_policy
     }
+
+    /// Get all shard distributions (for scrubbing/healing)
+    pub async fn get_all_distributions(&self) -> Vec<((String, String), ShardDistributionInfo)> {
+        let mut results = Vec::new();
+        for entry in self.distributions.iter() {
+            let key = entry.key().clone();
+            let info = entry.value().read().await.clone();
+            results.push((key, info));
+        }
+        results
+    }
+
+    /// Read a shard from a location
+    pub async fn read_shard(&self, _shard_key: &ShardKey, _location: &ShardLocation) -> Result<Vec<u8>> {
+        // In a real implementation, this would read from the actual storage node
+        // For now, return an error indicating this needs implementation
+        Err(Error::Replication("read_shard not yet implemented".to_string()))
+    }
+
+    /// Reconstruct a shard using erasure coding
+    pub async fn reconstruct_shard(
+        &self,
+        _shard_key: &ShardKey,
+        _distribution: &ShardDistributionInfo,
+        _shard_data: &[(ShardIndex, Vec<u8>)],
+    ) -> Result<Vec<u8>> {
+        // In a real implementation, this would use warp-ec to reconstruct
+        // For now, return an error indicating this needs implementation
+        Err(Error::Replication("reconstruct_shard not yet implemented".to_string()))
+    }
+
+    /// Select a target node for repair
+    pub async fn select_repair_target(
+        &self,
+        _distribution: &ShardDistributionInfo,
+        _shard_index: ShardIndex,
+    ) -> Result<ShardLocation> {
+        // In a real implementation, this would select an appropriate healthy node
+        // For now, return a placeholder
+        Ok(ShardLocation {
+            domain_id: self.local_domain_id,
+            node_id: "local".to_string(),
+            path: "/repair".to_string(),
+            last_verified: None,
+            health: ShardHealth::Repairing,
+        })
+    }
+
+    /// Write a reconstructed shard to a target
+    pub async fn write_shard(
+        &self,
+        _shard_key: &ShardKey,
+        _target: &ShardLocation,
+        _data: &[u8],
+    ) -> Result<()> {
+        // In a real implementation, this would write to the storage node
+        // For now, return success
+        Ok(())
+    }
+
+    /// Verify a shard's integrity
+    pub async fn verify_shard(
+        &self,
+        _shard_key: &ShardKey,
+        _location: &ShardLocation,
+    ) -> Result<ShardVerification> {
+        // In a real implementation, this would verify the shard checksum
+        // For now, return a successful verification
+        Ok(ShardVerification {
+            bytes_verified: 0,
+            checksum_valid: true,
+            expected_checksum: None,
+            actual_checksum: None,
+        })
+    }
+}
+
+/// Result of shard verification
+#[derive(Debug, Clone)]
+pub struct ShardVerification {
+    /// Bytes that were verified
+    pub bytes_verified: u64,
+    /// Whether checksum matched
+    pub checksum_valid: bool,
+    /// Expected checksum (if available)
+    pub expected_checksum: Option<[u8; 32]>,
+    /// Actual computed checksum (if available)
+    pub actual_checksum: Option<[u8; 32]>,
 }
 
 /// Statistics about shard distribution

@@ -31,6 +31,7 @@ members = [
     "crates/warp-kms",
     "crates/warp-oprf",
     "crates/warp-dpu",
+    "crates/warp-fs",
 ]
 
 [workspace.package]
@@ -77,6 +78,7 @@ warp-kms = { path = "crates/warp-kms" }
 warp-oprf = { path = "crates/warp-oprf" }
 warp-neural = { path = "crates/warp-neural" }
 warp-dpu = { path = "crates/warp-dpu" }
+warp-fs = { path = "crates/warp-fs" }
 
 # Async runtime
 tokio = { version = "1.48", features = ["full"] }
@@ -160,9 +162,9 @@ once_cell = "1.19"
 openraft = { version = "0.9", features = ["serde", "storage-v2"] }
 
 # HPC-AI integration
-hpc-channels = { path = "../01-hpc-channels", features = ["rkyv-codec"] }
-rmpi = { path = "../03-rmpi" }
-slai = { path = "../04-slai", default-features = false }
+hpc-channels = { path = "../02-hpc-channels", features = ["rkyv-codec"] }
+rmpi = { path = "../04-rmpi" }
+slai = { path = "../05-slai", default-features = false }
 
 [workspace.lints.rust]
 unsafe_code = "warn"

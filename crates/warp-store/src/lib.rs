@@ -37,6 +37,7 @@
 
 #![warn(missing_docs)]
 
+pub mod arbiter;
 pub mod backend;
 pub mod bucket;
 pub mod collective;
@@ -45,12 +46,16 @@ pub mod consistency;
 pub mod ephemeral;
 pub mod error;
 pub mod events;
+pub mod healer;
 pub mod key;
 pub mod lifecycle;
 pub mod metrics;
 pub mod object;
 pub mod object_lock;
+pub mod quota;
 pub mod replication;
+pub mod scrub;
+pub mod snapshot;
 pub mod transport;
 pub mod version;
 
@@ -77,6 +82,24 @@ pub use events::{EventEmitter, EventConfig, S3Event, EventType, NotificationConf
 pub use object_lock::{
     ObjectLockConfig, ObjectLockManager, ObjectLockStatus, ObjectRetention,
     RetentionMode, LegalHoldStatus, DefaultRetention,
+};
+pub use healer::{HealerDaemon, HealerConfig, HealerMetrics, HealerStats, RepairQueue, RepairJob, RepairPriority, RepairWorker, RepairResult};
+pub use scrub::{ScrubDaemon, ScrubConfig, ScrubMetrics, ScrubStats, ScrubScheduler, ScrubJob, ScrubResult};
+pub use quota::{QuotaManager, QuotaConfig, QuotaPolicy, QuotaUsage, QuotaAlert, QuotaEnforcement};
+pub use arbiter::{
+    ArbiterConfig, ArbiterStatus, NodeRole,
+    SplitBrainDetector, PartitionState, PartitionInfo,
+    FencingManager, FencingConfig, FenceAction, FenceResult,
+    RecoveryCoordinator, RecoveryState, RecoveryPlan,
+    VoteTracker, Vote, VoteResult, QuorumStatus,
+    WitnessNode, WitnessConfig, WitnessState, WitnessHeartbeat,
+};
+pub use snapshot::{
+    SnapshotManager, SnapshotConfig, Snapshot, SnapshotId, SnapshotState,
+    SnapshotPolicy, SnapshotSchedule, SnapshotStats,
+    CloneManager, CloneInfo, CloneConfig, CloneState, CloneHandle,
+    CowBlock, CowManager, CowConfig, BlockRef, BlockState,
+    SnapshotSystemConfig, SnapshotGranularity, RestoreOptions, SnapshotDiff,
 };
 
 use std::sync::Arc;

@@ -69,6 +69,7 @@ ipnet = { version = "2.9", features = ["serde"] }
 
 # Concurrent data structures
 dashmap = { workspace = true }
+parking_lot = { workspace = true }
 
 # Error handling
 thiserror = { workspace = true }

@@ -138,6 +138,15 @@ pub enum Error {
         shard_index: u16,
     },
 
+    /// Insufficient shards for reconstruction
+    #[error("insufficient shards: have {available} but need {required}")]
+    InsufficientShards {
+        /// Available shards
+        available: usize,
+        /// Required shards
+        required: usize,
+    },
+
     /// Erasure coding error
     #[error("erasure coding error: {0}")]
     ErasureCoding(String),

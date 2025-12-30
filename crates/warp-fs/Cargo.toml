@@ -1,0 +1,48 @@
+[package]
+name = "warp-fs"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "POSIX filesystem layer for WARP storage - mount warp-store as a local filesystem"
+repository.workspace = true
+keywords = ["fuse", "filesystem", "storage", "posix", "hpc"]
+categories = ["filesystem", "os::unix-apis"]
+
+[dependencies]
+# FUSE bindings
+fuser = "0.15"
+libc = "0.2"
+
+# WARP ecosystem
+warp-store = { path = "../warp-store" }
+warp-hash = { path = "../warp-hash" }
+
+# Async runtime
+tokio = { workspace = true }
+async-trait = { workspace = true }
+
+# Caching
+lru = "0.12"
+dashmap = { workspace = true }
+
+# Serialization
+serde = { workspace = true }
+serde_json = { workspace = true }
+rkyv = "0.8"
+
+# Error handling
+thiserror = { workspace = true }
+tracing = { workspace = true }
+
+# Utilities
+bytes = { workspace = true }
+parking_lot = { workspace = true }
+crossbeam-utils = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }
+tokio-test = "0.4"
+
+[features]
+default = []
