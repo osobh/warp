@@ -14,6 +14,10 @@ GPU-accelerated HPC storage and transfer with adaptive compression, deduplicatio
 - [Features](#features)
 - [Performance](#performance)
 - [Quick Start](#quick-start)
+- [Deployment](#deployment)
+  - [Single Node Setup](#single-node-setup)
+  - [Multi-Node Cluster](#multi-node-cluster)
+  - [Shared Storage Access](#shared-storage-access)
 - [Architecture](#architecture)
 - [HPC-AI Integration](#hpc-ai-integration)
 - [Crate Catalog](#crate-catalog)
@@ -127,6 +131,413 @@ cargo run -p warp-core --example archive_roundtrip
 
 # Parallel BLAKE3 hashing
 cargo run -p warp-core --example parallel_hashing --release
+```
+
+---
+
+## Deployment
+
+### Single Node Setup
+
+Deploy WARP on a single server for development or small-scale use.
+
+#### Prerequisites
+
+- **OS**: Linux (Ubuntu 22.04+, RHEL 8+) or macOS 13+
+- **Rust**: 1.85+ (for building from source)
+- **RAM**: 8GB minimum, 32GB+ recommended
+- **Storage**: SSD recommended for metadata, HDD acceptable for data
+- **FUSE** (optional): libfuse3-dev (Linux) or macFUSE (macOS)
+
+#### Build from Source
+
+```bash
+git clone https://github.com/osobh/warp.git
+cd warp
+cargo build --release --workspace
+```
+
+#### Directory Structure
+
+```bash
+sudo mkdir -p /var/lib/warp/{data,meta,logs}
+sudo mkdir -p /etc/warp
+sudo chown -R $USER:$USER /var/lib/warp /etc/warp
+```
+
+#### Configuration
+
+Create `/etc/warp/config.toml`:
+
+```toml
+[server]
+bind_addr = "0.0.0.0:9000"
+data_dir = "/var/lib/warp/data"
+meta_dir = "/var/lib/warp/meta"
+
+[storage]
+max_object_size = "5TB"
+default_versioning = "disabled"
+compression = "zstd"
+compression_level = 3
+
+[security]
+# Generate with: openssl rand -hex 20 | tr '[:lower:]' '[:upper:]'
+access_key_id = "YOUR_ACCESS_KEY_ID"
+# Generate with: openssl rand -base64 40
+secret_access_key = "YOUR_SECRET_ACCESS_KEY"
+region = "us-east-1"
+
+[erasure]
+enabled = true
+data_shards = 10
+parity_shards = 4
+
+[logging]
+level = "info"
+file = "/var/lib/warp/logs/warp.log"
+```
+
+#### Start the Server
+
+```bash
+# Foreground (for testing)
+./target/release/warp-store-api --config /etc/warp/config.toml
+
+# Or with environment variables
+WARP_BIND_ADDR=0.0.0.0:9000 \
+WARP_DATA_DIR=/var/lib/warp/data \
+./target/release/warp-store-api
+```
+
+#### Systemd Service
+
+Create `/etc/systemd/system/warp.service`:
+
+```ini
+[Unit]
+Description=WARP Storage Server
+After=network.target
+
+[Service]
+Type=simple
+User=warp
+Group=warp
+ExecStart=/usr/local/bin/warp-store-api --config /etc/warp/config.toml
+Restart=on-failure
+RestartSec=5
+LimitNOFILE=65535
+
+[Install]
+WantedBy=multi-user.target
+```
+
+Enable and start:
+
+```bash
+sudo systemctl daemon-reload
+sudo systemctl enable warp
+sudo systemctl start warp
+sudo systemctl status warp
+```
+
+#### Verify Installation
+
+```bash
+# Check server is running
+curl http://localhost:9000/health
+
+# Create a bucket
+aws --endpoint-url http://localhost:9000 s3 mb s3://test-bucket
+
+# Upload a file
+aws --endpoint-url http://localhost:9000 s3 cp /etc/hosts s3://test-bucket/
+
+# List objects
+aws --endpoint-url http://localhost:9000 s3 ls s3://test-bucket/
+```
+
+---
+
+### Multi-Node Cluster
+
+Deploy WARP across multiple nodes for high availability and scale.
+
+#### Cluster Architecture
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                    WARP Cluster Architecture                     │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                  │
+│   ┌──────────────┐    ┌──────────────┐    ┌──────────────┐     │
+│   │ Coordinator  │    │   Storage    │    │   Storage    │     │
+│   │   (Leader)   │◄──►│   Node 1     │◄──►│   Node 2     │     │
+│   │  Raft + API  │    │  Raft + Data │    │  Raft + Data │     │
+│   └──────┬───────┘    └──────────────┘    └──────────────┘     │
+│          │                                                       │
+│          │ API Requests                                          │
+│          ▼                                                       │
+│   ┌──────────────┐    ┌──────────────┐    ┌──────────────┐     │
+│   │   Gateway    │    │   Compute    │    │   Compute    │     │
+│   │  NFS / SMB   │    │  FUSE Mount  │    │  FUSE Mount  │     │
+│   └──────────────┘    └──────────────┘    └──────────────┘     │
+│                                                                  │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+#### Node Roles
+
+| Role | Purpose | Min Nodes | Services |
+|------|---------|-----------|----------|
+| **Coordinator** | Raft leader, API endpoint | 1 (3 for HA) | warp-store-api |
+| **Storage** | Data storage, Raft follower | 1+ | warp-store-api |
+| **Gateway** | Protocol translation | 0+ | warp-nfs, warp-smb |
+| **Compute** | Data consumers | 0+ | warp-fs mount |
+
+#### Step 1: Initialize Coordinator
+
+On the coordinator node, create `/etc/warp/config.toml`:
+
+```toml
+[server]
+bind_addr = "0.0.0.0:9000"
+data_dir = "/var/lib/warp/data"
+node_name = "coordinator"
+
+[raft]
+enabled = true
+node_id = 1
+bind_addr = "0.0.0.0:9001"
+init_cluster = true  # Only on first node!
+
+[cluster]
+peers = []
+```
+
+Start the coordinator:
+
+```bash
+./target/release/warp-store-api --config /etc/warp/config.toml
+```
+
+#### Step 2: Join Storage Nodes
+
+On each storage node, create `/etc/warp/config.toml`:
+
+```toml
+[server]
+bind_addr = "0.0.0.0:9000"
+data_dir = "/data/warp"
+node_name = "storage-1"
+
+[raft]
+enabled = true
+node_id = 2  # Unique per node: 2, 3, 4...
+bind_addr = "0.0.0.0:9001"
+init_cluster = false
+join_addr = "coordinator:9001"
+```
+
+Start and join:
+
+```bash
+./target/release/warp-store-api --config /etc/warp/config.toml
+```
+
+Verify cluster status:
+
+```bash
+curl http://coordinator:9000/api/v1/cluster/status
+```
+
+#### Step 3: Configure Gateways
+
+NFS Gateway (`/etc/warp/nfs.toml`):
+
+```toml
+[server]
+bind_addr = "0.0.0.0:2049"
+
+[backend]
+endpoints = ["coordinator:9000", "storage-1:9000", "storage-2:9000"]
+
+[[exports]]
+path = "/"
+bucket = "shared-data"
+allowed_clients = ["10.0.0.0/8", "192.168.0.0/16"]
+read_only = false
+```
+
+SMB Gateway (`/etc/warp/smb.toml`):
+
+```toml
+[server]
+bind_addr = "0.0.0.0:445"
+
+[backend]
+endpoints = ["coordinator:9000"]
+
+[[shares]]
+name = "data"
+bucket = "shared-data"
+path = "/"
+read_only = false
+```
+
+Start gateways:
+
+```bash
+./target/release/warp-nfs --config /etc/warp/nfs.toml
+./target/release/warp-smb --config /etc/warp/smb.toml
+```
+
+#### Step 4: Mount on Compute Nodes
+
+FUSE mount:
+
+```bash
+./target/release/warp-fs mount \
+  --endpoint coordinator:9000 \
+  --bucket shared-data \
+  /mnt/warp
+```
+
+Or via NFS:
+
+```bash
+mount -t nfs4 gateway:/ /mnt/warp
+```
+
+Or via `/etc/fstab`:
+
+```
+# NFS
+gateway:/ /mnt/warp nfs4 defaults,_netdev 0 0
+```
+
+---
+
+### Shared Storage Access
+
+WARP provides multiple protocols for accessing shared storage:
+
+#### FUSE Filesystem (warp-fs)
+
+Mount WARP buckets as local filesystems with POSIX semantics.
+
+```bash
+# Mount a bucket
+./target/release/warp-fs mount \
+  --endpoint localhost:9000 \
+  --bucket my-bucket \
+  --cache-size 1G \
+  /mnt/warp
+
+# Mount with options
+./target/release/warp-fs mount \
+  --endpoint localhost:9000 \
+  --bucket my-bucket \
+  --read-only \
+  --allow-other \
+  --cache-size 4G \
+  --cache-ttl 300 \
+  /mnt/warp
+
+# Unmount
+fusermount -u /mnt/warp      # Linux
+umount /mnt/warp             # macOS
+```
+
+**Performance Tips:**
+- Use `--cache-size` for read-heavy workloads
+- Use `--direct-io` for large sequential I/O
+- Set `--max-background` for parallel operations
+
+#### NFS Gateway (warp-nfs)
+
+Export WARP buckets via NFSv4.1 with pNFS support.
+
+**Server:**
+
+```bash
+./target/release/warp-nfs \
+  --bind 0.0.0.0:2049 \
+  --backend localhost:9000 \
+  --export shared-data:/
+```
+
+**Client:**
+
+```bash
+# Linux
+mount -t nfs4 -o vers=4.1 server:/ /mnt/warp
+
+# With tuning
+mount -t nfs4 -o vers=4.1,rsize=1048576,wsize=1048576 server:/ /mnt/warp
+```
+
+#### SMB Gateway (warp-smb)
+
+Share WARP buckets via SMB3 for Windows and cross-platform access.
+
+**Server:**
+
+```bash
+./target/release/warp-smb \
+  --bind 0.0.0.0:445 \
+  --backend localhost:9000 \
+  --share data:shared-data
+```
+
+**Clients:**
+
+```bash
+# Linux (CIFS)
+mount -t cifs -o username=guest //server/data /mnt/warp
+
+# macOS
+mount -t smbfs //guest@server/data /mnt/warp
+
+# Windows
+net use Z: \\server\data
+```
+
+#### Block Device (warp-block)
+
+Export WARP volumes as network block devices via NBD.
+
+**Server:**
+
+```bash
+# Create a thin-provisioned volume
+./target/release/warp-block volume create \
+  --name myvolume \
+  --size 100G \
+  --pool default
+
+# Start NBD server
+./target/release/warp-block serve \
+  --bind 0.0.0.0:10809 \
+  --volume myvolume
+```
+
+**Client:**
+
+```bash
+# Load NBD kernel module
+sudo modprobe nbd
+
+# Connect to NBD server
+sudo nbd-client server 10809 /dev/nbd0
+
+# Create filesystem and mount
+sudo mkfs.ext4 /dev/nbd0
+sudo mount /dev/nbd0 /mnt/block
+
+# Disconnect
+sudo umount /mnt/block
+sudo nbd-client -d /dev/nbd0
 ```
 
 ---
