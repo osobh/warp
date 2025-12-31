@@ -1,0 +1,48 @@
+[package]
+name = "warp-tensor"
+version.workspace = true
+edition.workspace = true
+description = "Tensor-optimized storage for WARP - native ML tensor formats with lazy loading"
+license.workspace = true
+repository.workspace = true
+keywords = ["tensor", "storage", "ml", "ai", "lazy-loading"]
+categories = ["science", "data-structures"]
+
+[dependencies]
+# WARP ecosystem
+warp-store = { path = "../warp-store" }
+warp-hash = { path = "../warp-hash" }
+warp-compress = { path = "../warp-compress" }
+
+# Hashing
+blake3 = { workspace = true }
+
+# Async runtime
+tokio = { workspace = true }
+
+# Concurrency
+dashmap = { workspace = true }
+parking_lot = { workspace = true }
+
+# Serialization
+serde = { workspace = true }
+serde_json = { workspace = true }
+rmp-serde = { workspace = true }
+
+# Numeric
+ndarray = { workspace = true }
+
+# Error handling
+thiserror = { workspace = true }
+tracing = { workspace = true }
+
+# Utilities
+bytes = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }
+
+[features]
+default = []
+safetensors = []  # Enable safetensors format support
+gguf = []         # Enable GGUF format support (llama.cpp)

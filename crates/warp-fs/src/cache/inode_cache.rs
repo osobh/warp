@@ -162,9 +162,10 @@ impl InodeCache {
     pub fn get_dirty(&self) -> Vec<(u64, Arc<RwLock<Inode>>)> {
         let mut dirty = Vec::new();
         for entry in self.entries.iter() {
-            let inode = entry.value.value.read();
+            let cache_entry = entry.value();
+            let inode = cache_entry.value.read();
             if inode.is_dirty() {
-                dirty.push((*entry.key(), entry.value.value.clone()));
+                dirty.push((*entry.key(), cache_entry.value.clone()));
             }
         }
         dirty

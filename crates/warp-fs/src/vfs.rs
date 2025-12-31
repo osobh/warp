@@ -379,12 +379,17 @@ impl VirtualFilesystem {
         // Decrement nlink
         let should_delete = if let Ok(inode) = self.load_inode(entry.ino).await {
             let mut guard = inode.write();
-            let meta = guard.metadata_mut();
-            meta.nlink = meta.nlink.saturating_sub(1);
+            {
+                let meta = guard.metadata_mut();
+                meta.nlink = meta.nlink.saturating_sub(1);
+            }
 
-            if meta.nlink == 0 && guard.open_count() == 0 {
+            let nlink = guard.metadata().nlink;
+            let open_count = guard.open_count();
+
+            if nlink == 0 && open_count == 0 {
                 true
-            } else if meta.nlink == 0 {
+            } else if nlink == 0 {
                 guard.mark_unlinked();
                 false
             } else {

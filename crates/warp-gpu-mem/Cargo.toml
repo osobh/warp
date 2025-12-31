@@ -1,0 +1,36 @@
+[package]
+name = "warp-gpu-mem"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "GPU memory extension for WARP storage - treat storage as extended GPU VRAM"
+
+[dependencies]
+# WARP ecosystem
+warp-store = { path = "../warp-store" }
+warp-hash = { path = "../warp-hash" }
+
+# Async runtime
+tokio = { workspace = true }
+async-trait = { workspace = true }
+
+# Concurrency
+dashmap = { workspace = true }
+parking_lot = { workspace = true }
+crossbeam-utils = { workspace = true }
+
+# Serialization
+serde = { workspace = true }
+bytes = { workspace = true }
+
+# Error handling
+thiserror = { workspace = true }
+tracing = { workspace = true }
+
+# Tensor support
+ndarray = { workspace = true }
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["test-util"] }
+tempfile = { workspace = true }

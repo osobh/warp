@@ -6604,6 +6604,25 @@ dependencies = [
 ]
 
 [[package]]
+name = "warp-gpu-mem"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "bytes",
+ "crossbeam-utils",
+ "dashmap 6.1.0",
+ "ndarray",
+ "parking_lot 0.12.5",
+ "serde",
+ "tempfile",
+ "thiserror 2.0.17",
+ "tokio",
+ "tracing",
+ "warp-hash",
+ "warp-store",
+]
+
+[[package]]
 name = "warp-hash"
 version = "0.1.0"
 dependencies = [
@@ -6951,6 +6970,27 @@ dependencies = [
  "tokio",
  "tracing",
  "tracing-subscriber",
+]
+
+[[package]]
+name = "warp-tensor"
+version = "0.1.0"
+dependencies = [
+ "blake3",
+ "bytes",
+ "dashmap 6.1.0",
+ "ndarray",
+ "parking_lot 0.12.5",
+ "rmp-serde",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror 2.0.17",
+ "tokio",
+ "tracing",
+ "warp-compress",
+ "warp-hash",
+ "warp-store",
 ]
 
 [[package]]

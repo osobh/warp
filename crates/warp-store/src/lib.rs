@@ -55,6 +55,7 @@ pub mod object_lock;
 pub mod quota;
 pub mod replication;
 pub mod scrub;
+pub mod slai;
 pub mod snapshot;
 pub mod transport;
 pub mod version;
@@ -100,6 +101,11 @@ pub use snapshot::{
     CloneManager, CloneInfo, CloneConfig, CloneState, CloneHandle,
     CowBlock, CowManager, CowConfig, BlockRef, BlockState,
     SnapshotSystemConfig, SnapshotGranularity, RestoreOptions, SnapshotDiff,
+};
+pub use slai::{
+    PlacementEngine, PlacementDecision, PlacementHint,
+    WorkloadPredictor, WorkloadType, PredictionResult,
+    AccessTracker, AccessPattern, AccessStats,
 };
 
 use std::sync::Arc;
