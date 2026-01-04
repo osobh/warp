@@ -8,16 +8,15 @@ use std::collections::BTreeMap;
 use std::io::Cursor;
 
 use openraft::{
-    BasicNode, EntryPayload, LogId,
-    Snapshot, SnapshotMeta, StoredMembership, StorageError,
+    BasicNode, EntryPayload, ErrorSubject, ErrorVerb, LogId, Snapshot, SnapshotMeta, StorageError,
+    StoredMembership,
     storage::{RaftSnapshotBuilder, RaftStateMachine},
-    ErrorSubject, ErrorVerb,
 };
 use tracing::debug;
 
 use super::types::*;
-use crate::bucket::BucketConfig;
 use crate::ObjectKey;
+use crate::bucket::BucketConfig;
 
 /// State machine that manages all metadata
 ///
@@ -182,7 +181,10 @@ pub struct MetadataSnapshotBuilder {
 impl MetadataSnapshotBuilder {
     /// Create a new snapshot builder
     pub fn new(snapshot_data: MetadataSnapshot, snapshot_idx: u64) -> Self {
-        Self { snapshot_data, snapshot_idx }
+        Self {
+            snapshot_data,
+            snapshot_idx,
+        }
     }
 }
 
@@ -194,7 +196,10 @@ impl RaftSnapshotBuilder<TypeConfig> for MetadataSnapshotBuilder {
         let last_membership = self.snapshot_data.last_membership.clone();
 
         let snapshot_id = if let Some(log_id) = last_applied_log {
-            format!("{}-{}-{}", log_id.leader_id, log_id.index, self.snapshot_idx)
+            format!(
+                "{}-{}-{}",
+                log_id.leader_id, log_id.index, self.snapshot_idx
+            )
         } else {
             format!("0-0-{}", self.snapshot_idx)
         };
@@ -217,7 +222,8 @@ impl RaftStateMachine<TypeConfig> for MetadataStateMachine {
 
     async fn applied_state(
         &mut self,
-    ) -> Result<(Option<LogId<NodeId>>, StoredMembership<NodeId, BasicNode>), StorageError<NodeId>> {
+    ) -> Result<(Option<LogId<NodeId>>, StoredMembership<NodeId, BasicNode>), StorageError<NodeId>>
+    {
         Ok((self.last_applied_log, self.last_membership.clone()))
     }
 
@@ -253,7 +259,9 @@ impl RaftStateMachine<TypeConfig> for MetadataStateMachine {
         MetadataSnapshotBuilder::new(self.snapshot(), self.snapshot_idx)
     }
 
-    async fn begin_receiving_snapshot(&mut self) -> Result<Box<Cursor<Vec<u8>>>, StorageError<NodeId>> {
+    async fn begin_receiving_snapshot(
+        &mut self,
+    ) -> Result<Box<Cursor<Vec<u8>>>, StorageError<NodeId>> {
         Ok(Box::new(Cursor::new(Vec::new())))
     }
 
@@ -263,12 +271,13 @@ impl RaftStateMachine<TypeConfig> for MetadataStateMachine {
         snapshot: Box<Cursor<Vec<u8>>>,
     ) -> Result<(), StorageError<NodeId>> {
         let bytes = snapshot.into_inner();
-        let data = MetadataSnapshot::from_bytes(&bytes)
-            .map_err(|e| StorageError::from_io_error(
+        let data = MetadataSnapshot::from_bytes(&bytes).map_err(|e| {
+            StorageError::from_io_error(
                 ErrorSubject::StateMachine,
                 ErrorVerb::Read,
                 std::io::Error::new(std::io::ErrorKind::InvalidData, e.to_string()),
-            ))?;
+            )
+        })?;
 
         self.last_applied_log = meta.last_log_id;
         self.last_membership = meta.last_membership.clone();
@@ -278,7 +287,9 @@ impl RaftStateMachine<TypeConfig> for MetadataStateMachine {
         Ok(())
     }
 
-    async fn get_current_snapshot(&mut self) -> Result<Option<Snapshot<TypeConfig>>, StorageError<NodeId>> {
+    async fn get_current_snapshot(
+        &mut self,
+    ) -> Result<Option<Snapshot<TypeConfig>>, StorageError<NodeId>> {
         let snapshot_data = self.snapshot();
         let bytes = snapshot_data.to_bytes();
 
@@ -290,7 +301,10 @@ impl RaftStateMachine<TypeConfig> for MetadataStateMachine {
         }
 
         let snapshot_id = if let Some(log_id) = last_applied_log {
-            format!("{}-{}-{}", log_id.leader_id, log_id.index, self.snapshot_idx)
+            format!(
+                "{}-{}-{}",
+                log_id.leader_id, log_id.index, self.snapshot_idx
+            )
         } else {
             format!("0-0-{}", self.snapshot_idx)
         };

@@ -113,7 +113,10 @@ impl ScrubMetrics {
 
     /// Get uptime
     pub fn uptime(&self) -> Option<Duration> {
-        self.start_time.read().as_ref().map(|t: &Instant| t.elapsed())
+        self.start_time
+            .read()
+            .as_ref()
+            .map(|t: &Instant| t.elapsed())
     }
 
     /// Get statistics snapshot

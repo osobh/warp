@@ -14,7 +14,9 @@ use dashmap::DashMap;
 use serde::{Deserialize, Serialize};
 use tracing::{debug, warn};
 
-use super::{DomainId, DomainRegistry, ReadPreference, ShardDistributionInfo, ShardHealth, ShardIndex};
+use super::{
+    DomainId, DomainRegistry, ReadPreference, ShardDistributionInfo, ShardHealth, ShardIndex,
+};
 use crate::error::{Error, Result};
 
 /// Latency statistics for a domain
@@ -71,7 +73,8 @@ impl LatencyStats {
         if self.sample_count == 1 {
             self.ema_ms = latency_ms as f64;
         } else {
-            self.ema_ms = Self::EMA_ALPHA * latency_ms as f64 + (1.0 - Self::EMA_ALPHA) * self.ema_ms;
+            self.ema_ms =
+                Self::EMA_ALPHA * latency_ms as f64 + (1.0 - Self::EMA_ALPHA) * self.ema_ms;
         }
 
         self.last_measured = Some(Instant::now());
@@ -104,7 +107,10 @@ pub struct ShardReadPlan {
 impl ShardReadPlan {
     /// Get the preferred domain for a specific shard
     pub fn preferred_domain(&self, shard_index: ShardIndex) -> Option<DomainId> {
-        self.shard_sources.get(&shard_index).and_then(|v| v.first()).copied()
+        self.shard_sources
+            .get(&shard_index)
+            .and_then(|v| v.first())
+            .copied()
     }
 
     /// Get all domains that will be used

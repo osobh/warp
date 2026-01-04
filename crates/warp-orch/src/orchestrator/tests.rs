@@ -2,10 +2,7 @@
 
 use super::*;
 
-fn test_transfer_request(
-    direction: TransferDirection,
-    num_chunks: usize,
-) -> TransferRequest {
+fn test_transfer_request(direction: TransferDirection, num_chunks: usize) -> TransferRequest {
     let chunks = (0..num_chunks)
         .map(|i| {
             let mut hash = [0u8; 32];
@@ -463,8 +460,16 @@ async fn test_active_transfers_list() {
 
     let active = orch.active_transfers();
     assert_eq!(active.len(), 2);
-    assert!(active.iter().any(|h| h.direction == TransferDirection::Download));
-    assert!(active.iter().any(|h| h.direction == TransferDirection::Upload));
+    assert!(
+        active
+            .iter()
+            .any(|h| h.direction == TransferDirection::Download)
+    );
+    assert!(
+        active
+            .iter()
+            .any(|h| h.direction == TransferDirection::Upload)
+    );
 }
 
 #[tokio::test]
@@ -483,11 +488,8 @@ async fn test_subscribe_progress() {
     let _ = orch.tick().await;
 
     // Should receive progress updates
-    let timeout_result = tokio::time::timeout(
-        tokio::time::Duration::from_millis(100),
-        rx.recv(),
-    )
-    .await;
+    let timeout_result =
+        tokio::time::timeout(tokio::time::Duration::from_millis(100), rx.recv()).await;
 
     assert!(timeout_result.is_ok());
     if let Ok(Ok(update)) = timeout_result {
@@ -546,10 +548,7 @@ async fn test_max_concurrent_transfers() {
     let _handle1 = orch.download(request1, sources1).await.unwrap();
 
     let mut sources2 = HashMap::new();
-    sources2.insert(
-        ChunkId::from_hash(&[10u8; 32]),
-        vec![EdgeIdx::new(0)],
-    );
+    sources2.insert(ChunkId::from_hash(&[10u8; 32]), vec![EdgeIdx::new(0)]);
     let request2 = {
         let chunks = vec![[10u8; 32]];
         let chunk_sizes = vec![1024];
@@ -559,10 +558,7 @@ async fn test_max_concurrent_transfers() {
 
     // Third transfer should fail
     let mut sources3 = HashMap::new();
-    sources3.insert(
-        ChunkId::from_hash(&[20u8; 32]),
-        vec![EdgeIdx::new(0)],
-    );
+    sources3.insert(ChunkId::from_hash(&[20u8; 32]), vec![EdgeIdx::new(0)]);
     let request3 = {
         let chunks = vec![[20u8; 32]];
         let chunk_sizes = vec![1024];
@@ -582,10 +578,7 @@ async fn test_transfer_id_generation() {
     let handle1 = orch.download(request1, sources1).await.unwrap();
 
     let mut sources2 = HashMap::new();
-    sources2.insert(
-        ChunkId::from_hash(&[10u8; 32]),
-        vec![EdgeIdx::new(0)],
-    );
+    sources2.insert(ChunkId::from_hash(&[10u8; 32]), vec![EdgeIdx::new(0)]);
     let request2 = {
         let chunks = vec![[10u8; 32]];
         let chunk_sizes = vec![1024];

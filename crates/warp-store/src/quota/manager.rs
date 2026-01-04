@@ -154,22 +154,16 @@ impl QuotaManager {
 
         // Check for default based on scope type
         match scope {
-            QuotaScope::Bucket(name) => {
-                self.config.default_bucket_quota.map(|quota| {
-                    QuotaPolicy::bucket_standard(name.clone(), quota / (1024 * 1024 * 1024))
-                })
-            }
-            QuotaScope::User(name) => {
-                self.config.default_user_quota.map(|quota| {
-                    QuotaPolicy::user_standard(name.clone(), quota / (1024 * 1024 * 1024))
-                })
-            }
-            QuotaScope::Global => {
-                self.config.global_quota.map(|quota| {
-                    QuotaPolicy::new("global", QuotaScope::Global)
-                        .with_storage_limit(super::QuotaLimit::storage_bytes(quota))
-                })
-            }
+            QuotaScope::Bucket(name) => self.config.default_bucket_quota.map(|quota| {
+                QuotaPolicy::bucket_standard(name.clone(), quota / (1024 * 1024 * 1024))
+            }),
+            QuotaScope::User(name) => self.config.default_user_quota.map(|quota| {
+                QuotaPolicy::user_standard(name.clone(), quota / (1024 * 1024 * 1024))
+            }),
+            QuotaScope::Global => self.config.global_quota.map(|quota| {
+                QuotaPolicy::new("global", QuotaScope::Global)
+                    .with_storage_limit(super::QuotaLimit::storage_bytes(quota))
+            }),
             _ => None,
         }
     }
@@ -297,7 +291,8 @@ impl QuotaManager {
 
     /// Get current usage for a bucket
     pub fn bucket_usage(&self, bucket: &str) -> QuotaUsage {
-        self.tracker.get_usage(&QuotaScope::Bucket(bucket.to_string()))
+        self.tracker
+            .get_usage(&QuotaScope::Bucket(bucket.to_string()))
     }
 
     /// Get current usage for a user
@@ -339,7 +334,8 @@ impl QuotaManager {
                 return; // Skip duplicate
             }
         }
-        self.recent_alerts.insert(key, (alert.level, std::time::Instant::now()));
+        self.recent_alerts
+            .insert(key, (alert.level, std::time::Instant::now()));
 
         debug!(
             scope = %alert.scope,
@@ -415,11 +411,14 @@ mod tests {
 
         // Set usage near limit
         let scope = QuotaScope::Bucket("test".to_string());
-        manager.tracker.set_usage(scope, QuotaUsage {
-            storage_bytes: 1024 * 1024 * 1024, // 1 GB
-            object_count: 100,
-            ..Default::default()
-        });
+        manager.tracker.set_usage(
+            scope,
+            QuotaUsage {
+                storage_bytes: 1024 * 1024 * 1024, // 1 GB
+                object_count: 100,
+                ..Default::default()
+            },
+        );
 
         // Should deny over-limit write
         let result = manager.check_put("test", None, 1);

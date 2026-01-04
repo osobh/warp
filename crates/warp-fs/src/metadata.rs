@@ -8,8 +8,18 @@ use std::collections::HashMap;
 use std::time::SystemTime;
 
 /// File type enumeration
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Archive, Serialize, Deserialize)]
-#[derive(SerdeSerialize, SerdeDeserialize)]
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    Archive,
+    Serialize,
+    Deserialize,
+    SerdeSerialize,
+    SerdeDeserialize,
+)]
 pub enum FileType {
     /// Regular file
     RegularFile,
@@ -70,8 +80,18 @@ impl FileType {
 }
 
 /// Stored timestamp (nanoseconds since UNIX epoch)
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Archive, Serialize, Deserialize)]
-#[derive(SerdeSerialize, SerdeDeserialize)]
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    Archive,
+    Serialize,
+    Deserialize,
+    SerdeSerialize,
+    SerdeDeserialize,
+)]
 pub struct StoredTime {
     /// Seconds since UNIX epoch
     pub secs: i64,
@@ -119,8 +139,9 @@ impl Default for StoredTime {
 }
 
 /// A mapping of a file region to a warp-store object
-#[derive(Debug, Clone, PartialEq, Eq, Archive, Serialize, Deserialize)]
-#[derive(SerdeSerialize, SerdeDeserialize)]
+#[derive(
+    Debug, Clone, PartialEq, Eq, Archive, Serialize, Deserialize, SerdeSerialize, SerdeDeserialize,
+)]
 pub struct DataExtent {
     /// Offset within the file
     pub file_offset: u64,
@@ -163,8 +184,7 @@ impl DataExtent {
 ///
 /// This is stored as a serialized object in warp-store under
 /// `__warp_fs_meta__/inodes/{ino}`
-#[derive(Debug, Clone, Archive, Serialize, Deserialize)]
-#[derive(SerdeSerialize, SerdeDeserialize)]
+#[derive(Debug, Clone, Archive, Serialize, Deserialize, SerdeSerialize, SerdeDeserialize)]
 pub struct InodeMetadata {
     /// Inode number
     pub ino: u64,
@@ -373,8 +393,9 @@ impl InodeMetadata {
 }
 
 /// Directory entry for storage
-#[derive(Debug, Clone, PartialEq, Eq, Archive, Serialize, Deserialize)]
-#[derive(SerdeSerialize, SerdeDeserialize)]
+#[derive(
+    Debug, Clone, PartialEq, Eq, Archive, Serialize, Deserialize, SerdeSerialize, SerdeDeserialize,
+)]
 pub struct DirectoryEntry {
     /// Entry name
     pub name: String,
@@ -400,8 +421,9 @@ impl DirectoryEntry {
 /// Directory contents
 ///
 /// Stored as `__warp_fs_meta__/dirs/{parent_ino}`
-#[derive(Debug, Clone, Default, Archive, Serialize, Deserialize)]
-#[derive(SerdeSerialize, SerdeDeserialize)]
+#[derive(
+    Debug, Clone, Default, Archive, Serialize, Deserialize, SerdeSerialize, SerdeDeserialize,
+)]
 pub struct DirectoryContents {
     /// Parent inode
     pub parent_ino: u64,
@@ -471,8 +493,7 @@ impl DirectoryContents {
 /// Superblock for the filesystem
 ///
 /// Stored as `__warp_fs_meta__/superblock`
-#[derive(Debug, Clone, Archive, Serialize, Deserialize)]
-#[derive(SerdeSerialize, SerdeDeserialize)]
+#[derive(Debug, Clone, Archive, Serialize, Deserialize, SerdeSerialize, SerdeDeserialize)]
 pub struct Superblock {
     /// Magic number for validation
     pub magic: u64,
@@ -558,7 +579,9 @@ impl Superblock {
     /// Validate the superblock
     pub fn validate(&self) -> Result<(), crate::Error> {
         if self.magic != Self::MAGIC {
-            return Err(crate::Error::Internal("Invalid superblock magic".to_string()));
+            return Err(crate::Error::Internal(
+                "Invalid superblock magic".to_string(),
+            ));
         }
         if self.version > Self::VERSION {
             return Err(crate::Error::Internal(format!(
@@ -611,8 +634,16 @@ mod tests {
     #[test]
     fn test_directory_contents() {
         let mut dir = DirectoryContents::new(2, 1);
-        dir.add(DirectoryEntry::new("file.txt".to_string(), 3, FileType::RegularFile));
-        dir.add(DirectoryEntry::new("subdir".to_string(), 4, FileType::Directory));
+        dir.add(DirectoryEntry::new(
+            "file.txt".to_string(),
+            3,
+            FileType::RegularFile,
+        ));
+        dir.add(DirectoryEntry::new(
+            "subdir".to_string(),
+            4,
+            FileType::Directory,
+        ));
 
         assert_eq!(dir.len(), 2);
         assert!(dir.get("file.txt").is_some());

@@ -73,7 +73,11 @@ pub async fn execute(server: &str) -> Result<()> {
     println!("  Max Streams:     {}", params.parallel_streams);
     println!(
         "  GPU Acceleration: {}",
-        if params.use_gpu { "Available" } else { "Not available" }
+        if params.use_gpu {
+            "Available"
+        } else {
+            "Not available"
+        }
     );
     println!(
         "  Encryption:      {}",

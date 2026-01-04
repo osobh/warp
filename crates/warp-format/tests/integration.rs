@@ -27,7 +27,8 @@ fn test_chunking_roundtrip() {
 fn test_zstd_compression_roundtrip() {
     use warp_compress::{Compressor, ZstdCompressor};
 
-    let data = b"Hello, warp! This is test data for compression. Repeating pattern helps compression.";
+    let data =
+        b"Hello, warp! This is test data for compression. Repeating pattern helps compression.";
     let compressor = ZstdCompressor::new(3).unwrap();
 
     let compressed = compressor.compress(data).unwrap();
@@ -43,7 +44,8 @@ fn test_zstd_compression_roundtrip() {
 fn test_lz4_compression_roundtrip() {
     use warp_compress::{Compressor, Lz4Compressor};
 
-    let data = b"LZ4 is a fast compression algorithm. This text has some repetition for compression.";
+    let data =
+        b"LZ4 is a fast compression algorithm. This text has some repetition for compression.";
     let compressor = Lz4Compressor::new();
 
     let compressed = compressor.compress(data).unwrap();
@@ -152,11 +154,7 @@ fn test_chunking_various_sizes() {
         let chunks = chunker.chunk(Cursor::new(&data)).unwrap();
 
         let reconstructed: Vec<u8> = chunks.iter().flatten().copied().collect();
-        assert_eq!(
-            reconstructed, data,
-            "Failed for size {}",
-            size
-        );
+        assert_eq!(reconstructed, data, "Failed for size {}", size);
 
         // Verify max chunk size is respected
         for chunk in &chunks {
@@ -189,7 +187,7 @@ fn test_key_derivation() {
 /// Test encryption roundtrip
 #[test]
 fn test_encryption_roundtrip() {
-    use warp_crypto::encrypt::{encrypt, decrypt, Key};
+    use warp_crypto::encrypt::{Key, decrypt, encrypt};
 
     let key = Key::from_bytes([0x42u8; 32]);
     let plaintext = b"This is secret data that needs to be encrypted securely.";
@@ -209,7 +207,7 @@ fn test_encryption_roundtrip() {
 /// Test encryption with wrong key fails
 #[test]
 fn test_encryption_wrong_key_fails() {
-    use warp_crypto::encrypt::{encrypt, decrypt, Key};
+    use warp_crypto::encrypt::{Key, decrypt, encrypt};
 
     let key1 = Key::from_bytes([0x42u8; 32]);
     let key2 = Key::from_bytes([0x43u8; 32]);
@@ -226,9 +224,9 @@ fn test_encryption_wrong_key_fails() {
 #[test]
 fn test_full_pipeline() {
     use std::io::Cursor;
-    use warp_io::{Chunker, ChunkerConfig};
     use warp_compress::{Compressor, ZstdCompressor};
-    use warp_crypto::encrypt::{encrypt, decrypt, Key};
+    use warp_crypto::encrypt::{Key, decrypt, encrypt};
+    use warp_io::{Chunker, ChunkerConfig};
 
     // Create test data
     let data: Vec<u8> = (0..50_000).map(|i| (i % 256) as u8).collect();
@@ -282,7 +280,10 @@ fn test_full_pipeline() {
         reconstructed.extend_from_slice(&original_chunk);
     }
 
-    assert_eq!(reconstructed, data, "Data mismatch after full pipeline roundtrip");
+    assert_eq!(
+        reconstructed, data,
+        "Data mismatch after full pipeline roundtrip"
+    );
 }
 
 /// Test Merkle tree construction and verification
@@ -339,7 +340,9 @@ fn test_large_data_handling() {
     use warp_io::{Chunker, ChunkerConfig};
 
     // Create 1MB of random-ish data
-    let data: Vec<u8> = (0..1_000_000).map(|i| ((i * 17 + 13) % 256) as u8).collect();
+    let data: Vec<u8> = (0..1_000_000)
+        .map(|i| ((i * 17 + 13) % 256) as u8)
+        .collect();
 
     let config = ChunkerConfig::default();
     let chunker = Chunker::new(config);
@@ -410,7 +413,7 @@ fn test_password_key_derivation() {
 /// Test that decryption with tampered ciphertext fails
 #[test]
 fn test_decryption_tampered_ciphertext_error() {
-    use warp_crypto::encrypt::{encrypt, decrypt, Key};
+    use warp_crypto::encrypt::{Key, decrypt, encrypt};
 
     let key = Key::from_bytes([0x42u8; 32]);
     let plaintext = b"Secret message";
@@ -432,7 +435,7 @@ fn test_decryption_tampered_ciphertext_error() {
 /// Test that decryption with truncated ciphertext fails
 #[test]
 fn test_decryption_truncated_ciphertext_error() {
-    use warp_crypto::encrypt::{decrypt, Key};
+    use warp_crypto::encrypt::{Key, decrypt};
 
     let key = Key::from_bytes([0x42u8; 32]);
 
@@ -449,7 +452,7 @@ fn test_decryption_truncated_ciphertext_error() {
 /// Test that erasure decoding with too few shards fails
 #[test]
 fn test_erasure_decode_too_few_shards_error() {
-    use warp_ec::{ErasureConfig, ErasureEncoder, ErasureDecoder};
+    use warp_ec::{ErasureConfig, ErasureDecoder, ErasureEncoder};
 
     let config = ErasureConfig::new(4, 2).unwrap();
     let encoder = ErasureEncoder::new(config.clone());
@@ -524,10 +527,7 @@ fn test_stream_cipher_wrong_counter_error() {
 
     // Try to decrypt second chunk with counter still at 0 (skipping first)
     let result = decryptor.decrypt_chunk(&ct2);
-    assert!(
-        result.is_err(),
-        "Decrypting with wrong counter should fail"
-    );
+    assert!(result.is_err(), "Decrypting with wrong counter should fail");
 }
 
 /// Test that stream cipher skip_to_counter backward fails

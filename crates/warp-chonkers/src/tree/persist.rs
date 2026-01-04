@@ -66,31 +66,27 @@ impl TreeSnapshot {
 
     /// Serialize to MessagePack bytes
     pub fn to_bytes(&self) -> Result<Vec<u8>> {
-        rmp_serde::to_vec(self).map_err(|e| {
-            Error::Internal(format!("Failed to serialize tree: {}", e))
-        })
+        rmp_serde::to_vec(self)
+            .map_err(|e| Error::Internal(format!("Failed to serialize tree: {}", e)))
     }
 
     /// Deserialize from MessagePack bytes
     pub fn from_bytes(bytes: &[u8]) -> Result<Self> {
-        rmp_serde::from_slice(bytes).map_err(|e| {
-            Error::Internal(format!("Failed to deserialize tree: {}", e))
-        })
+        rmp_serde::from_slice(bytes)
+            .map_err(|e| Error::Internal(format!("Failed to deserialize tree: {}", e)))
     }
 
     /// Save to a file
     pub fn save(&self, path: &Path) -> Result<()> {
         let bytes = self.to_bytes()?;
-        fs::write(path, bytes).map_err(|e| {
-            Error::Internal(format!("Failed to write tree file: {}", e))
-        })
+        fs::write(path, bytes)
+            .map_err(|e| Error::Internal(format!("Failed to write tree file: {}", e)))
     }
 
     /// Load from a file
     pub fn load(path: &Path) -> Result<Self> {
-        let bytes = fs::read(path).map_err(|e| {
-            Error::Internal(format!("Failed to read tree file: {}", e))
-        })?;
+        let bytes = fs::read(path)
+            .map_err(|e| Error::Internal(format!("Failed to read tree file: {}", e)))?;
         Self::from_bytes(&bytes)
     }
 }
@@ -123,9 +119,8 @@ impl FileTreeStore {
     /// Create a new file-based store
     pub fn new(base_dir: impl AsRef<Path>) -> Result<Self> {
         let base_dir = base_dir.as_ref().to_path_buf();
-        fs::create_dir_all(&base_dir).map_err(|e| {
-            Error::Internal(format!("Failed to create store directory: {}", e))
-        })?;
+        fs::create_dir_all(&base_dir)
+            .map_err(|e| Error::Internal(format!("Failed to create store directory: {}", e)))?;
 
         Ok(Self { base_dir })
     }
@@ -151,12 +146,10 @@ impl TreeStore for FileTreeStore {
         let metadata = StoreMetadata {
             latest_version: Some(tree.version_id),
         };
-        let metadata_json = serde_json::to_string_pretty(&metadata).map_err(|e| {
-            Error::Internal(format!("Failed to serialize metadata: {}", e))
-        })?;
-        fs::write(self.metadata_path(), metadata_json).map_err(|e| {
-            Error::Internal(format!("Failed to write metadata: {}", e))
-        })?;
+        let metadata_json = serde_json::to_string_pretty(&metadata)
+            .map_err(|e| Error::Internal(format!("Failed to serialize metadata: {}", e)))?;
+        fs::write(self.metadata_path(), metadata_json)
+            .map_err(|e| Error::Internal(format!("Failed to write metadata: {}", e)))?;
 
         Ok(())
     }
@@ -174,12 +167,11 @@ impl TreeStore for FileTreeStore {
     fn list_versions(&self) -> Result<Vec<VersionId>> {
         let mut versions = Vec::new();
 
-        for entry in fs::read_dir(&self.base_dir).map_err(|e| {
-            Error::Internal(format!("Failed to read store directory: {}", e))
-        })? {
-            let entry = entry.map_err(|e| {
-                Error::Internal(format!("Failed to read directory entry: {}", e))
-            })?;
+        for entry in fs::read_dir(&self.base_dir)
+            .map_err(|e| Error::Internal(format!("Failed to read store directory: {}", e)))?
+        {
+            let entry = entry
+                .map_err(|e| Error::Internal(format!("Failed to read directory entry: {}", e)))?;
             let path = entry.path();
 
             if let Some(ext) = path.extension() {
@@ -202,9 +194,8 @@ impl TreeStore for FileTreeStore {
     fn delete(&self, version_id: VersionId) -> Result<()> {
         let path = self.version_path(version_id);
         if path.exists() {
-            fs::remove_file(path).map_err(|e| {
-                Error::Internal(format!("Failed to delete version: {}", e))
-            })?;
+            fs::remove_file(path)
+                .map_err(|e| Error::Internal(format!("Failed to delete version: {}", e)))?;
         }
         Ok(())
     }
@@ -215,12 +206,10 @@ impl TreeStore for FileTreeStore {
             return Ok(None);
         }
 
-        let metadata_json = fs::read_to_string(&metadata_path).map_err(|e| {
-            Error::Internal(format!("Failed to read metadata: {}", e))
-        })?;
-        let metadata: StoreMetadata = serde_json::from_str(&metadata_json).map_err(|e| {
-            Error::Internal(format!("Failed to parse metadata: {}", e))
-        })?;
+        let metadata_json = fs::read_to_string(&metadata_path)
+            .map_err(|e| Error::Internal(format!("Failed to read metadata: {}", e)))?;
+        let metadata: StoreMetadata = serde_json::from_str(&metadata_json)
+            .map_err(|e| Error::Internal(format!("Failed to parse metadata: {}", e)))?;
 
         if let Some(version_id) = metadata.latest_version {
             self.load(version_id)

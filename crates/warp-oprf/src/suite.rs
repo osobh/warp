@@ -190,9 +190,7 @@ mod tests {
 
     #[test]
     fn test_config_builder() {
-        let config = OprfConfig::new()
-            .verifiable()
-            .with_key_id("key-v1");
+        let config = OprfConfig::new().verifiable().with_key_id("key-v1");
 
         assert_eq!(config.mode, OprfMode::Verifiable);
         assert_eq!(config.key_id, Some("key-v1".to_string()));

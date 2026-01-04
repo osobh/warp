@@ -25,6 +25,7 @@ warp-gpu = { path = "../warp-gpu", optional = true }
 criterion.workspace = true
 rand.workspace = true
 tempfile.workspace = true
+proptest.workspace = true
 
 [[bench]]
 name = "compression"

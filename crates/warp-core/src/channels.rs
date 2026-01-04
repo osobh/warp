@@ -26,6 +26,7 @@
 use std::sync::Arc;
 
 use tokio::sync::broadcast;
+use tracing::trace;
 
 /// Upload started event.
 #[derive(Clone, Debug)]
@@ -274,6 +275,20 @@ pub struct StorageChannelBridge {
     verification_tx: broadcast::Sender<VerificationResultEvent>,
 }
 
+/// Helper to send on a broadcast channel with trace logging if no receivers.
+///
+/// Broadcast channels return Err when there are no active receivers.
+/// This is not an error condition - it just means no one is listening.
+/// We log at trace level for diagnostics without spamming warnings.
+fn broadcast_send<T: Clone>(tx: &broadcast::Sender<T>, value: T, channel_name: &str) {
+    if let Err(broadcast::error::SendError(_)) = tx.send(value) {
+        trace!(
+            channel = channel_name,
+            "broadcast send: no active receivers"
+        );
+    }
+}
+
 impl StorageChannelBridge {
     /// Create a new storage channel bridge.
     ///
@@ -366,15 +381,19 @@ impl StorageChannelBridge {
         total_chunks: u64,
         is_remote: bool,
     ) {
-        let _ = self.upload_tx.send(UploadStartEvent {
-            session_id: session_id.to_string(),
-            source: source.to_string(),
-            destination: destination.to_string(),
-            total_bytes,
-            total_chunks,
-            is_remote,
-            timestamp_ms: Self::now_ms(),
-        });
+        broadcast_send(
+            &self.upload_tx,
+            UploadStartEvent {
+                session_id: session_id.to_string(),
+                source: source.to_string(),
+                destination: destination.to_string(),
+                total_bytes,
+                total_chunks,
+                is_remote,
+                timestamp_ms: Self::now_ms(),
+            },
+            "upload_start",
+        );
     }
 
     /// Publish download started event.
@@ -387,15 +406,19 @@ impl StorageChannelBridge {
         total_chunks: u64,
         is_remote: bool,
     ) {
-        let _ = self.download_tx.send(DownloadStartEvent {
-            session_id: session_id.to_string(),
-            source: source.to_string(),
-            destination: destination.to_string(),
-            total_bytes,
-            total_chunks,
-            is_remote,
-            timestamp_ms: Self::now_ms(),
-        });
+        broadcast_send(
+            &self.download_tx,
+            DownloadStartEvent {
+                session_id: session_id.to_string(),
+                source: source.to_string(),
+                destination: destination.to_string(),
+                total_bytes,
+                total_chunks,
+                is_remote,
+                timestamp_ms: Self::now_ms(),
+            },
+            "download_start",
+        );
     }
 
     /// Publish transfer progress.
@@ -410,17 +433,21 @@ impl StorageChannelBridge {
         current_file: Option<&str>,
         eta_seconds: Option<u64>,
     ) {
-        let _ = self.progress_tx.send(TransferProgressEvent {
-            session_id: session_id.to_string(),
-            bytes_transferred,
-            total_bytes,
-            chunks_completed,
-            total_chunks,
-            bytes_per_second,
-            current_file: current_file.map(String::from),
-            eta_seconds,
-            timestamp_ms: Self::now_ms(),
-        });
+        broadcast_send(
+            &self.progress_tx,
+            TransferProgressEvent {
+                session_id: session_id.to_string(),
+                bytes_transferred,
+                total_bytes,
+                chunks_completed,
+                total_chunks,
+                bytes_per_second,
+                current_file: current_file.map(String::from),
+                eta_seconds,
+                timestamp_ms: Self::now_ms(),
+            },
+            "progress",
+        );
     }
 
     /// Publish transfer status change.
@@ -430,12 +457,16 @@ impl StorageChannelBridge {
         status: TransferStatus,
         merkle_root: Option<[u8; 32]>,
     ) {
-        let _ = self.status_tx.send(TransferStatusEvent {
-            session_id: session_id.to_string(),
-            status,
-            merkle_root,
-            timestamp_ms: Self::now_ms(),
-        });
+        broadcast_send(
+            &self.status_tx,
+            TransferStatusEvent {
+                session_id: session_id.to_string(),
+                status,
+                merkle_root,
+                timestamp_ms: Self::now_ms(),
+            },
+            "status",
+        );
     }
 
     /// Subscribe to upload start events.
@@ -463,32 +494,49 @@ impl StorageChannelBridge {
     // =========================================================================
 
     /// Publish portal join event.
-    pub fn publish_portal_join(&self, portal_id: &str, local_addr: &str, passphrase_hash: [u8; 32]) {
-        let _ = self.portal_join_tx.send(PortalJoinEvent {
-            portal_id: portal_id.to_string(),
-            local_addr: local_addr.to_string(),
-            passphrase_hash,
-            timestamp_ms: Self::now_ms(),
-        });
+    pub fn publish_portal_join(
+        &self,
+        portal_id: &str,
+        local_addr: &str,
+        passphrase_hash: [u8; 32],
+    ) {
+        broadcast_send(
+            &self.portal_join_tx,
+            PortalJoinEvent {
+                portal_id: portal_id.to_string(),
+                local_addr: local_addr.to_string(),
+                passphrase_hash,
+                timestamp_ms: Self::now_ms(),
+            },
+            "portal_join",
+        );
     }
 
     /// Publish portal leave event.
     pub fn publish_portal_leave(&self, portal_id: &str, reason: &str) {
-        let _ = self.portal_leave_tx.send(PortalLeaveEvent {
-            portal_id: portal_id.to_string(),
-            reason: reason.to_string(),
-            timestamp_ms: Self::now_ms(),
-        });
+        broadcast_send(
+            &self.portal_leave_tx,
+            PortalLeaveEvent {
+                portal_id: portal_id.to_string(),
+                reason: reason.to_string(),
+                timestamp_ms: Self::now_ms(),
+            },
+            "portal_leave",
+        );
     }
 
     /// Publish peer discovered event.
     pub fn publish_peer_discovered(&self, peer_id: &str, peer_addr: &str, portal_id: &str) {
-        let _ = self.peer_discovered_tx.send(PeerDiscoveredEvent {
-            peer_id: peer_id.to_string(),
-            peer_addr: peer_addr.to_string(),
-            portal_id: portal_id.to_string(),
-            timestamp_ms: Self::now_ms(),
-        });
+        broadcast_send(
+            &self.peer_discovered_tx,
+            PeerDiscoveredEvent {
+                peer_id: peer_id.to_string(),
+                peer_addr: peer_addr.to_string(),
+                portal_id: portal_id.to_string(),
+                timestamp_ms: Self::now_ms(),
+            },
+            "peer_discovered",
+        );
     }
 
     /// Subscribe to portal join events.
@@ -512,32 +560,49 @@ impl StorageChannelBridge {
 
     /// Publish stream start event.
     pub fn publish_stream_start(&self, stream_id: &str, session_id: &str, protocol: &str) {
-        let _ = self.stream_start_tx.send(StreamStartEvent {
-            stream_id: stream_id.to_string(),
-            session_id: session_id.to_string(),
-            protocol: protocol.to_string(),
-            timestamp_ms: Self::now_ms(),
-        });
+        broadcast_send(
+            &self.stream_start_tx,
+            StreamStartEvent {
+                stream_id: stream_id.to_string(),
+                session_id: session_id.to_string(),
+                protocol: protocol.to_string(),
+                timestamp_ms: Self::now_ms(),
+            },
+            "stream_start",
+        );
     }
 
     /// Publish stream complete event.
-    pub fn publish_stream_complete(&self, stream_id: &str, bytes_transferred: u64, duration_ms: u64) {
-        let _ = self.stream_complete_tx.send(StreamCompleteEvent {
-            stream_id: stream_id.to_string(),
-            bytes_transferred,
-            duration_ms,
-            timestamp_ms: Self::now_ms(),
-        });
+    pub fn publish_stream_complete(
+        &self,
+        stream_id: &str,
+        bytes_transferred: u64,
+        duration_ms: u64,
+    ) {
+        broadcast_send(
+            &self.stream_complete_tx,
+            StreamCompleteEvent {
+                stream_id: stream_id.to_string(),
+                bytes_transferred,
+                duration_ms,
+                timestamp_ms: Self::now_ms(),
+            },
+            "stream_complete",
+        );
     }
 
     /// Publish stream error event.
     pub fn publish_stream_error(&self, stream_id: &str, error: &str, recoverable: bool) {
-        let _ = self.stream_error_tx.send(StreamErrorEvent {
-            stream_id: stream_id.to_string(),
-            error: error.to_string(),
-            recoverable,
-            timestamp_ms: Self::now_ms(),
-        });
+        broadcast_send(
+            &self.stream_error_tx,
+            StreamErrorEvent {
+                stream_id: stream_id.to_string(),
+                error: error.to_string(),
+                recoverable,
+                timestamp_ms: Self::now_ms(),
+            },
+            "stream_error",
+        );
     }
 
     /// Subscribe to stream start events.
@@ -561,7 +626,7 @@ impl StorageChannelBridge {
 
     /// Publish protocol stats event.
     pub fn publish_protocol_stats(&self, event: ProtocolStatsEvent) {
-        let _ = self.protocol_stats_tx.send(event);
+        broadcast_send(&self.protocol_stats_tx, event, "protocol_stats");
     }
 
     /// Subscribe to protocol stats events.
@@ -581,13 +646,17 @@ impl StorageChannelBridge {
         merkle_root: [u8; 32],
         chunks_verified: u64,
     ) {
-        let _ = self.verification_tx.send(VerificationResultEvent {
-            session_id: session_id.to_string(),
-            passed,
-            merkle_root,
-            chunks_verified,
-            timestamp_ms: Self::now_ms(),
-        });
+        broadcast_send(
+            &self.verification_tx,
+            VerificationResultEvent {
+                session_id: session_id.to_string(),
+                passed,
+                merkle_root,
+                chunks_verified,
+                timestamp_ms: Self::now_ms(),
+            },
+            "verification_result",
+        );
     }
 
     /// Subscribe to verification result events.
@@ -619,8 +688,12 @@ mod tests {
     fn test_bridge_creation() {
         let bridge = StorageChannelBridge::new();
         assert!(hpc_channels::exists(hpc_channels::channels::STORAGE_UPLOAD));
-        assert!(hpc_channels::exists(hpc_channels::channels::STORAGE_DOWNLOAD));
-        assert!(hpc_channels::exists(hpc_channels::channels::STORAGE_PROGRESS));
+        assert!(hpc_channels::exists(
+            hpc_channels::channels::STORAGE_DOWNLOAD
+        ));
+        assert!(hpc_channels::exists(
+            hpc_channels::channels::STORAGE_PROGRESS
+        ));
         let _ = bridge;
     }
 
@@ -651,13 +724,13 @@ mod tests {
 
         bridge.publish_progress(
             "session-123",
-            512 * 1024,     // transferred
-            1024 * 1024,    // total
-            8,              // chunks done
-            16,             // total chunks
-            10_000_000.0,   // 10 MB/s
+            512 * 1024,   // transferred
+            1024 * 1024,  // total
+            8,            // chunks done
+            16,           // total chunks
+            10_000_000.0, // 10 MB/s
             Some("file.txt"),
-            Some(30),       // eta
+            Some(30), // eta
         );
 
         let event = rx.recv().await.expect("Should receive event");

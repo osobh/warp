@@ -2,11 +2,11 @@
 //!
 //! Implements the fuser::Filesystem trait for warp-fs.
 
+use crate::WarpFsConfig;
 use crate::error::Error;
 use crate::inode::ROOT_INO;
 use crate::metadata::FileType;
 use crate::vfs::VirtualFilesystem;
-use crate::WarpFsConfig;
 
 use fuser::{
     FileAttr, FileType as FuseFileType, Filesystem, ReplyAttr, ReplyCreate, ReplyData,
@@ -391,7 +391,14 @@ impl Filesystem for WarpFuseFs {
         }
     }
 
-    fn releasedir(&mut self, _req: &Request<'_>, ino: u64, fh: u64, _flags: i32, reply: ReplyEmpty) {
+    fn releasedir(
+        &mut self,
+        _req: &Request<'_>,
+        ino: u64,
+        fh: u64,
+        _flags: i32,
+        reply: ReplyEmpty,
+    ) {
         debug!(ino, fh, "releasedir");
         reply.ok();
     }
@@ -429,13 +436,13 @@ impl Filesystem for WarpFuseFs {
         let free_blocks = u64::MAX / 2; // Unlimited-ish
 
         reply.statfs(
-            blocks.max(1),        // blocks
-            free_blocks,          // bfree
-            free_blocks,          // bavail
-            stats.total_objects,  // files
-            u64::MAX / 2,         // ffree
+            blocks.max(1),          // blocks
+            free_blocks,            // bfree
+            free_blocks,            // bavail
+            stats.total_objects,    // files
+            u64::MAX / 2,           // ffree
             self.config.block_size, // bsize
-            255,                  // namelen
+            255,                    // namelen
             self.config.block_size, // frsize
         );
     }
@@ -463,12 +470,17 @@ impl Filesystem for WarpFuseFs {
         debug!(parent, name = ?name, newparent, newname = ?newname, "rename");
 
         let result = self.rt.block_on(async {
-            let name_str = name.to_str().ok_or_else(|| Error::InvalidFileName(format!("{:?}", name)))?;
-            let newname_str = newname.to_str().ok_or_else(|| Error::InvalidFileName(format!("{:?}", newname)))?;
+            let name_str = name
+                .to_str()
+                .ok_or_else(|| Error::InvalidFileName(format!("{:?}", name)))?;
+            let newname_str = newname
+                .to_str()
+                .ok_or_else(|| Error::InvalidFileName(format!("{:?}", newname)))?;
 
             // Load source directory and find entry
             let mut src_dir = self.vfs.load_directory(parent).await?;
-            let entry = src_dir.get(name_str)
+            let entry = src_dir
+                .get(name_str)
                 .ok_or_else(|| Error::FileNotFound(name_str.to_string()))?
                 .clone();
 

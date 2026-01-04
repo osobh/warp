@@ -6,8 +6,8 @@ use std::io::Cursor;
 use openraft::{BasicNode, LogId, StoredMembership};
 use serde::{Deserialize, Serialize};
 
-use crate::bucket::BucketConfig;
 use crate::ObjectKey;
+use crate::bucket::BucketConfig;
 
 /// Node ID type
 pub type NodeId = u64;

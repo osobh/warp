@@ -8,17 +8,17 @@
 
 use axum::{
     extract::{Path, State},
-    http::{header, HeaderMap, StatusCode},
+    http::{HeaderMap, StatusCode, header},
     response::{IntoResponse, Response},
 };
 use bytes::Bytes;
 use serde::{Deserialize, Serialize};
 
-use warp_store::backend::StorageBackend;
 use warp_store::ObjectKey;
+use warp_store::backend::StorageBackend;
 
-use crate::error::{ApiError, ApiResult};
 use crate::AppState;
+use crate::error::{ApiError, ApiResult};
 
 // =============================================================================
 // XML Types for S3 ACL API
@@ -263,11 +263,13 @@ pub async fn put_bucket_acl<B: StorageBackend>(
 
     // Check for canned ACL header
     if let Some(canned_acl) = headers.get("x-amz-acl") {
-        let canned_str = canned_acl.to_str()
+        let canned_str = canned_acl
+            .to_str()
             .map_err(|_| ApiError::InvalidRequest("Invalid x-amz-acl header".to_string()))?;
 
-        let canned = CannedAcl::from_header(canned_str)
-            .ok_or_else(|| ApiError::InvalidRequest(format!("Invalid canned ACL: {}", canned_str)))?;
+        let canned = CannedAcl::from_header(canned_str).ok_or_else(|| {
+            ApiError::InvalidRequest(format!("Invalid canned ACL: {}", canned_str))
+        })?;
 
         let acl = canned_acl_to_policy(&bucket, canned);
         state.bucket_acls.insert(bucket.clone(), acl);
@@ -352,11 +354,13 @@ pub async fn put_object_acl<B: StorageBackend>(
 
     // Check for canned ACL header
     if let Some(canned_acl) = headers.get("x-amz-acl") {
-        let canned_str = canned_acl.to_str()
+        let canned_str = canned_acl
+            .to_str()
             .map_err(|_| ApiError::InvalidRequest("Invalid x-amz-acl header".to_string()))?;
 
-        let canned = CannedAcl::from_header(canned_str)
-            .ok_or_else(|| ApiError::InvalidRequest(format!("Invalid canned ACL: {}", canned_str)))?;
+        let canned = CannedAcl::from_header(canned_str).ok_or_else(|| {
+            ApiError::InvalidRequest(format!("Invalid canned ACL: {}", canned_str))
+        })?;
 
         let acl = canned_acl_to_policy(&bucket, canned);
         state.object_acls.insert(acl_key, acl);
@@ -474,11 +478,9 @@ fn to_acl_xml(acl: &AccessControlPolicy) -> AccessControlPolicyXml {
                     None,
                     Some(grant.grantee_id.clone()),
                 ),
-                GranteeType::AmazonCustomerByEmail => (
-                    Some("AmazonCustomerByEmail".to_string()),
-                    None,
-                    None,
-                ),
+                GranteeType::AmazonCustomerByEmail => {
+                    (Some("AmazonCustomerByEmail".to_string()), None, None)
+                }
             };
 
             GrantXml {
@@ -597,10 +599,7 @@ mod tests {
         assert_eq!(xml.owner.id, "owner123");
         assert_eq!(xml.owner.display_name, Some("Owner Name".to_string()));
         assert_eq!(xml.access_control_list.grants.len(), 1);
-        assert_eq!(
-            xml.access_control_list.grants[0].permission,
-            "FULL_CONTROL"
-        );
+        assert_eq!(xml.access_control_list.grants[0].permission, "FULL_CONTROL");
     }
 
     #[test]
@@ -633,10 +632,7 @@ mod tests {
 
     #[test]
     fn test_canned_acl_from_header() {
-        assert_eq!(
-            CannedAcl::from_header("private"),
-            Some(CannedAcl::Private)
-        );
+        assert_eq!(CannedAcl::from_header("private"), Some(CannedAcl::Private));
         assert_eq!(
             CannedAcl::from_header("public-read"),
             Some(CannedAcl::PublicRead)

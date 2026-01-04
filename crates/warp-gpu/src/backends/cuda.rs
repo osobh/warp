@@ -3,13 +3,13 @@
 //! This module provides the CUDA backend using cudarc 0.18.2.
 //! It implements the `GpuBackend` trait for NVIDIA GPUs.
 
-use crate::backend::{BackendType, DeviceInfo, GpuBackend, GpuBuffer, GpuFunction, GpuModule, KernelSource};
+use crate::backend::{
+    BackendType, DeviceInfo, GpuBackend, GpuBuffer, GpuFunction, GpuModule, KernelSource,
+};
 use crate::{Error, Result};
 use cudarc::driver::{
-    result as cuda_result,
-    sys::CUdevice_attribute,
-    CudaContext, CudaFunction as CudarcFunction, CudaModule as CudarcModule,
-    CudaSlice, CudaStream,
+    CudaContext, CudaFunction as CudarcFunction, CudaModule as CudarcModule, CudaSlice, CudaStream,
+    result as cuda_result, sys::CUdevice_attribute,
 };
 use cudarc::nvrtc::compile_ptx;
 use std::sync::Arc;
@@ -87,10 +87,10 @@ impl CudaBackend {
     pub fn new(device_id: usize) -> Result<Self> {
         debug!("Initializing CUDA backend for device {}", device_id);
 
-        let ctx = CudaContext::new(device_id)
-            .map_err(|e| Error::device_init(device_id, e))?;
+        let ctx = CudaContext::new(device_id).map_err(|e| Error::device_init(device_id, e))?;
 
-        let name = ctx.name()
+        let name = ctx
+            .name()
             .map_err(|e| Error::DeviceQuery(format!("Failed to get device name: {:?}", e)))?;
 
         info!("CUDA device {} initialized: {}", device_id, name);
@@ -122,35 +122,49 @@ impl CudaBackend {
 
     /// Query device information
     fn query_device_info(device_id: usize, name: &str) -> Result<DeviceInfo> {
-        let dev = cuda_result::device::get(device_id as i32)
-            .map_err(|e| Error::DeviceQuery(format!("Failed to get device {}: {:?}", device_id, e)))?;
+        let dev = cuda_result::device::get(device_id as i32).map_err(|e| {
+            Error::DeviceQuery(format!("Failed to get device {}: {:?}", device_id, e))
+        })?;
 
         let get_attr = |attr: CUdevice_attribute| -> Result<i32> {
+            // SAFETY: cuda_result::device::get_attribute is safe when dev is a valid
+            // CUdevice handle (obtained above) and attr is a valid enum value (type-checked).
             unsafe {
-                cuda_result::device::get_attribute(dev, attr)
-                    .map_err(|e| Error::DeviceQuery(format!("Failed to get attribute {:?}: {:?}", attr, e)))
+                cuda_result::device::get_attribute(dev, attr).map_err(|e| {
+                    Error::DeviceQuery(format!("Failed to get attribute {:?}: {:?}", attr, e))
+                })
             }
         };
 
+        // SAFETY: cuda_result::device::total_mem is safe when dev is a valid CUdevice
+        // handle, obtained from cuda_result::device::get above.
         let total_memory = unsafe {
             cuda_result::device::total_mem(dev)
                 .map_err(|e| Error::DeviceQuery(format!("Failed to get total memory: {:?}", e)))?
         };
 
-        let compute_major = get_attr(CUdevice_attribute::CU_DEVICE_ATTRIBUTE_COMPUTE_CAPABILITY_MAJOR)?;
-        let compute_minor = get_attr(CUdevice_attribute::CU_DEVICE_ATTRIBUTE_COMPUTE_CAPABILITY_MINOR)?;
+        let compute_major =
+            get_attr(CUdevice_attribute::CU_DEVICE_ATTRIBUTE_COMPUTE_CAPABILITY_MAJOR)?;
+        let compute_minor =
+            get_attr(CUdevice_attribute::CU_DEVICE_ATTRIBUTE_COMPUTE_CAPABILITY_MINOR)?;
         let max_threads = get_attr(CUdevice_attribute::CU_DEVICE_ATTRIBUTE_MAX_THREADS_PER_BLOCK)?;
         let sm_count = get_attr(CUdevice_attribute::CU_DEVICE_ATTRIBUTE_MULTIPROCESSOR_COUNT)?;
 
         // Estimate CUDA cores based on architecture
         let cores_per_sm = match compute_major {
-            3 => 192,  // Kepler
-            5 => 128,  // Maxwell
-            6 => if compute_minor == 0 { 64 } else { 128 }, // Pascal
-            7 => 64,   // Volta/Turing
-            8 => 64,   // Ampere
-            9 => 128,  // Hopper/Ada
-            _ => 64,   // Conservative default
+            3 => 192, // Kepler
+            5 => 128, // Maxwell
+            6 => {
+                if compute_minor == 0 {
+                    64
+                } else {
+                    128
+                }
+            } // Pascal
+            7 => 64,  // Volta/Turing
+            8 => 64,  // Ampere
+            9 => 128, // Hopper/Ada
+            _ => 64,  // Conservative default
         };
 
         Ok(DeviceInfo {
@@ -219,7 +233,10 @@ impl GpuBackend for CudaBackend {
 
     fn copy_to_device(&self, data: &[u8]) -> Result<Self::Buffer> {
         let slice = self.stream.clone_htod(data)?;
-        Ok(CudaBuffer { slice, size: data.len() })
+        Ok(CudaBuffer {
+            slice,
+            size: data.len(),
+        })
     }
 
     fn copy_to_host(&self, buffer: &Self::Buffer) -> Result<Vec<u8>> {
@@ -237,14 +254,18 @@ impl GpuBackend for CudaBackend {
         let ptx = compile_ptx(cuda_source)
             .map_err(|e| Error::CudaOperation(format!("PTX compilation failed: {:?}", e)))?;
 
-        let module = self.ctx.load_module(ptx)
+        let module = self
+            .ctx
+            .load_module(ptx)
             .map_err(|e| Error::CudaOperation(format!("Module load failed: {:?}", e)))?;
 
         Ok(CudaModule { module })
     }
 
     fn get_function(&self, module: &Self::Module, name: &str) -> Result<Self::Function> {
-        let func = module.module.load_function(name)
+        let func = module
+            .module
+            .load_function(name)
             .map_err(|e| Error::CudaOperation(format!("Function '{}' not found: {:?}", name, e)))?;
 
         Ok(CudaFunction { func })
@@ -288,7 +309,10 @@ mod tests {
         println!("Memory: {} bytes", backend.total_memory());
 
         let info = backend.device_info();
-        println!("Compute capability: {}.{}", info.compute_capability.0, info.compute_capability.1);
+        println!(
+            "Compute capability: {}.{}",
+            info.compute_capability.0, info.compute_capability.1
+        );
         println!("Compute units: {}", info.compute_units);
         println!("Estimated cores: {}", info.estimated_cores);
     }
@@ -308,8 +332,12 @@ mod tests {
 
         // Test copy to device and back
         let data = vec![0x42u8; 1024];
-        let device_buffer = backend.copy_to_device(&data).expect("Failed to copy to device");
-        let host_data = backend.copy_to_host(&device_buffer).expect("Failed to copy to host");
+        let device_buffer = backend
+            .copy_to_device(&data)
+            .expect("Failed to copy to device");
+        let host_data = backend
+            .copy_to_host(&device_buffer)
+            .expect("Failed to copy to host");
         assert_eq!(host_data, data);
     }
 
@@ -322,16 +350,20 @@ mod tests {
 
         let backend = CudaBackend::new(0).expect("Failed to create CUDA backend");
 
-        let source = KernelSource::cuda_only(r#"
+        let source = KernelSource::cuda_only(
+            r#"
             extern "C" __global__ void test_kernel(float* data, int n) {
                 int idx = blockIdx.x * blockDim.x + threadIdx.x;
                 if (idx < n) {
                     data[idx] *= 2.0f;
                 }
             }
-        "#);
+        "#,
+        );
 
         let module = backend.compile(&source).expect("Failed to compile kernel");
-        let _func = backend.get_function(&module, "test_kernel").expect("Failed to get function");
+        let _func = backend
+            .get_function(&module, "test_kernel")
+            .expect("Failed to get function");
     }
 }

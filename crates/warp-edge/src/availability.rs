@@ -194,10 +194,7 @@ impl ChunkAvailabilityMap {
         }
 
         // Get or create reverse index entry once
-        let edge_chunks = self
-            .edge_to_chunks
-            .entry(edge)
-            .or_insert_with(DashSet::new);
+        let edge_chunks = self.edge_to_chunks.entry(edge).or_insert_with(DashSet::new);
 
         for chunk in chunks {
             // Add to reverse index

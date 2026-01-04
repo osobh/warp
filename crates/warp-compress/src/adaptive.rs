@@ -34,7 +34,7 @@ impl Strategy {
             Self::Maximum
         }
     }
-    
+
     /// Create compressor for this strategy
     pub fn compressor(&self) -> Option<Box<dyn Compressor>> {
         match self {
@@ -145,18 +145,62 @@ fn calculate_frequency_parallel(data: &[u8]) -> [u64; 256] {
 #[cfg(test)]
 mod tests {
     use super::*;
-    
+
     #[test]
     fn test_entropy_zeros() {
         let data = vec![0u8; 1000];
         let entropy = calculate_entropy(&data);
         assert!(entropy < 0.1);
     }
-    
+
     #[test]
     fn test_entropy_random() {
         let data: Vec<u8> = (0..=255).cycle().take(1000).collect();
         let entropy = calculate_entropy(&data);
         assert!(entropy > 0.9);
+    }
+}
+
+#[cfg(test)]
+mod proptest_tests {
+    use super::*;
+    use proptest::prelude::*;
+
+    proptest! {
+        /// Property: entropy is always in range [0, 1]
+        #[test]
+        fn entropy_normalized(data in prop::collection::vec(any::<u8>(), 1..4096)) {
+            let entropy = calculate_entropy(&data);
+
+            prop_assert!(entropy >= 0.0, "entropy {} < 0", entropy);
+            prop_assert!(entropy <= 1.0, "entropy {} > 1", entropy);
+        }
+
+        /// Property: higher entropy leads to less aggressive compression
+        /// Strategy ordering: Maximum < Balanced < Fast < None
+        #[test]
+        fn strategy_monotonicity(
+            low_entropy in 0.0f64..0.3,
+            mid_entropy in 0.31f64..0.7,
+            high_entropy in 0.71f64..0.95,
+            very_high_entropy in 0.96f64..=1.0,
+        ) {
+            let s_low = Strategy::from_entropy(low_entropy);
+            let s_mid = Strategy::from_entropy(mid_entropy);
+            let s_high = Strategy::from_entropy(high_entropy);
+            let s_very_high = Strategy::from_entropy(very_high_entropy);
+
+            // Verify ordering: lower entropy -> more aggressive compression
+            prop_assert_eq!(s_low, Strategy::Maximum);
+            prop_assert_eq!(s_mid, Strategy::Balanced);
+            prop_assert_eq!(s_high, Strategy::Fast);
+            prop_assert_eq!(s_very_high, Strategy::None);
+        }
+    }
+
+    #[test]
+    fn entropy_empty_is_zero() {
+        let entropy = calculate_entropy(&[]);
+        assert_eq!(entropy, 0.0);
     }
 }

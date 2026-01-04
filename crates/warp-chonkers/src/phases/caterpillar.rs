@@ -6,8 +6,8 @@
 //! The Z-algorithm efficiently finds all positions where a prefix of the
 //! string matches, which helps identify periodic repetitions.
 
-use crate::config::LayerConfig;
 use crate::Result;
+use crate::config::LayerConfig;
 
 /// Caterpillar phase processor
 pub struct CaterpillarPhase;
@@ -16,11 +16,7 @@ impl CaterpillarPhase {
     /// Process boundaries through the caterpillar phase
     ///
     /// Detects periodic repetitions and collapses them.
-    pub fn process(
-        data: &[u8],
-        boundaries: &[usize],
-        config: &LayerConfig,
-    ) -> Result<Vec<usize>> {
+    pub fn process(data: &[u8], boundaries: &[usize], config: &LayerConfig) -> Result<Vec<usize>> {
         if boundaries.len() < 3 || data.len() < config.min_period_length * config.min_repetitions {
             return Ok(boundaries.to_vec());
         }
@@ -36,13 +32,7 @@ impl CaterpillarPhase {
 
             if let Some(period_info) = Self::detect_period(chunk_data, config) {
                 // Found a periodic pattern - look for adjacent repetitions
-                let collapsed = Self::collapse_repetitions(
-                    &result,
-                    data,
-                    i,
-                    &period_info,
-                    config,
-                );
+                let collapsed = Self::collapse_repetitions(&result, data, i, &period_info, config);
 
                 if collapsed.len() < result.len() {
                     result = collapsed;

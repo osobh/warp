@@ -243,7 +243,7 @@ pub fn create_default_backend() -> Result<impl GpuBackend> {
 #[cfg(not(any(feature = "cuda", feature = "metal")))]
 pub fn create_default_backend() -> Result<()> {
     Err(crate::Error::InvalidOperation(
-        "No GPU backend available. Enable 'cuda' or 'metal' feature.".into()
+        "No GPU backend available. Enable 'cuda' or 'metal' feature.".into(),
     ))
 }
 
@@ -301,10 +301,7 @@ mod tests {
         assert!(metal_only.cuda.is_none());
         assert!(metal_only.metal.is_some());
 
-        let both = KernelSource::both(
-            "__global__ void test() {}",
-            "kernel void test() {}"
-        );
+        let both = KernelSource::both("__global__ void test() {}", "kernel void test() {}");
         assert!(both.cuda.is_some());
         assert!(both.metal.is_some());
     }

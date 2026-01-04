@@ -10,8 +10,8 @@
 
 use std::io::Cursor;
 use std::time::{Duration, Instant};
-use warp_compress::{Compressor, ZstdCompressor, Lz4Compressor};
-use warp_crypto::encrypt::{encrypt, decrypt, Key};
+use warp_compress::{Compressor, Lz4Compressor, ZstdCompressor};
+use warp_crypto::encrypt::{Key, decrypt, encrypt};
 use warp_io::{Chunker, ChunkerConfig};
 
 /// Test: Large file chunking (10MB)
@@ -53,7 +53,8 @@ fn stress_large_file_chunking() {
     assert!(
         elapsed < threshold,
         "Chunking too slow: {:?} (expected < {:?})",
-        elapsed, threshold
+        elapsed,
+        threshold
     );
 }
 
@@ -75,7 +76,11 @@ fn stress_compression_throughput() {
 
     let compressor = ZstdCompressor::default();
 
-    println!("Compressing {} chunks ({} MB total)...", num_chunks, total_size / 1024 / 1024);
+    println!(
+        "Compressing {} chunks ({} MB total)...",
+        num_chunks,
+        total_size / 1024 / 1024
+    );
     let start = Instant::now();
 
     let compressed: Vec<Vec<u8>> = chunks
@@ -115,16 +120,16 @@ fn stress_encryption_throughput() {
     let total_size = chunk_size * num_chunks;
 
     let chunks: Vec<Vec<u8>> = (0..num_chunks)
-        .map(|i| {
-            (0..chunk_size)
-                .map(|j| ((i + j) % 256) as u8)
-                .collect()
-        })
+        .map(|i| (0..chunk_size).map(|j| ((i + j) % 256) as u8).collect())
         .collect();
 
     let key = Key::from_bytes([0x42u8; 32]);
 
-    println!("Encrypting {} chunks ({} MB total)...", num_chunks, total_size / 1024 / 1024);
+    println!(
+        "Encrypting {} chunks ({} MB total)...",
+        num_chunks,
+        total_size / 1024 / 1024
+    );
     let start = Instant::now();
 
     let encrypted: Vec<Vec<u8>> = chunks
@@ -161,21 +166,18 @@ fn stress_hashing_throughput() {
     let total_size = chunk_size * num_chunks;
 
     let chunks: Vec<Vec<u8>> = (0..num_chunks)
-        .map(|i| {
-            (0..chunk_size)
-                .map(|j| ((i + j) % 256) as u8)
-                .collect()
-        })
+        .map(|i| (0..chunk_size).map(|j| ((i + j) % 256) as u8).collect())
         .collect();
 
-    println!("Hashing {} chunks ({} MB total)...", num_chunks, total_size / 1024 / 1024);
+    println!(
+        "Hashing {} chunks ({} MB total)...",
+        num_chunks,
+        total_size / 1024 / 1024
+    );
     let start = Instant::now();
 
     // Hash each chunk
-    let hashes: Vec<[u8; 32]> = chunks
-        .iter()
-        .map(|chunk| warp_hash::hash(chunk))
-        .collect();
+    let hashes: Vec<[u8; 32]> = chunks.iter().map(|chunk| warp_hash::hash(chunk)).collect();
 
     let elapsed = start.elapsed();
     let throughput_mbps = (total_size as f64 / 1024.0 / 1024.0) / elapsed.as_secs_f64();
@@ -195,9 +197,14 @@ fn stress_hashing_throughput() {
 #[test]
 fn stress_full_pipeline() {
     let data_size = 5 * 1024 * 1024; // 5MB
-    let data: Vec<u8> = (0..data_size).map(|i| ((i * 17 + 13) % 256) as u8).collect();
+    let data: Vec<u8> = (0..data_size)
+        .map(|i| ((i * 17 + 13) % 256) as u8)
+        .collect();
 
-    println!("Running full pipeline on {}MB of data...", data_size / 1024 / 1024);
+    println!(
+        "Running full pipeline on {}MB of data...",
+        data_size / 1024 / 1024
+    );
     let start = Instant::now();
 
     // Step 1: Chunk
@@ -268,7 +275,10 @@ fn stress_full_pipeline() {
     let reverse_time = reverse_start.elapsed();
     println!("Reverse pipeline: {:?}", reverse_time);
 
-    assert_eq!(reconstructed, data, "Data mismatch after full pipeline roundtrip");
+    assert_eq!(
+        reconstructed, data,
+        "Data mismatch after full pipeline roundtrip"
+    );
 }
 
 /// Test: Memory efficiency with many small chunks
@@ -278,14 +288,14 @@ fn stress_many_small_chunks() {
     let chunk_size = 4096; // 4KB chunks
 
     let chunks: Vec<Vec<u8>> = (0..num_chunks)
-        .map(|i| {
-            (0..chunk_size)
-                .map(|j| ((i + j) % 256) as u8)
-                .collect()
-        })
+        .map(|i| (0..chunk_size).map(|j| ((i + j) % 256) as u8).collect())
         .collect();
 
-    println!("Processing {} small chunks ({} KB each)...", num_chunks, chunk_size / 1024);
+    println!(
+        "Processing {} small chunks ({} KB each)...",
+        num_chunks,
+        chunk_size / 1024
+    );
     let start = Instant::now();
 
     let key = Key::from_bytes([0x42u8; 32]);
@@ -350,7 +360,10 @@ fn stress_compression_comparison() {
         })
         .collect();
 
-    println!("Comparing compression algorithms on {}MB...", (chunk_size * num_chunks) / 1024 / 1024);
+    println!(
+        "Comparing compression algorithms on {}MB...",
+        (chunk_size * num_chunks) / 1024 / 1024
+    );
 
     // Test Zstd
     let zstd = ZstdCompressor::default();
@@ -368,8 +381,16 @@ fn stress_compression_comparison() {
 
     let original_size = chunk_size * num_chunks;
 
-    println!("Zstd: {:?}, ratio: {:.2}x", zstd_time, original_size as f64 / zstd_size as f64);
-    println!("LZ4:  {:?}, ratio: {:.2}x", lz4_time, original_size as f64 / lz4_size as f64);
+    println!(
+        "Zstd: {:?}, ratio: {:.2}x",
+        zstd_time,
+        original_size as f64 / zstd_size as f64
+    );
+    println!(
+        "LZ4:  {:?}, ratio: {:.2}x",
+        lz4_time,
+        original_size as f64 / lz4_size as f64
+    );
 
     // Verify all decompress correctly
     for (i, (original, compressed)) in chunks.iter().zip(zstd_compressed.iter()).enumerate() {

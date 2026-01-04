@@ -6,10 +6,10 @@
 use crate::handlers::AppState;
 use crate::types::{DashboardState, EdgeView, TransferView};
 use warp_ipc::{
-    commands::{responses::*, EventFilter, IpcCommand, IpcResponse},
+    IpcError, IpcResult,
+    commands::{EventFilter, IpcCommand, IpcResponse, responses::*},
     events::IpcEvent,
     types::*,
-    IpcError, IpcResult,
 };
 
 /// Convert internal TransferView to IPC TransferInfo
@@ -104,8 +104,11 @@ impl IpcHandler {
     pub async fn handle_command(&self, command: IpcCommand) -> String {
         let result = self.execute_command(command).await;
         serde_json::to_string(&result).unwrap_or_else(|e| {
-            serde_json::to_string(&IpcResponse::<()>::error("SERIALIZATION_ERROR", e.to_string()))
-                .unwrap()
+            serde_json::to_string(&IpcResponse::<()>::error(
+                "SERIALIZATION_ERROR",
+                e.to_string(),
+            ))
+            .unwrap()
         })
     }
 
@@ -181,8 +184,7 @@ impl IpcHandler {
             // Edge commands
             IpcCommand::GetEdges => {
                 let state = self.app_state.get_state().await;
-                let edges: Vec<EdgeInfo> =
-                    state.connected_edges.iter().map(edge_to_ipc).collect();
+                let edges: Vec<EdgeInfo> = state.connected_edges.iter().map(edge_to_ipc).collect();
                 serde_json::to_value(IpcResponse::ok(edges)).unwrap()
             }
 
@@ -364,9 +366,7 @@ impl IpcHandler {
                 serde_json::to_value(IpcResponse::ok(result)).unwrap()
             }
 
-            IpcCommand::Unsubscribe => {
-                serde_json::to_value(IpcResponse::<()>::ok(())).unwrap()
-            }
+            IpcCommand::Unsubscribe => serde_json::to_value(IpcResponse::<()>::ok(())).unwrap(),
         }
     }
 
@@ -442,7 +442,9 @@ mod tests {
     #[tokio::test]
     async fn test_get_dashboard_snapshot() {
         let handler = IpcHandler::new(create_test_state());
-        let response = handler.handle_command(IpcCommand::GetDashboardSnapshot).await;
+        let response = handler
+            .handle_command(IpcCommand::GetDashboardSnapshot)
+            .await;
         assert!(response.contains("ok"));
         assert!(response.contains("active_transfers"));
         assert!(response.contains("metrics"));

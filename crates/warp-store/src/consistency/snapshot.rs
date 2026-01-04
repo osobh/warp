@@ -14,8 +14,8 @@ use sled::Db;
 use tokio::sync::RwLock;
 use tracing::{debug, info, warn};
 
-use super::types::*;
 use super::state_machine::MetadataStateMachine;
+use super::types::*;
 
 /// Snapshot storage configuration
 #[derive(Debug, Clone)]
@@ -100,7 +100,10 @@ impl SnapshotManager {
         };
 
         let snapshot_bytes = snapshot.to_bytes();
-        let snapshot_id = format!("snapshot-{}-{}", last_applied.leader_id.term, last_applied.index);
+        let snapshot_id = format!(
+            "snapshot-{}-{}",
+            last_applied.leader_id.term, last_applied.index
+        );
 
         // Calculate checksum
         let checksum = blake3::hash(&snapshot_bytes);
@@ -122,7 +125,8 @@ impl SnapshotManager {
         };
 
         // Save metadata
-        let info_bytes = rmp_serde::to_vec(&info).map_err(|e| SnapshotError::Serialization(e.to_string()))?;
+        let info_bytes =
+            rmp_serde::to_vec(&info).map_err(|e| SnapshotError::Serialization(e.to_string()))?;
         self.meta_tree
             .insert(KEY_CURRENT_SNAPSHOT, info_bytes)
             .map_err(|e| SnapshotError::Storage(e.to_string()))?;
@@ -191,7 +195,10 @@ impl SnapshotManager {
             SnapshotError::Serialization("Snapshot meta missing last_log_id".to_string())
         })?;
 
-        let snapshot_id = format!("snapshot-{}-{}", last_log_id.leader_id.term, last_log_id.index);
+        let snapshot_id = format!(
+            "snapshot-{}-{}",
+            last_log_id.leader_id.term, last_log_id.index
+        );
         let checksum = blake3::hash(&data);
 
         // Write snapshot to disk
@@ -222,7 +229,8 @@ impl SnapshotManager {
         }
 
         // Save as current snapshot
-        let info_bytes = rmp_serde::to_vec(&info).map_err(|e| SnapshotError::Serialization(e.to_string()))?;
+        let info_bytes =
+            rmp_serde::to_vec(&info).map_err(|e| SnapshotError::Serialization(e.to_string()))?;
         self.meta_tree
             .insert(KEY_CURRENT_SNAPSHOT, info_bytes)
             .map_err(|e| SnapshotError::Storage(e.to_string()))?;
@@ -238,7 +246,10 @@ impl SnapshotManager {
     }
 
     /// Get snapshot data for sending to followers
-    pub async fn get_snapshot_data(&self, snapshot_info: &SnapshotInfo) -> Result<Vec<u8>, SnapshotError> {
+    pub async fn get_snapshot_data(
+        &self,
+        snapshot_info: &SnapshotInfo,
+    ) -> Result<Vec<u8>, SnapshotError> {
         tokio::fs::read(&snapshot_info.path)
             .await
             .map_err(|e| SnapshotError::Io(e.to_string()))
@@ -257,9 +268,18 @@ impl SnapshotManager {
             .await
             .map_err(|e| SnapshotError::Io(e.to_string()))?;
 
-        while let Some(entry) = entries.next_entry().await.map_err(|e| SnapshotError::Io(e.to_string()))? {
+        while let Some(entry) = entries
+            .next_entry()
+            .await
+            .map_err(|e| SnapshotError::Io(e.to_string()))?
+        {
             let path = entry.path();
-            if path.is_file() && path.file_name().map(|n| n.to_string_lossy().starts_with("snapshot-")).unwrap_or(false) {
+            if path.is_file()
+                && path
+                    .file_name()
+                    .map(|n| n.to_string_lossy().starts_with("snapshot-"))
+                    .unwrap_or(false)
+            {
                 // Try to read metadata from the file
                 if let Ok(data) = tokio::fs::read(&path).await {
                     let checksum = blake3::hash(&data);
@@ -310,7 +330,8 @@ impl SnapshotManager {
 
     /// Increment snapshot index counter
     fn increment_snapshot_index(&self) -> Result<u64, SnapshotError> {
-        let current = self.meta_tree
+        let current = self
+            .meta_tree
             .get(KEY_SNAPSHOT_INDEX)
             .map_err(|e| SnapshotError::Storage(e.to_string()))?
             .and_then(|v| {
@@ -426,8 +447,8 @@ pub enum SnapshotError {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use tempfile::TempDir;
     use crate::bucket::BucketConfig;
+    use tempfile::TempDir;
 
     async fn create_test_manager() -> (TempDir, SnapshotManager) {
         let temp_dir = TempDir::new().unwrap();
@@ -451,14 +472,19 @@ mod tests {
         let sm = RwLock::new(MetadataStateMachine::new());
         {
             let mut inner = sm.write().await;
-            inner.buckets.insert("test-bucket".to_string(), BucketConfig::default());
+            inner
+                .buckets
+                .insert("test-bucket".to_string(), BucketConfig::default());
         }
 
         // Create snapshot
         let last_applied = LogId::new(openraft::CommittedLeaderId::new(1, 1), 100);
         let membership = StoredMembership::default();
 
-        let info = manager.create_snapshot(&sm, last_applied, membership.clone()).await.unwrap();
+        let info = manager
+            .create_snapshot(&sm, last_applied, membership.clone())
+            .await
+            .unwrap();
 
         assert_eq!(info.last_log_id.index, 100);
         assert!(!info.checksum.is_empty());
@@ -489,7 +515,10 @@ mod tests {
         // Create 3 snapshots (max is 2)
         for i in 1..=3 {
             let last_applied = LogId::new(openraft::CommittedLeaderId::new(1, 1), i * 100);
-            manager.create_snapshot(&sm, last_applied, membership.clone()).await.unwrap();
+            manager
+                .create_snapshot(&sm, last_applied, membership.clone())
+                .await
+                .unwrap();
         }
 
         // Should only have 2 snapshots
@@ -524,7 +553,10 @@ mod tests {
         let last_applied = LogId::new(openraft::CommittedLeaderId::new(1, 1), 100);
         let membership = StoredMembership::default();
 
-        manager.create_snapshot(&sm, last_applied, membership).await.unwrap();
+        manager
+            .create_snapshot(&sm, last_applied, membership)
+            .await
+            .unwrap();
 
         // Now should have current snapshot
         let current = manager.get_current_snapshot().unwrap();
@@ -539,10 +571,15 @@ mod tests {
         let last_applied = LogId::new(openraft::CommittedLeaderId::new(1, 1), 100);
         let membership = StoredMembership::default();
 
-        let info = manager.create_snapshot(&sm, last_applied, membership).await.unwrap();
+        let info = manager
+            .create_snapshot(&sm, last_applied, membership)
+            .await
+            .unwrap();
 
         // Corrupt the file
-        tokio::fs::write(&info.path, b"corrupted data").await.unwrap();
+        tokio::fs::write(&info.path, b"corrupted data")
+            .await
+            .unwrap();
 
         // Restore should fail with checksum mismatch
         let result = manager.restore_snapshot(&info, &sm).await;
@@ -559,7 +596,10 @@ mod tests {
         // Create 2 snapshots
         for i in 1..=2 {
             let last_applied = LogId::new(openraft::CommittedLeaderId::new(1, 1), i * 100);
-            manager.create_snapshot(&sm, last_applied, membership.clone()).await.unwrap();
+            manager
+                .create_snapshot(&sm, last_applied, membership.clone())
+                .await
+                .unwrap();
         }
 
         let stats = manager.stats().await;

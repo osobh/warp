@@ -39,7 +39,7 @@
 //! - Memory bandwidth bound on PCIe 3.0, compute bound on PCIe 4.0+
 
 use crate::{Error, Result};
-use cudarc::driver::{CudaContext, CudaStream, CudaModule, CudaFunction, PushKernelArg};
+use cudarc::driver::{CudaContext, CudaFunction, CudaModule, CudaStream, PushKernelArg};
 use cudarc::nvrtc::compile_ptx;
 use std::sync::Arc;
 use tracing::{debug, trace};
@@ -53,9 +53,7 @@ mod constants {
 
     // "expand 32-byte k" in little-endian
     #[allow(dead_code)]
-    pub const SIGMA: [u32; 4] = [
-        0x61707865, 0x3320646e, 0x79622d32, 0x6b206574,
-    ];
+    pub const SIGMA: [u32; 4] = [0x61707865, 0x3320646e, 0x79622d32, 0x6b206574];
 }
 
 /// Minimum size to use GPU encryption (below this, CPU is faster due to transfer overhead)
@@ -287,12 +285,14 @@ impl ChaCha20Poly1305 {
 
         // Load module
         debug!("Loading ChaCha20 CUDA module");
-        let module = ctx.load_module(ptx)
+        let module = ctx
+            .load_module(ptx)
             .map_err(|e| Error::CudaOperation(format!("Module load failed: {:?}", e)))?;
 
         // Get function handle
         debug!("Loading chacha20_encrypt function");
-        let encrypt_fn = module.load_function("chacha20_encrypt")
+        let encrypt_fn = module
+            .load_function("chacha20_encrypt")
             .map_err(|e| Error::CudaOperation(format!("Function load failed: {:?}", e)))?;
 
         debug!("Created ChaCha20-Poly1305 GPU cipher");
@@ -320,8 +320,8 @@ impl ChaCha20Poly1305 {
     /// - Data >= 256KB: Uses GPU for ChaCha20, CPU for Poly1305 tag
     pub fn encrypt(&self, plaintext: &[u8], key: &[u8; 32], nonce: &[u8; 12]) -> Result<Vec<u8>> {
         use chacha20poly1305::{
-            aead::{Aead, KeyInit},
             ChaCha20Poly1305 as CpuCipher, Nonce,
+            aead::{Aead, KeyInit},
         };
 
         // Use GPU for large data where transfer overhead is amortized
@@ -345,9 +345,20 @@ impl ChaCha20Poly1305 {
     /// This hybrid approach uses GPU for the parallelizable ChaCha20 encryption
     /// and CPU for the sequential Poly1305 authentication tag computation.
     /// Follows RFC 8439 AEAD construction exactly.
-    fn encrypt_with_gpu_chacha20(&self, plaintext: &[u8], key: &[u8; 32], nonce: &[u8; 12]) -> Result<Vec<u8>> {
-        use chacha20::{ChaCha20, cipher::{KeyIvInit, StreamCipher}};
-        use poly1305::{Poly1305, universal_hash::{KeyInit as PolyKeyInit, UniversalHash}};
+    fn encrypt_with_gpu_chacha20(
+        &self,
+        plaintext: &[u8],
+        key: &[u8; 32],
+        nonce: &[u8; 12],
+    ) -> Result<Vec<u8>> {
+        use chacha20::{
+            ChaCha20,
+            cipher::{KeyIvInit, StreamCipher},
+        };
+        use poly1305::{
+            Poly1305,
+            universal_hash::{KeyInit as PolyKeyInit, UniversalHash},
+        };
 
         // Step 1: Derive Poly1305 key from ChaCha20 block 0 (first 32 bytes of keystream)
         let mut poly_key_block = [0u8; 64];
@@ -394,8 +405,8 @@ impl ChaCha20Poly1305 {
     /// Decrypted plaintext if authentication succeeds
     pub fn decrypt(&self, ciphertext: &[u8], key: &[u8; 32], nonce: &[u8; 12]) -> Result<Vec<u8>> {
         use chacha20poly1305::{
-            aead::{Aead, KeyInit},
             ChaCha20Poly1305 as CpuCipher, Nonce,
+            aead::{Aead, KeyInit},
         };
 
         // Use CPU implementation for correctness
@@ -421,7 +432,12 @@ impl ChaCha20Poly1305 {
     ///
     /// # Returns
     /// Encrypted data (ChaCha20 stream cipher output, no Poly1305 tag yet)
-    pub fn encrypt_gpu_experimental(&self, plaintext: &[u8], key: &[u8; 32], nonce: &[u8; 12]) -> Result<Vec<u8>> {
+    pub fn encrypt_gpu_experimental(
+        &self,
+        plaintext: &[u8],
+        key: &[u8; 32],
+        nonce: &[u8; 12],
+    ) -> Result<Vec<u8>> {
         self.encrypt_gpu(plaintext, key, nonce)
     }
 
@@ -432,29 +448,37 @@ impl ChaCha20Poly1305 {
     /// * `key` - 32-byte key
     /// * `nonce` - 12-byte nonce
     /// * `counter_base` - Starting counter value (0 for raw ChaCha20, 1 for AEAD)
-    fn encrypt_gpu_with_counter(&self, plaintext: &[u8], key: &[u8; 32], nonce: &[u8; 12], counter_base: u32) -> Result<Vec<u8>> {
+    fn encrypt_gpu_with_counter(
+        &self,
+        plaintext: &[u8],
+        key: &[u8; 32],
+        nonce: &[u8; 12],
+        counter_base: u32,
+    ) -> Result<Vec<u8>> {
         if plaintext.is_empty() {
             return Ok(vec![]);
         }
 
-        trace!("GPU encrypting {} bytes with counter_base={}", plaintext.len(), counter_base);
+        trace!(
+            "GPU encrypting {} bytes with counter_base={}",
+            plaintext.len(),
+            counter_base
+        );
 
         // 1. Transfer plaintext to GPU
         let d_plaintext = self.stream.clone_htod(plaintext)?;
 
         // 2. Allocate ciphertext buffer
-        let mut d_ciphertext = self.stream.alloc_zeros::<u8>(plaintext.len())
+        let mut d_ciphertext = self
+            .stream
+            .alloc_zeros::<u8>(plaintext.len())
             .map_err(|e| Error::CudaOperation(format!("Ciphertext allocation failed: {:?}", e)))?;
 
         // 3. Convert key to u32 words (8 words = 32 bytes)
         let mut key_words = [0u32; 8];
         for i in 0..8 {
-            key_words[i] = u32::from_le_bytes([
-                key[i * 4],
-                key[i * 4 + 1],
-                key[i * 4 + 2],
-                key[i * 4 + 3],
-            ]);
+            key_words[i] =
+                u32::from_le_bytes([key[i * 4], key[i * 4 + 1], key[i * 4 + 2], key[i * 4 + 3]]);
         }
         let d_key = self.stream.clone_htod(&key_words)?;
 
@@ -476,6 +500,13 @@ impl ChaCha20Poly1305 {
 
         let data_size = plaintext.len() as u64;
 
+        // SAFETY: CUDA kernel launch is safe because:
+        // 1. self.encrypt_fn is a valid CudaFunction loaded from our compiled PTX
+        // 2. All device buffers (d_plaintext, d_ciphertext, d_key, d_nonce) are valid
+        //    allocations created by cudarc on this stream
+        // 3. grid_size and block_size are computed to be within device limits
+        // 4. The kernel arguments match the expected signature in the PTX code
+        // 5. We synchronize the stream after launch to ensure completion
         unsafe {
             let cfg = cudarc::driver::LaunchConfig {
                 grid_dim: (grid_size, 1, 1),
@@ -483,7 +514,8 @@ impl ChaCha20Poly1305 {
                 shared_mem_bytes: 0,
             };
 
-            self.stream.launch_builder(&self.encrypt_fn)
+            self.stream
+                .launch_builder(&self.encrypt_fn)
                 .arg(&d_plaintext)
                 .arg(&mut d_ciphertext)
                 .arg(&d_key)
@@ -495,7 +527,8 @@ impl ChaCha20Poly1305 {
         }
 
         // 6. Synchronize stream
-        self.stream.synchronize()
+        self.stream
+            .synchronize()
             .map_err(|e| Error::CudaOperation(format!("Stream sync failed: {:?}", e)))?;
 
         // 7. Transfer ciphertext back
@@ -623,14 +656,16 @@ mod tests {
         let nonce = [0x13u8; 12];
 
         if let Some(cipher) = try_get_cipher() {
-            let ciphertext = cipher.encrypt(plaintext, &key, &nonce)
+            let ciphertext = cipher
+                .encrypt(plaintext, &key, &nonce)
                 .expect("Encryption should succeed");
 
             // Ciphertext should be longer (includes 16-byte tag)
             assert!(ciphertext.len() > plaintext.len());
             assert_eq!(ciphertext.len(), plaintext.len() + 16);
 
-            let decrypted = cipher.decrypt(&ciphertext, &key, &nonce)
+            let decrypted = cipher
+                .decrypt(&ciphertext, &key, &nonce)
                 .expect("Decryption should succeed");
 
             assert_eq!(&decrypted[..], plaintext);
@@ -657,13 +692,15 @@ mod tests {
         let nonce = [0u8; 12];
 
         if let Some(cipher) = try_get_cipher() {
-            let ciphertext = cipher.encrypt(plaintext, &key, &nonce)
+            let ciphertext = cipher
+                .encrypt(plaintext, &key, &nonce)
                 .expect("Empty data encryption should succeed");
 
             // Should only contain the 16-byte tag
             assert_eq!(ciphertext.len(), 16);
 
-            let decrypted = cipher.decrypt(&ciphertext, &key, &nonce)
+            let decrypted = cipher
+                .decrypt(&ciphertext, &key, &nonce)
                 .expect("Empty data decryption should succeed");
 
             assert_eq!(decrypted.len(), 0);
@@ -681,13 +718,17 @@ mod tests {
         let nonce = [0x42u8; 12];
 
         if let Some(cipher) = try_get_cipher() {
-            let ciphertext1 = cipher.encrypt(plaintext, &key1, &nonce)
+            let ciphertext1 = cipher
+                .encrypt(plaintext, &key1, &nonce)
                 .expect("Encryption 1 should succeed");
-            let ciphertext2 = cipher.encrypt(plaintext, &key2, &nonce)
+            let ciphertext2 = cipher
+                .encrypt(plaintext, &key2, &nonce)
                 .expect("Encryption 2 should succeed");
 
-            assert_ne!(ciphertext1, ciphertext2,
-                "Different keys should produce different ciphertexts");
+            assert_ne!(
+                ciphertext1, ciphertext2,
+                "Different keys should produce different ciphertexts"
+            );
         } else {
             eprintln!("Skipping GPU test - no GPU available");
         }
@@ -702,13 +743,17 @@ mod tests {
         let nonce2 = [0xFFu8; 12];
 
         if let Some(cipher) = try_get_cipher() {
-            let ciphertext1 = cipher.encrypt(plaintext, &key, &nonce1)
+            let ciphertext1 = cipher
+                .encrypt(plaintext, &key, &nonce1)
                 .expect("Encryption 1 should succeed");
-            let ciphertext2 = cipher.encrypt(plaintext, &key, &nonce2)
+            let ciphertext2 = cipher
+                .encrypt(plaintext, &key, &nonce2)
                 .expect("Encryption 2 should succeed");
 
-            assert_ne!(ciphertext1, ciphertext2,
-                "Different nonces should produce different ciphertexts");
+            assert_ne!(
+                ciphertext1, ciphertext2,
+                "Different nonces should produce different ciphertexts"
+            );
         } else {
             eprintln!("Skipping GPU test - no GPU available");
         }
@@ -723,7 +768,8 @@ mod tests {
         let nonce = [0x33u8; 12];
 
         if let Some(cipher) = try_get_cipher() {
-            let ciphertext = cipher.encrypt(plaintext, &key_encrypt, &nonce)
+            let ciphertext = cipher
+                .encrypt(plaintext, &key_encrypt, &nonce)
                 .expect("Encryption should succeed");
 
             let result = cipher.decrypt(&ciphertext, &key_decrypt, &nonce);
@@ -742,7 +788,8 @@ mod tests {
         let nonce_decrypt = [0x66u8; 12];
 
         if let Some(cipher) = try_get_cipher() {
-            let ciphertext = cipher.encrypt(plaintext, &key, &nonce_encrypt)
+            let ciphertext = cipher
+                .encrypt(plaintext, &key, &nonce_encrypt)
                 .expect("Encryption should succeed");
 
             let result = cipher.decrypt(&ciphertext, &key, &nonce_decrypt);
@@ -760,7 +807,8 @@ mod tests {
         let nonce = [0x88u8; 12];
 
         if let Some(cipher) = try_get_cipher() {
-            let mut ciphertext = cipher.encrypt(plaintext, &key, &nonce)
+            let mut ciphertext = cipher
+                .encrypt(plaintext, &key, &nonce)
                 .expect("Encryption should succeed");
 
             // Tamper with the ciphertext (flip a bit in the middle)
@@ -769,7 +817,10 @@ mod tests {
             }
 
             let result = cipher.decrypt(&ciphertext, &key, &nonce);
-            assert!(result.is_err(), "Tampered ciphertext should fail authentication");
+            assert!(
+                result.is_err(),
+                "Tampered ciphertext should fail authentication"
+            );
         } else {
             eprintln!("Skipping GPU test - no GPU available");
         }
@@ -788,9 +839,11 @@ mod tests {
                 let key = [pattern; 32];
                 let nonce = [pattern; 12];
 
-                let ciphertext = cipher.encrypt(&plaintext, &key, &nonce)
+                let ciphertext = cipher
+                    .encrypt(&plaintext, &key, &nonce)
                     .expect(&format!("Encryption should succeed for {} bytes", size));
-                let decrypted = cipher.decrypt(&ciphertext, &key, &nonce)
+                let decrypted = cipher
+                    .decrypt(&ciphertext, &key, &nonce)
                     .expect(&format!("Decryption should succeed for {} bytes", size));
 
                 assert_eq!(decrypted, plaintext, "Roundtrip failed for {} bytes", size);
@@ -813,14 +866,16 @@ mod tests {
 
         if let Some(cipher) = try_get_cipher() {
             // GPU path produces raw ChaCha20 output (no Poly1305 tag)
-            let gpu_ciphertext = cipher.encrypt_gpu_experimental(plaintext, &key, &nonce)
+            let gpu_ciphertext = cipher
+                .encrypt_gpu_experimental(plaintext, &key, &nonce)
                 .expect("GPU encryption should succeed");
 
             // Should be same length as plaintext (no tag in experimental mode)
             assert_eq!(gpu_ciphertext.len(), plaintext.len());
 
             // XOR again should give back plaintext (stream cipher property)
-            let decrypted = cipher.encrypt_gpu_experimental(&gpu_ciphertext, &key, &nonce)
+            let decrypted = cipher
+                .encrypt_gpu_experimental(&gpu_ciphertext, &key, &nonce)
                 .expect("GPU decrypt should succeed");
 
             assert_eq!(&decrypted[..], plaintext);
@@ -837,7 +892,8 @@ mod tests {
         let nonce = [0x78u8; 12];
 
         if let Some(cipher) = try_get_cipher() {
-            let ciphertext = cipher.encrypt_gpu_experimental(plaintext, &key, &nonce)
+            let ciphertext = cipher
+                .encrypt_gpu_experimental(plaintext, &key, &nonce)
                 .expect("GPU empty encryption should succeed");
 
             assert_eq!(ciphertext.len(), 0);
@@ -857,13 +913,15 @@ mod tests {
             for size in [1, 63, 64, 65, 127, 128, 129, 1024] {
                 let plaintext = vec![0xDEu8; size];
 
-                let ciphertext = cipher.encrypt_gpu_experimental(&plaintext, &key, &nonce)
+                let ciphertext = cipher
+                    .encrypt_gpu_experimental(&plaintext, &key, &nonce)
                     .expect("GPU encryption should succeed");
 
                 assert_eq!(ciphertext.len(), plaintext.len());
 
                 // Verify stream cipher property (double encryption = plaintext)
-                let decrypted = cipher.encrypt_gpu_experimental(&ciphertext, &key, &nonce)
+                let decrypted = cipher
+                    .encrypt_gpu_experimental(&ciphertext, &key, &nonce)
                     .expect("GPU decrypt should succeed");
 
                 assert_eq!(decrypted, plaintext, "Failed at size {}", size);
@@ -887,7 +945,8 @@ mod tests {
                 let keys = [[0x11u8; 32], [0x22u8; 32]];
                 let nonces = [[0x44u8; 12], [0x55u8; 12]];
 
-                let ciphertexts = batch.encrypt_batch(&plaintexts, &keys, &nonces)
+                let ciphertexts = batch
+                    .encrypt_batch(&plaintexts, &keys, &nonces)
                     .expect("Batch encryption should succeed");
                 assert_eq!(ciphertexts.len(), 2, "Should have 2 ciphertexts");
             }

@@ -65,10 +65,12 @@ pub mod header;
 pub mod model;
 
 // Re-export main types at crate root
-pub use compressor::{AdaptiveNeuralCompressor, BatchNeuralCompressor, QualityConfig, WallocCompressor};
+pub use compressor::{
+    AdaptiveNeuralCompressor, BatchNeuralCompressor, QualityConfig, WallocCompressor,
+};
 pub use detection::{ContentClassifier, ContentType, SuitabilityScore};
 pub use error::{Error, Result};
-pub use header::{HeaderFlags, WlocHeader, HEADER_SIZE, MAGIC, VERSION};
+pub use header::{HEADER_SIZE, HeaderFlags, MAGIC, VERSION, WlocHeader};
 pub use model::{ModelConfig, ModelPreset, SessionCache};
 
 /// Check if ONNX Runtime CUDA is available

@@ -84,8 +84,8 @@ pub async fn execute(
     let encryption_key = if encrypt {
         let password = get_password(password)?;
         let salt = generate_salt();
-        let derived = derive_key(password.as_bytes(), &salt)
-            .context("Failed to derive encryption key")?;
+        let derived =
+            derive_key(password.as_bytes(), &salt).context("Failed to derive encryption key")?;
         Some(EncryptionKey::from_bytes(*derived.as_bytes()))
     } else {
         None
@@ -95,7 +95,16 @@ pub async fn execute(
     if is_remote_dest(destination) {
         // Remote transfer
         let (host, port, remote_path) = parse_remote_dest(destination)?;
-        send_remote(source, &host, port, &remote_path, compress, encryption_key, erasure_opts).await
+        send_remote(
+            source,
+            &host,
+            port,
+            &remote_path,
+            compress,
+            encryption_key,
+            erasure_opts,
+        )
+        .await
     } else {
         // Local archive creation
         create_local_archive(source, destination, compress, encryption_key).await
@@ -162,13 +171,13 @@ fn parse_remote_dest(dest: &str) -> Result<(String, u16, String)> {
     // Parse host:port
     let host_port_parts: Vec<&str> = host_port.splitn(2, ':').collect();
     if host_port_parts.len() != 2 {
-        anyhow::bail!("Invalid remote destination format. Expected 'host:port' or 'host:port/path'");
+        anyhow::bail!(
+            "Invalid remote destination format. Expected 'host:port' or 'host:port/path'"
+        );
     }
 
     let host = host_port_parts[0].to_string();
-    let port: u16 = host_port_parts[1]
-        .parse()
-        .context("Invalid port number")?;
+    let port: u16 = host_port_parts[1].parse().context("Invalid port number")?;
 
     Ok((host, port, remote_path))
 }
@@ -392,7 +401,10 @@ async fn send_remote(
     .context("Failed to send PLAN")?;
 
     // Wait for ACCEPT
-    let frame = conn.recv_frame().await.context("Failed to receive ACCEPT")?;
+    let frame = conn
+        .recv_frame()
+        .await
+        .context("Failed to receive ACCEPT")?;
     match frame {
         Frame::Accept => {}
         Frame::Error { code, message } => {
@@ -527,10 +539,10 @@ async fn send_remote(
 
             controller.record_transfer_metrics(
                 chunk_duration.as_millis() as f64, // latency_ms
-                chunk_bytes,                        // bytes_sent
-                chunk_duration,                     // duration
-                0,                                  // shards_lost
-                total_shards as usize,              // total_shards
+                chunk_bytes,                       // bytes_sent
+                chunk_duration,                    // duration
+                0,                                 // shards_lost
+                total_shards as usize,             // total_shards
             );
 
             // Periodically evaluate and potentially adjust parameters
@@ -645,8 +657,7 @@ async fn create_local_archive(
     // Create parent directory if it doesn't exist
     if let Some(parent) = archive_path.parent() {
         if !parent.exists() {
-            std::fs::create_dir_all(parent)
-                .context("Failed to create destination directory")?;
+            std::fs::create_dir_all(parent).context("Failed to create destination directory")?;
         }
     }
 

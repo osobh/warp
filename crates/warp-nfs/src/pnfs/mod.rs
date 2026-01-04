@@ -212,7 +212,10 @@ impl NetAddr {
             }
             SocketAddr::V6(v6) => {
                 let port = v6.port();
-                ("tcp6".to_string(), format!("{}.{}.{}", v6.ip(), port >> 8, port & 0xff))
+                (
+                    "tcp6".to_string(),
+                    format!("{}.{}.{}", v6.ip(), port >> 8, port & 0xff),
+                )
             }
         };
         Self {
@@ -248,8 +251,9 @@ impl LayoutGetArgs {
     pub fn decode(dec: &mut XdrDecoder) -> std::io::Result<Self> {
         let signal_layout_avail = dec.decode_bool()?;
         let layout_type_val = dec.decode_u32()?;
-        let layout_type = LayoutType::try_from(layout_type_val)
-            .map_err(|_| std::io::Error::new(std::io::ErrorKind::InvalidData, "invalid layout type"))?;
+        let layout_type = LayoutType::try_from(layout_type_val).map_err(|_| {
+            std::io::Error::new(std::io::ErrorKind::InvalidData, "invalid layout type")
+        })?;
         let iomode_val = dec.decode_u32()?;
         let iomode = LayoutIoMode::try_from(iomode_val)
             .map_err(|_| std::io::Error::new(std::io::ErrorKind::InvalidData, "invalid iomode"))?;
@@ -351,8 +355,9 @@ impl GetDeviceInfoArgs {
         let mut device_id = [0u8; 16];
         device_id.copy_from_slice(&device_id_vec);
         let layout_type_val = dec.decode_u32()?;
-        let layout_type = LayoutType::try_from(layout_type_val)
-            .map_err(|_| std::io::Error::new(std::io::ErrorKind::InvalidData, "invalid layout type"))?;
+        let layout_type = LayoutType::try_from(layout_type_val).map_err(|_| {
+            std::io::Error::new(std::io::ErrorKind::InvalidData, "invalid layout type")
+        })?;
         let maxcount = dec.decode_u32()?;
         let notify_types = dec.decode_u32()?;
 
@@ -467,7 +472,11 @@ impl LayoutManager {
     }
 
     /// Get layout for a file
-    pub fn get_layout(&self, client_id: u64, fh_hash: u64) -> Option<(StateId, Vec<LayoutSegment>)> {
+    pub fn get_layout(
+        &self,
+        client_id: u64,
+        fh_hash: u64,
+    ) -> Option<(StateId, Vec<LayoutSegment>)> {
         self.layouts
             .get(&(client_id, fh_hash))
             .map(|e| (e.stateid, e.segments.clone()))

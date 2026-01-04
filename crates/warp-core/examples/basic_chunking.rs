@@ -19,10 +19,10 @@ fn main() {
 
     // Configure chunker with reasonable defaults
     let config = ChunkerConfig {
-        min_size: 64 * 1024,      // 64KB minimum
-        target_size: 256 * 1024,  // 256KB target
-        max_size: 1024 * 1024,    // 1MB maximum
-        window_size: 48,          // Rolling hash window
+        min_size: 64 * 1024,     // 64KB minimum
+        target_size: 256 * 1024, // 256KB target
+        max_size: 1024 * 1024,   // 1MB maximum
+        window_size: 48,         // Rolling hash window
     };
 
     let chunker = Chunker::new(config);

@@ -1,6 +1,8 @@
 //! Quota enforcement engine
 
-use super::{AlertLevel, QuotaAlert, QuotaLimit, QuotaLimitType, QuotaPolicy, QuotaScope, QuotaUsage};
+use super::{
+    AlertLevel, QuotaAlert, QuotaLimit, QuotaLimitType, QuotaPolicy, QuotaScope, QuotaUsage,
+};
 
 /// Result of quota enforcement check
 #[derive(Debug, Clone)]
@@ -138,7 +140,13 @@ impl QuotaEnforcement {
 
         if let Some(ref limit) = policy.storage_limit {
             let new_total = usage.storage_bytes.saturating_add(bytes_to_write);
-            return self.check_limit(&policy.scope, limit, usage.storage_bytes, new_total, bytes_to_write);
+            return self.check_limit(
+                &policy.scope,
+                limit,
+                usage.storage_bytes,
+                new_total,
+                bytes_to_write,
+            );
         }
 
         EnforcementResult::Allowed
@@ -220,7 +228,8 @@ impl QuotaEnforcement {
         if limit.exceeds_hard(new_total) {
             // Check grace period
             if let Some(grace_secs) = limit.grace_period_secs {
-                let in_grace = self.grace_periods
+                let in_grace = self
+                    .grace_periods
                     .entry(scope.clone())
                     .or_insert_with(std::time::Instant::now);
 
@@ -288,11 +297,7 @@ impl QuotaEnforcement {
     }
 
     /// Generate alerts for current usage (without checking a specific operation)
-    pub fn check_alerts(
-        &self,
-        policy: &QuotaPolicy,
-        usage: &QuotaUsage,
-    ) -> Vec<QuotaAlert> {
+    pub fn check_alerts(&self, policy: &QuotaPolicy, usage: &QuotaUsage) -> Vec<QuotaAlert> {
         let mut alerts = Vec::new();
 
         if !policy.enabled {

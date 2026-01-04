@@ -1,8 +1,8 @@
 //! ML-aware tensor prefetcher
 
 use std::collections::{HashMap, VecDeque};
-use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Duration, Instant};
 
 use dashmap::DashMap;
@@ -233,7 +233,9 @@ impl Prefetcher {
                 .map(|(i, &tensor_id)| PrefetchHint {
                     tensor_id,
                     priority: (self.lookahead - i) as u32,
-                    expected_access: Some(Instant::now() + Duration::from_millis(10 * (i as u64 + 1))),
+                    expected_access: Some(
+                        Instant::now() + Duration::from_millis(10 * (i as u64 + 1)),
+                    ),
                     layer_index: None,
                 })
                 .collect()
@@ -385,7 +387,10 @@ mod tests {
             prefetcher.record_access(&handle);
         }
 
-        assert_eq!(prefetcher.current_pattern(), AccessPattern::ReverseSequential);
+        assert_eq!(
+            prefetcher.current_pattern(),
+            AccessPattern::ReverseSequential
+        );
         assert_eq!(prefetcher.current_phase(), TrainingPhase::Backward);
     }
 

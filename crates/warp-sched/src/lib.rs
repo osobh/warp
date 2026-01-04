@@ -13,41 +13,42 @@
 //! - **Load Balancer**: Prevent edge bottlenecks
 //! - **Dispatch Queue**: CPU-readable scheduling output
 
-pub mod types;
-pub mod state;
-pub mod cost;
-pub mod paths;
-pub mod failover;
 pub mod balance;
-pub mod dispatch;
-pub mod scheduler;
-pub mod reoptimize;
-pub mod constraints;
 pub mod brain_link;
+pub mod constraints;
+pub mod cost;
+pub mod dispatch;
+pub mod failover;
+pub mod paths;
+pub mod reoptimize;
+pub mod scheduler;
+pub mod state;
+pub mod types;
 
-pub use types::{
-    ChunkId, EdgeIdx, ChunkState, ChunkStatus, EdgeStateGpu,
-    Assignment, AssignmentBatch, ScheduleRequest, SchedulerMetrics,
-};
-pub use state::{GpuStateBuffers, CpuStateBuffers, StateSnapshot};
-pub use cost::{CostMatrix, CpuCostMatrix, CostConfig};
-pub use paths::{PathSelector, CpuPathSelector, PathSelection, PathConfig};
-pub use failover::{FailoverManager, CpuFailoverManager, FailoverDecision, FailoverAction};
-pub use balance::{LoadBalancer, CpuLoadBalancer, LoadBalanceConfig, RebalanceOp, RebalancePlan, LoadMetrics};
-pub use dispatch::DispatchQueue;
-pub use scheduler::{ChunkScheduler, CpuChunkScheduler, SchedulerConfig};
-pub use reoptimize::{
-    ReoptScope, ReoptStrategy, Reassignment, ReassignmentReason, ReoptPlan,
-    IncrementalConfig, IncrementalScheduler, ReoptMetrics, ReoptState,
-};
-pub use constraints::{
-    TimeWindow, TimeConstraint, CostConstraint, PowerConstraint,
-    EdgeConstraints, ViolationSeverity, ConstraintViolation,
-    ConstraintEvaluator, SchedulePolicy, PolicyEngine,
+pub use balance::{
+    CpuLoadBalancer, LoadBalanceConfig, LoadBalancer, LoadMetrics, RebalanceOp, RebalancePlan,
 };
 pub use brain_link::{
-    BrainLink, BrainLinkStats, ChunkPlacement, ChunkPlacementRequest,
-    CommunicationPattern, EdgeNodeInfo, NetworkLink, TransportType,
+    BrainLink, BrainLinkStats, ChunkPlacement, ChunkPlacementRequest, CommunicationPattern,
+    EdgeNodeInfo, NetworkLink, TransportType,
+};
+pub use constraints::{
+    ConstraintEvaluator, ConstraintViolation, CostConstraint, EdgeConstraints, PolicyEngine,
+    PowerConstraint, SchedulePolicy, TimeConstraint, TimeWindow, ViolationSeverity,
+};
+pub use cost::{CostConfig, CostMatrix, CpuCostMatrix};
+pub use dispatch::DispatchQueue;
+pub use failover::{CpuFailoverManager, FailoverAction, FailoverDecision, FailoverManager};
+pub use paths::{CpuPathSelector, PathConfig, PathSelection, PathSelector};
+pub use reoptimize::{
+    IncrementalConfig, IncrementalScheduler, Reassignment, ReassignmentReason, ReoptMetrics,
+    ReoptPlan, ReoptScope, ReoptState, ReoptStrategy,
+};
+pub use scheduler::{ChunkScheduler, CpuChunkScheduler, SchedulerConfig};
+pub use state::{CpuStateBuffers, GpuStateBuffers, StateSnapshot};
+pub use types::{
+    Assignment, AssignmentBatch, ChunkId, ChunkState, ChunkStatus, EdgeIdx, EdgeStateGpu,
+    ScheduleRequest, SchedulerMetrics,
 };
 
 use thiserror::Error;

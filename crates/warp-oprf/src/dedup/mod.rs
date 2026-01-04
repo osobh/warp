@@ -71,9 +71,8 @@ impl DedupToken {
 
     /// Parse from hex string
     pub fn from_hex(s: &str) -> Result<Self> {
-        let bytes = hex::decode(s).map_err(|e| {
-            crate::error::OprfError::Deserialization(format!("invalid hex: {}", e))
-        })?;
+        let bytes = hex::decode(s)
+            .map_err(|e| crate::error::OprfError::Deserialization(format!("invalid hex: {}", e)))?;
         if bytes.len() != 32 {
             return Err(crate::error::OprfError::Deserialization(format!(
                 "expected 32 bytes, got {}",

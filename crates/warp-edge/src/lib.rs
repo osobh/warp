@@ -9,19 +9,19 @@
 //! - Health scoring for edge selection
 //! - Resource constraint tracking
 
-pub mod types;
-pub mod registry;
 pub mod availability;
-pub mod metrics;
-pub mod health;
 pub mod constraints;
+pub mod health;
+pub mod metrics;
+pub mod registry;
+pub mod types;
 
-pub use types::{EdgeId, EdgeInfo, EdgeCapabilities, EdgeState, EdgeStatus, EdgeType};
-pub use registry::{EdgeRegistry, EdgeSnapshot};
 pub use availability::{ChunkAvailabilityMap, ChunkLocation};
+pub use constraints::{BatteryConstraints, ConstraintTracker, ResourceConstraints, TimeWindow};
+pub use health::{HealthComponents, HealthScore, HealthScorer, HealthWeights};
 pub use metrics::{BandwidthEstimator, BandwidthMetrics, RttEstimator, RttMetrics};
-pub use health::{HealthScorer, HealthScore, HealthComponents, HealthWeights};
-pub use constraints::{ConstraintTracker, ResourceConstraints, BatteryConstraints, TimeWindow};
+pub use registry::{EdgeRegistry, EdgeSnapshot};
+pub use types::{EdgeCapabilities, EdgeId, EdgeInfo, EdgeState, EdgeStatus, EdgeType};
 
 use thiserror::Error;
 

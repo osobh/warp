@@ -20,7 +20,7 @@
 
 use axum::{
     extract::{Path, Query, State},
-    http::{header, HeaderMap, StatusCode},
+    http::{HeaderMap, StatusCode, header},
     response::{IntoResponse, Response},
 };
 use bytes::Bytes;
@@ -28,13 +28,11 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
 use warp_store::backend::StorageBackend;
-use warp_store::object_lock::{
-    LegalHoldStatus, ObjectLockConfig, ObjectRetention, RetentionMode,
-};
+use warp_store::object_lock::{LegalHoldStatus, ObjectLockConfig, ObjectRetention, RetentionMode};
 use warp_store::version::VersionId;
 
-use crate::error::{ApiError, ApiResult};
 use crate::AppState;
+use crate::error::{ApiError, ApiResult};
 
 // =============================================================================
 // XML Types for S3 Object Lock API
@@ -405,13 +403,16 @@ pub async fn put_legal_hold<B: StorageBackend>(
 // =============================================================================
 
 fn to_object_lock_xml(config: &ObjectLockConfig) -> ObjectLockConfigurationXml {
-    let rule = config.default_retention.as_ref().map(|dr| ObjectLockRuleXml {
-        default_retention: DefaultRetentionXml {
-            mode: dr.mode.to_string(),
-            days: dr.days,
-            years: dr.years,
-        },
-    });
+    let rule = config
+        .default_retention
+        .as_ref()
+        .map(|dr| ObjectLockRuleXml {
+            default_retention: DefaultRetentionXml {
+                mode: dr.mode.to_string(),
+                days: dr.days,
+                years: dr.years,
+            },
+        });
 
     ObjectLockConfigurationXml {
         object_lock_enabled: if config.enabled {

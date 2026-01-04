@@ -3,14 +3,17 @@
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use tokio::sync::{broadcast, RwLock};
+use tokio::sync::{RwLock, broadcast};
 use tokio::time::interval;
 use tracing::{debug, error, info, warn};
 
-use super::{QuarantineManager, QuarantineReason, QuarantinedBlock, ScrubMetrics, ScrubScheduler, ScrubSchedule};
-use crate::replication::{DistributedShardManager, ShardHealth, ShardKey, ShardLocation};
-use crate::healer::{RepairQueue, RepairJob, RepairPriority};
+use super::{
+    QuarantineManager, QuarantineReason, QuarantinedBlock, ScrubMetrics, ScrubSchedule,
+    ScrubScheduler,
+};
 use crate::error::{Error, Result};
+use crate::healer::{RepairJob, RepairPriority, RepairQueue};
+use crate::replication::{DistributedShardManager, ShardHealth, ShardKey, ShardLocation};
 
 /// Configuration for the scrub daemon
 #[derive(Debug, Clone)]
@@ -195,10 +198,7 @@ impl ScrubDaemon {
         *state = ScrubState::Idle;
         drop(state);
 
-        info!(
-            workers = self.config.worker_count,
-            "Starting scrub daemon"
-        );
+        info!(workers = self.config.worker_count, "Starting scrub daemon");
 
         // Spawn the main scheduling loop
         self.spawn_scheduler_loop();
@@ -280,7 +280,9 @@ impl ScrubDaemon {
         let quarantine = self.quarantine.clone();
         let shard_manager = self.shard_manager.clone();
         let repair_queue = self.repair_queue.clone();
-        let scheduler = Arc::new(parking_lot::RwLock::new(ScrubScheduler::new(config.schedule.clone())));
+        let scheduler = Arc::new(parking_lot::RwLock::new(ScrubScheduler::new(
+            config.schedule.clone(),
+        )));
         let mut shutdown_rx = self.shutdown_tx.subscribe();
 
         tokio::spawn(async move {
@@ -355,7 +357,8 @@ impl ScrubDaemon {
             &self.quarantine,
             &self.metrics,
             &self.config,
-        ).await
+        )
+        .await
     }
 
     async fn do_scrub_internal(
@@ -384,11 +387,7 @@ impl ScrubDaemon {
 
             // locations is HashMap<ShardIndex, Vec<ShardLocation>>
             for (shard_idx, locations) in &distribution.locations {
-                let shard_key = ShardKey::new(
-                    &distribution.bucket,
-                    &distribution.key,
-                    *shard_idx,
-                );
+                let shard_key = ShardKey::new(&distribution.bucket, &distribution.key, *shard_idx);
 
                 // Skip already quarantined blocks
                 if quarantine.is_quarantined(&shard_key) {
@@ -407,7 +406,8 @@ impl ScrubDaemon {
                             let block = QuarantinedBlock::new(
                                 shard_key.clone(),
                                 QuarantineReason::MetadataCorruption,
-                            ).with_diagnostic(format!("Health status: {:?}", location.health));
+                            )
+                            .with_diagnostic(format!("Health status: {:?}", location.health));
 
                             quarantine.quarantine(block);
                             metrics.record_quarantine();
@@ -428,9 +428,10 @@ impl ScrubDaemon {
                                     errors_found += 1;
                                     metrics.record_checksum_error();
 
-                                    let block = if let (Some(expected), Some(actual)) =
-                                        (verification.expected_checksum, verification.actual_checksum)
-                                    {
+                                    let block = if let (Some(expected), Some(actual)) = (
+                                        verification.expected_checksum,
+                                        verification.actual_checksum,
+                                    ) {
                                         QuarantinedBlock::with_checksums(
                                             shard_key.clone(),
                                             QuarantineReason::ChecksumMismatch,
@@ -448,7 +449,8 @@ impl ScrubDaemon {
                                     metrics.record_quarantine();
 
                                     // Trigger repair for checksum errors
-                                    let job = RepairJob::new(shard_key.clone(), RepairPriority::Critical);
+                                    let job =
+                                        RepairJob::new(shard_key.clone(), RepairPriority::Critical);
                                     repair_queue.push(job);
                                     metrics.record_repair_triggered();
                                 }
@@ -461,7 +463,8 @@ impl ScrubDaemon {
                                 let block = QuarantinedBlock::new(
                                     shard_key.clone(),
                                     QuarantineReason::ReadError,
-                                ).with_diagnostic(err_str);
+                                )
+                                .with_diagnostic(err_str);
 
                                 quarantine.quarantine(block);
                                 metrics.record_quarantine();

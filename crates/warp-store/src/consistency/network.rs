@@ -13,9 +13,8 @@ use openraft::{
     error::{InstallSnapshotError, RPCError, RaftError, Unreachable},
     network::{RPCOption, RaftNetwork, RaftNetworkFactory as RaftNetworkFactoryTrait},
     raft::{
-        AppendEntriesRequest, AppendEntriesResponse,
-        InstallSnapshotRequest, InstallSnapshotResponse,
-        VoteRequest, VoteResponse,
+        AppendEntriesRequest, AppendEntriesResponse, InstallSnapshotRequest,
+        InstallSnapshotResponse, VoteRequest, VoteResponse,
     },
 };
 use tokio::sync::mpsc;

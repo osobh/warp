@@ -40,10 +40,10 @@
 //! }
 //! ```
 
-use std::sync::Arc;
 use crate::backend::{GpuBackend, KernelSource};
 use crate::backends::metal::{MetalBackend, MetalBuffer, MetalFunction, MetalModule};
 use crate::{Error, Result};
+use std::sync::Arc;
 
 /// Metal Shading Language kernel source for BLAKE3 hashing
 ///
@@ -472,8 +472,8 @@ impl MetalBlake3Hasher {
             &self.hash_chunks_fn,
             &[&d_input, &d_output],
             &constants,
-            (num_chunks as u32, 1, 1),  // grid: num_chunks threadgroups
-            (256, 1, 1),                 // threadgroup: 256 threads
+            (num_chunks as u32, 1, 1), // grid: num_chunks threadgroups
+            (256, 1, 1),               // threadgroup: 256 threads
         )?;
 
         // For single chunk, we're done (ROOT flag was set)
@@ -490,7 +490,11 @@ impl MetalBlake3Hasher {
     }
 
     /// Merge chunk hashes using tree reduction
-    fn merge_chunk_hashes(&self, chunk_hashes: &MetalBuffer, num_chunks: usize) -> Result<[u8; 32]> {
+    fn merge_chunk_hashes(
+        &self,
+        chunk_hashes: &MetalBuffer,
+        num_chunks: usize,
+    ) -> Result<[u8; 32]> {
         let mut current_hashes = chunk_hashes;
         let mut num_children = num_chunks;
         let mut owned_buffer: Option<MetalBuffer> = None;
@@ -519,8 +523,8 @@ impl MetalBlake3Hasher {
                 &self.merge_tree_fn,
                 &[current_hashes, &d_output],
                 &constants,
-                ((num_parents as u32 + 63) / 64, 1, 1),  // grid
-                (64, 1, 1),                               // threadgroup
+                ((num_parents as u32 + 63) / 64, 1, 1), // grid
+                (64, 1, 1),                             // threadgroup
             )?;
 
             // Move to next level
@@ -530,9 +534,8 @@ impl MetalBlake3Hasher {
         }
 
         // Read final result
-        let final_buffer = owned_buffer.ok_or_else(|| {
-            Error::InvalidOperation("No merge result".into())
-        })?;
+        let final_buffer =
+            owned_buffer.ok_or_else(|| Error::InvalidOperation("No merge result".into()))?;
         let output = self.backend.copy_to_host(&final_buffer)?;
         let mut result = [0u8; 32];
         result.copy_from_slice(&output[..32]);
@@ -720,7 +723,9 @@ mod tests {
         let inputs: Vec<Vec<u8>> = (0..10).map(|i| vec![i as u8; 1024]).collect();
         let input_refs: Vec<&[u8]> = inputs.iter().map(|v| v.as_slice()).collect();
 
-        let hashes = hasher.hash_batch(&input_refs).expect("Failed to batch hash");
+        let hashes = hasher
+            .hash_batch(&input_refs)
+            .expect("Failed to batch hash");
         assert_eq!(hashes.len(), 10);
 
         // Verify each hash

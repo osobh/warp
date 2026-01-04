@@ -546,7 +546,10 @@ mod tests {
         tracker.set(edge, mobile);
         let retrieved = tracker.get(&edge);
         assert!(retrieved.is_some());
-        assert_eq!(retrieved.unwrap().max_daily_bandwidth, Some(100 * 1024 * 1024));
+        assert_eq!(
+            retrieved.unwrap().max_daily_bandwidth,
+            Some(100 * 1024 * 1024)
+        );
     }
 
     #[test]

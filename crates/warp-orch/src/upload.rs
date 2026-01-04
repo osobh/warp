@@ -244,9 +244,7 @@ impl DistributedUploader {
         destinations: HashMap<ChunkId, Vec<EdgeIdx>>,
     ) -> Result<UploadSession> {
         self.config.validate()?;
-        request
-            .validate()
-            .map_err(|e| OrchError::InvalidState(e))?;
+        request.validate().map_err(|e| OrchError::InvalidState(e))?;
 
         if request.direction != TransferDirection::Upload {
             return Err(OrchError::InvalidState(
@@ -262,7 +260,8 @@ impl DistributedUploader {
         let chunk_states = Vec::new();
         let now = current_time_ms();
 
-        let mut state = TransferState::new(transfer_id, TransferDirection::Upload, chunk_states, now);
+        let mut state =
+            TransferState::new(transfer_id, TransferDirection::Upload, chunk_states, now);
         state.start(now);
 
         let mut session = UploadSession::new(transfer_id, state);
@@ -275,19 +274,19 @@ impl DistributedUploader {
             let chunk_id = ChunkId::from_hash(chunk_hash);
             let chunk_size = request.chunk_sizes.get(idx).copied().unwrap_or(0);
 
-            session.chunk_metadata.insert(chunk_id, ChunkMeta {
-                hash: *chunk_hash,
-                size: chunk_size,
-            });
+            session.chunk_metadata.insert(
+                chunk_id,
+                ChunkMeta {
+                    hash: *chunk_hash,
+                    size: chunk_size,
+                },
+            );
             session.pending_chunks.push_back(chunk_id);
         }
 
         // Register with progress tracker
-        self.progress.register(
-            transfer_id,
-            request.chunks.len(),
-            request.total_bytes(),
-        );
+        self.progress
+            .register(transfer_id, request.chunks.len(), request.total_bytes());
         self.progress.start(transfer_id);
 
         Ok(session)
@@ -327,13 +326,19 @@ impl DistributedUploader {
             };
 
             // Get chunk metadata from session (populated in start())
-            let meta = session.chunk_metadata.get(&chunk_id).copied().unwrap_or(ChunkMeta {
-                hash: [0u8; 32],
-                size: 0,
-            });
+            let meta = session
+                .chunk_metadata
+                .get(&chunk_id)
+                .copied()
+                .unwrap_or(ChunkMeta {
+                    hash: [0u8; 32],
+                    size: 0,
+                });
 
             // Get destinations for this chunk, or use default
-            let destinations = session.destinations.get(&chunk_id)
+            let destinations = session
+                .destinations
+                .get(&chunk_id)
                 .cloned()
                 .unwrap_or_else(|| vec![EdgeIdx::new(0)]);
 
@@ -423,11 +428,7 @@ impl DistributedUploader {
     }
 
     /// Upload chunk data to specific edge
-    async fn upload_chunk_to_edge(
-        &self,
-        chunk: &ActiveChunkUpload,
-        edge: EdgeIdx,
-    ) -> Result<u64> {
+    async fn upload_chunk_to_edge(&self, chunk: &ActiveChunkUpload, edge: EdgeIdx) -> Result<u64> {
         // Acquire connection from pool
         let conn = self
             .pool
@@ -436,7 +437,11 @@ impl DistributedUploader {
             .map_err(|e| OrchError::Pool(e.to_string()))?;
 
         // Simulate sending data
-        let data = chunk.chunk_data.as_ref().map(|d| d.as_slice()).unwrap_or(&[]);
+        let data = chunk
+            .chunk_data
+            .as_ref()
+            .map(|d| d.as_slice())
+            .unwrap_or(&[]);
         conn.send(data)
             .map_err(|e| OrchError::Network(e.to_string()))?;
 
@@ -479,8 +484,22 @@ mod tests {
         assert!(config.verify_upload);
         assert!(config.validate().is_ok());
 
-        assert!(UploadConfig { max_concurrent_chunks: 0, ..Default::default() }.validate().is_err());
-        assert!(UploadConfig { replication_factor: 0, ..Default::default() }.validate().is_err());
+        assert!(
+            UploadConfig {
+                max_concurrent_chunks: 0,
+                ..Default::default()
+            }
+            .validate()
+            .is_err()
+        );
+        assert!(
+            UploadConfig {
+                replication_factor: 0,
+                ..Default::default()
+            }
+            .validate()
+            .is_err()
+        );
     }
 
     #[test]
@@ -618,7 +637,7 @@ mod tests {
     #[tokio::test]
     async fn test_tick_uploads_chunk() {
         let config = UploadConfig {
-            replication_factor: 1,  // Set replication to 1 so chunk completes immediately
+            replication_factor: 1, // Set replication to 1 so chunk completes immediately
             ..Default::default()
         };
         let pool = ConnectionPool::new(PoolConfig::default()).unwrap();
@@ -641,7 +660,7 @@ mod tests {
     #[tokio::test]
     async fn test_tick_multiple_chunks() {
         let config = UploadConfig {
-            replication_factor: 1,  // Set replication to 1 so chunks complete immediately
+            replication_factor: 1, // Set replication to 1 so chunks complete immediately
             ..Default::default()
         };
         let pool = ConnectionPool::new(PoolConfig::default()).unwrap();
@@ -682,14 +701,17 @@ mod tests {
 
     #[test]
     fn test_chunk_retries() {
-        let mut active = ActiveChunkUpload::new(ChunkId::new(1), [0u8; 32], 1024, vec![EdgeIdx::new(0)]);
+        let mut active =
+            ActiveChunkUpload::new(ChunkId::new(1), [0u8; 32], 1024, vec![EdgeIdx::new(0)]);
         assert_eq!(active.retries, 0);
         assert!(active.can_retry(3));
 
         active.increment_retry();
         assert_eq!(active.retries, 1);
 
-        for _ in 0..4 { active.increment_retry(); }
+        for _ in 0..4 {
+            active.increment_retry();
+        }
         assert_eq!(active.retries, 5);
         assert!(!active.can_retry(3));
     }
@@ -741,18 +763,26 @@ mod tests {
             ProgressTracker::new(),
         );
 
-        let mut session = uploader.start(
-            TransferRequest::new(vec![[1u8; 32]], vec![1024], TransferDirection::Upload),
-            HashMap::new()
-        ).await.unwrap();
+        let mut session = uploader
+            .start(
+                TransferRequest::new(vec![[1u8; 32]], vec![1024], TransferDirection::Upload),
+                HashMap::new(),
+            )
+            .await
+            .unwrap();
         session.state.status = TransferStatus::Completed;
         assert!(uploader.finalize(session).success);
 
-        let mut session = uploader.start(
-            TransferRequest::new(vec![[2u8; 32]], vec![2048], TransferDirection::Upload),
-            HashMap::new()
-        ).await.unwrap();
-        session.state.status = TransferStatus::Failed { reason: "test".to_string() };
+        let mut session = uploader
+            .start(
+                TransferRequest::new(vec![[2u8; 32]], vec![2048], TransferDirection::Upload),
+                HashMap::new(),
+            )
+            .await
+            .unwrap();
+        session.state.status = TransferStatus::Failed {
+            reason: "test".to_string(),
+        };
         assert!(!uploader.finalize(session).success);
     }
 
@@ -780,7 +810,8 @@ mod tests {
 
     #[test]
     fn test_state_and_results() {
-        let mut state = TransferState::new(TransferId::new(1), TransferDirection::Upload, vec![], 1000);
+        let mut state =
+            TransferState::new(TransferId::new(1), TransferDirection::Upload, vec![], 1000);
         assert_eq!(state.status, TransferStatus::Pending);
         state.start(2000);
         assert_eq!(state.status, TransferStatus::Active);
@@ -814,7 +845,7 @@ mod tests {
     fn test_upload_session_states() {
         let mut session = UploadSession::new(
             TransferId::new(1),
-            TransferState::new(TransferId::new(1), TransferDirection::Upload, vec![], 1000)
+            TransferState::new(TransferId::new(1), TransferDirection::Upload, vec![], 1000),
         );
 
         assert!(!session.is_complete());
@@ -824,7 +855,10 @@ mod tests {
         assert!(session.has_pending_work());
 
         session.pending_chunks.clear();
-        session.active_chunks.insert(ChunkId::new(2), ActiveChunkUpload::new(ChunkId::new(2), [0u8; 32], 1024, vec![]));
+        session.active_chunks.insert(
+            ChunkId::new(2),
+            ActiveChunkUpload::new(ChunkId::new(2), [0u8; 32], 1024, vec![]),
+        );
         assert!(session.has_pending_work());
 
         session.active_chunks.clear();
@@ -919,7 +953,8 @@ mod tests {
         let progress = ProgressTracker::new();
         let uploader = DistributedUploader::new(config, pool, progress);
 
-        let request = TransferRequest::new(vec![[1u8; 32]], vec![1024], TransferDirection::Download);
+        let request =
+            TransferRequest::new(vec![[1u8; 32]], vec![1024], TransferDirection::Download);
         let destinations = HashMap::new();
 
         let result = uploader.start(request, destinations).await;

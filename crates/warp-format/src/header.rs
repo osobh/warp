@@ -111,7 +111,7 @@ impl Header {
             salt: [0u8; 16],
         }
     }
-    
+
     /// Validate header
     pub fn validate(&self) -> Result<()> {
         if self.magic != MAGIC {
@@ -122,7 +122,7 @@ impl Header {
         }
         Ok(())
     }
-    
+
     /// Serialize header to bytes
     pub fn to_bytes(&self) -> [u8; HEADER_SIZE] {
         let mut buf = [0u8; HEADER_SIZE];
@@ -151,7 +151,7 @@ impl Header {
 
         buf
     }
-    
+
     /// Deserialize header from bytes
     pub fn from_bytes(buf: &[u8; HEADER_SIZE]) -> Result<Self> {
         let header = Self {
@@ -199,14 +199,115 @@ impl Default for Header {
 #[cfg(test)]
 mod tests {
     use super::*;
-    
+
     #[test]
     fn test_header_roundtrip() {
         let header = Header::new();
         let bytes = header.to_bytes();
         let parsed = Header::from_bytes(&bytes).unwrap();
-        
+
         assert_eq!(parsed.magic, MAGIC);
         assert_eq!(parsed.version, VERSION);
+    }
+}
+
+#[cfg(test)]
+mod proptest_tests {
+    use super::*;
+    use proptest::prelude::*;
+
+    fn arb_compression() -> impl Strategy<Value = Compression> {
+        prop_oneof![
+            Just(Compression::None),
+            Just(Compression::Zstd),
+            Just(Compression::Lz4),
+        ]
+    }
+
+    fn arb_encryption() -> impl Strategy<Value = Encryption> {
+        prop_oneof![Just(Encryption::None), Just(Encryption::ChaCha20Poly1305),]
+    }
+
+    fn arb_header() -> impl Strategy<Value = Header> {
+        (
+            any::<u64>(), // flags
+            any::<u32>(), // chunk_size_hint
+            arb_compression(),
+            arb_encryption(),
+            any::<u64>(),                        // metadata_offset
+            any::<u64>(),                        // metadata_size
+            any::<u64>(),                        // index_offset
+            any::<u64>(),                        // index_size
+            any::<u64>(),                        // file_table_offset
+            any::<u64>(),                        // file_table_size
+            any::<u64>(),                        // data_offset
+            prop::array::uniform32(any::<u8>()), // merkle_root
+            any::<u64>(),                        // total_chunks
+            any::<u64>(),                        // total_files
+            any::<u64>(),                        // original_size
+            any::<u64>(),                        // compressed_size
+            prop::array::uniform16(any::<u8>()), // salt
+        )
+            .prop_map(
+                |(
+                    flags,
+                    chunk_size_hint,
+                    compression,
+                    encryption,
+                    metadata_offset,
+                    metadata_size,
+                    index_offset,
+                    index_size,
+                    file_table_offset,
+                    file_table_size,
+                    data_offset,
+                    merkle_root,
+                    total_chunks,
+                    total_files,
+                    original_size,
+                    compressed_size,
+                    salt,
+                )| {
+                    Header {
+                        magic: MAGIC,
+                        version: VERSION,
+                        flags,
+                        chunk_size_hint,
+                        compression,
+                        encryption,
+                        metadata_offset,
+                        metadata_size,
+                        index_offset,
+                        index_size,
+                        file_table_offset,
+                        file_table_size,
+                        data_offset,
+                        merkle_root,
+                        total_chunks,
+                        total_files,
+                        original_size,
+                        compressed_size,
+                        salt,
+                    }
+                },
+            )
+    }
+
+    proptest! {
+        /// Property: encode then decode recovers original header
+        #[test]
+        fn header_roundtrip(header in arb_header()) {
+            let bytes = header.to_bytes();
+            let decoded = Header::from_bytes(&bytes).unwrap();
+
+            prop_assert_eq!(decoded.magic, header.magic);
+            prop_assert_eq!(decoded.version, header.version);
+            prop_assert_eq!(decoded.flags, header.flags);
+            prop_assert_eq!(decoded.chunk_size_hint, header.chunk_size_hint);
+            prop_assert_eq!(decoded.compression, header.compression);
+            prop_assert_eq!(decoded.encryption, header.encryption);
+            prop_assert_eq!(decoded.merkle_root, header.merkle_root);
+            prop_assert_eq!(decoded.salt, header.salt);
+        }
     }
 }

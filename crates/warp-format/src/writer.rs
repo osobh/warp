@@ -1,10 +1,10 @@
 //! Writer implementation for creating .warp archives
 
-use crate::header::{Compression, Encryption, Header, HEADER_SIZE, flags};
-use crate::index::{ChunkEntry, ChunkIndex};
-use crate::file_table::{FileEntry, FileTable};
-use crate::merkle::MerkleTree;
 use crate::Result;
+use crate::file_table::{FileEntry, FileTable};
+use crate::header::{Compression, Encryption, HEADER_SIZE, Header, flags};
+use crate::index::{ChunkEntry, ChunkIndex};
+use crate::merkle::MerkleTree;
 
 use std::fs::File;
 use std::io::{Seek, SeekFrom, Write};
@@ -34,9 +34,9 @@ impl Default for WarpWriterConfig {
     fn default() -> Self {
         Self {
             compression: Compression::Zstd,
-            chunk_size: 4 * 1024 * 1024,        // 4MB
-            min_chunk_size: 256 * 1024,         // 256KB
-            max_chunk_size: 16 * 1024 * 1024,   // 16MB
+            chunk_size: 4 * 1024 * 1024,      // 4MB
+            min_chunk_size: 256 * 1024,       // 256KB
+            max_chunk_size: 16 * 1024 * 1024, // 16MB
             encryption: Encryption::None,
             encryption_key: None,
         }
@@ -193,26 +193,27 @@ impl WarpWriter {
             file_hash_data.extend_from_slice(&chunk_data);
 
             let original_size = chunk_data.len() as u32;
-            let (mut data_to_write, mut compressed_size, flags) = if let Some(ref compressor) = self.compressor {
-                // Compress the chunk
-                match compressor.compress(&chunk_data) {
-                    Ok(compressed) => {
-                        // Only use compression if it actually reduces size
-                        let compressed_len = compressed.len();
-                        if compressed_len < chunk_data.len() {
-                            (compressed, compressed_len as u32, 0x01) // compressed flag
-                        } else {
-                            (chunk_data, original_size, 0x00) // no compression
+            let (mut data_to_write, mut compressed_size, flags) =
+                if let Some(ref compressor) = self.compressor {
+                    // Compress the chunk
+                    match compressor.compress(&chunk_data) {
+                        Ok(compressed) => {
+                            // Only use compression if it actually reduces size
+                            let compressed_len = compressed.len();
+                            if compressed_len < chunk_data.len() {
+                                (compressed, compressed_len as u32, 0x01) // compressed flag
+                            } else {
+                                (chunk_data, original_size, 0x00) // no compression
+                            }
+                        }
+                        Err(_) => {
+                            // On compression error, store uncompressed
+                            (chunk_data, original_size, 0x00)
                         }
                     }
-                    Err(_) => {
-                        // On compression error, store uncompressed
-                        (chunk_data, original_size, 0x00)
-                    }
-                }
-            } else {
-                (chunk_data, original_size, 0x00)
-            };
+                } else {
+                    (chunk_data, original_size, 0x00)
+                };
 
             // Encrypt chunk after compression if encryption is enabled
             if let Some(ref key) = self.config.encryption_key {
@@ -332,7 +333,7 @@ impl WarpWriter {
 mod tests {
     use super::*;
     use std::fs;
-    use tempfile::{tempdir, NamedTempFile};
+    use tempfile::{NamedTempFile, tempdir};
 
     #[test]
     fn test_create_empty_archive() {
@@ -405,9 +406,15 @@ mod tests {
 
         // Create archive and add files
         let mut writer = WarpWriter::create(archive_path).unwrap();
-        writer.add_file(&temp_dir.path().join("file1.txt"), "file1.txt").unwrap();
-        writer.add_file(&temp_dir.path().join("file2.txt"), "file2.txt").unwrap();
-        writer.add_file(&temp_dir.path().join("file3.txt"), "file3.txt").unwrap();
+        writer
+            .add_file(&temp_dir.path().join("file1.txt"), "file1.txt")
+            .unwrap();
+        writer
+            .add_file(&temp_dir.path().join("file2.txt"), "file2.txt")
+            .unwrap();
+        writer
+            .add_file(&temp_dir.path().join("file3.txt"), "file3.txt")
+            .unwrap();
         writer.finish().unwrap();
 
         // Read and verify header
@@ -569,8 +576,7 @@ mod tests {
 
     #[test]
     fn test_config_builder() {
-        let config = WarpWriterConfig::default()
-            .chunk_size(8 * 1024 * 1024);
+        let config = WarpWriterConfig::default().chunk_size(8 * 1024 * 1024);
 
         assert_eq!(config.chunk_size, 8 * 1024 * 1024);
         assert_eq!(config.compression, Compression::Zstd);
@@ -630,8 +636,12 @@ mod tests {
         // Verify data is actually encrypted (not plaintext)
         let data_section = &data[HEADER_SIZE..];
         let plaintext = b"Secret data that should be encrypted";
-        assert!(!data_section.windows(plaintext.len()).any(|w| w == plaintext),
-                "Data should be encrypted, not plaintext");
+        assert!(
+            !data_section
+                .windows(plaintext.len())
+                .any(|w| w == plaintext),
+            "Data should be encrypted, not plaintext"
+        );
     }
 
     #[test]
@@ -706,9 +716,15 @@ mod tests {
         let key = Key::generate();
         let config = WarpWriterConfig::default().with_encryption(key);
         let mut writer = WarpWriter::create_with_config(archive_path, config).unwrap();
-        writer.add_file(&temp_dir.path().join("file1.txt"), "file1.txt").unwrap();
-        writer.add_file(&temp_dir.path().join("file2.txt"), "file2.txt").unwrap();
-        writer.add_file(&temp_dir.path().join("file3.txt"), "file3.txt").unwrap();
+        writer
+            .add_file(&temp_dir.path().join("file1.txt"), "file1.txt")
+            .unwrap();
+        writer
+            .add_file(&temp_dir.path().join("file2.txt"), "file2.txt")
+            .unwrap();
+        writer
+            .add_file(&temp_dir.path().join("file3.txt"), "file3.txt")
+            .unwrap();
         writer.finish().unwrap();
 
         // Read and verify header

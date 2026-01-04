@@ -91,10 +91,9 @@ pub mod oidc;
 pub mod ldap;
 
 pub use error::{Error, Result};
-pub use identity::{Identity, IdentityProvider, Principal, Group};
+pub use identity::{Group, Identity, IdentityProvider, Principal};
 pub use policy::{
-    PolicyDocument, Statement, Effect, Action, Resource,
-    PolicyEngine, AuthorizationDecision,
+    Action, AuthorizationDecision, Effect, PolicyDocument, PolicyEngine, Resource, Statement,
 };
 pub use session::{Session, SessionManager, SessionToken};
 
@@ -128,7 +127,9 @@ impl IamManager {
         credentials: &Credentials,
     ) -> Result<Session> {
         // Find provider
-        let provider = self.providers.iter()
+        let provider = self
+            .providers
+            .iter()
             .find(|p| p.id() == provider_id)
             .ok_or_else(|| Error::ProviderNotFound(provider_id.to_string()))?;
 
@@ -161,12 +162,9 @@ impl IamManager {
         // Check bucket policy if resource is a bucket/object
         if let Some(bucket) = extract_bucket_from_resource(resource) {
             if let Some(policy) = self.bucket_policies.get(&bucket) {
-                let decision = self.policy_engine.evaluate(
-                    &policy,
-                    identity,
-                    action,
-                    resource,
-                )?;
+                let decision = self
+                    .policy_engine
+                    .evaluate(&policy, identity, action, resource)?;
 
                 if !matches!(decision, AuthorizationDecision::NotApplicable) {
                     return Ok(decision);
@@ -176,12 +174,9 @@ impl IamManager {
 
         // Default: check identity's attached policies
         for policy in &identity.policies {
-            let decision = self.policy_engine.evaluate(
-                policy,
-                identity,
-                action,
-                resource,
-            )?;
+            let decision = self
+                .policy_engine
+                .evaluate(policy, identity, action, resource)?;
 
             match &decision {
                 AuthorizationDecision::Deny { .. } => return Ok(decision),
@@ -265,15 +260,9 @@ impl IamManagerBuilder {
 #[derive(Debug, Clone)]
 pub enum Credentials {
     /// Username and password
-    Password {
-        username: String,
-        password: String,
-    },
+    Password { username: String, password: String },
     /// OAuth authorization code
-    AuthorizationCode {
-        code: String,
-        redirect_uri: String,
-    },
+    AuthorizationCode { code: String, redirect_uri: String },
     /// OAuth access token
     AccessToken(String),
     /// API key

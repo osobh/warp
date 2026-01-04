@@ -11,7 +11,7 @@ use bytes::Bytes;
 use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::sync::Arc;
-use tokio::sync::{broadcast, RwLock};
+use tokio::sync::{RwLock, broadcast};
 use warp_net::{WarpConnection, WarpEndpoint};
 
 use crate::allocator::{BitmapAllocator, IpAllocator};
@@ -141,9 +141,9 @@ impl NetworkManager {
 
         // Create QUIC endpoint for connections
         if state.endpoint.is_none() {
-            let endpoint = WarpEndpoint::client()
-                .await
-                .map_err(|e| PortalNetError::Transport(format!("Failed to create endpoint: {}", e)))?;
+            let endpoint = WarpEndpoint::client().await.map_err(|e| {
+                PortalNetError::Transport(format!("Failed to create endpoint: {}", e))
+            })?;
             state.endpoint = Some(Arc::new(endpoint));
         }
 
@@ -166,7 +166,10 @@ impl NetworkManager {
                             state.state = NetworkState::HubConnected;
                         }
                         Err(e) => {
-                            tracing::warn!("Hub handshake failed: {}, continuing in discovery mode", e);
+                            tracing::warn!(
+                                "Hub handshake failed: {}, continuing in discovery mode",
+                                e
+                            );
                             // Fall back to discovery-only mode
                             if state.state == NetworkState::Initializing {
                                 state.state = NetworkState::DiscoveryOnly;
@@ -175,7 +178,10 @@ impl NetworkManager {
                     }
                 }
                 Err(e) => {
-                    tracing::warn!("Failed to connect to Hub: {}, continuing in discovery mode", e);
+                    tracing::warn!(
+                        "Failed to connect to Hub: {}, continuing in discovery mode",
+                        e
+                    );
                     // Fall back to discovery-only mode
                     if state.state == NetworkState::Initializing {
                         state.state = NetworkState::DiscoveryOnly;
@@ -247,9 +253,12 @@ impl NetworkManager {
                     let state = self.state.read().await;
                     if let Some(conn) = state.peer_connections.get(to) {
                         // Use existing connection - send as a chunk with id 0
-                        return conn.send_chunk(0, Bytes::copy_from_slice(data))
+                        return conn
+                            .send_chunk(0, Bytes::copy_from_slice(data))
                             .await
-                            .map_err(|e| PortalNetError::Transport(format!("Failed to send: {}", e)));
+                            .map_err(|e| {
+                                PortalNetError::Transport(format!("Failed to send: {}", e))
+                            });
                     }
                 }
 
@@ -260,14 +269,14 @@ impl NetworkManager {
                 };
 
                 if let Some(ep) = ep {
-                    let conn = ep.connect(endpoint, "portal-peer")
-                        .await
-                        .map_err(|e| PortalNetError::Transport(format!("Failed to connect: {}", e)))?;
+                    let conn = ep.connect(endpoint, "portal-peer").await.map_err(|e| {
+                        PortalNetError::Transport(format!("Failed to connect: {}", e))
+                    })?;
 
                     // Perform handshake
-                    conn.handshake()
-                        .await
-                        .map_err(|e| PortalNetError::Transport(format!("Handshake failed: {}", e)))?;
+                    conn.handshake().await.map_err(|e| {
+                        PortalNetError::Transport(format!("Handshake failed: {}", e))
+                    })?;
 
                     // Send the data
                     conn.send_chunk(0, Bytes::copy_from_slice(data))
@@ -279,7 +288,9 @@ impl NetworkManager {
                     state.peer_connections.insert(*to, Arc::new(conn));
                     Ok(())
                 } else {
-                    Err(PortalNetError::Transport("No endpoint available".to_string()))
+                    Err(PortalNetError::Transport(
+                        "No endpoint available".to_string(),
+                    ))
                 }
             }
             ConnectionRoute::Relayed { via_hub: _ } => {
@@ -292,11 +303,14 @@ impl NetworkManager {
                     relay_data.extend_from_slice(to);
                     relay_data.extend_from_slice(data);
 
-                    hub_conn.send_chunk(0, Bytes::from(relay_data))
+                    hub_conn
+                        .send_chunk(0, Bytes::from(relay_data))
                         .await
                         .map_err(|e| PortalNetError::Transport(format!("Failed to relay: {}", e)))
                 } else {
-                    Err(PortalNetError::Transport("Not connected to Hub for relay".to_string()))
+                    Err(PortalNetError::Transport(
+                        "Not connected to Hub for relay".to_string(),
+                    ))
                 }
             }
             ConnectionRoute::Unavailable => Err(PortalNetError::PeerNotFound(format!(
@@ -373,9 +387,7 @@ impl NetworkManager {
         if peer_count == 0 {
             // No peers - return to previous connectivity state
             match state.state {
-                NetworkState::HubConnected
-                | NetworkState::FullMesh
-                | NetworkState::Degraded => {
+                NetworkState::HubConnected | NetworkState::FullMesh | NetworkState::Degraded => {
                     // We were connected to Hub, stay connected
                     state.state = NetworkState::HubConnected;
                 }
@@ -403,7 +415,9 @@ impl NetworkManager {
         let removed = state.peer_manager.remove_peer(key);
 
         if removed.is_some() {
-            let _ = state.event_tx.send(NetworkEvent::PeerLeft { public_key: *key });
+            let _ = state
+                .event_tx
+                .send(NetworkEvent::PeerLeft { public_key: *key });
         }
 
         drop(state);
@@ -515,9 +529,7 @@ mod tests {
         manager.start().await.unwrap();
         // Should transition to HubConnected (mDNS enabled)
         let state = manager.state().await;
-        assert!(
-            state == NetworkState::HubConnected || state == NetworkState::DiscoveryOnly
-        );
+        assert!(state == NetworkState::HubConnected || state == NetworkState::DiscoveryOnly);
     }
 
     #[tokio::test]
@@ -698,7 +710,11 @@ mod tests {
         assert!(result.is_err());
         match result {
             Err(PortalNetError::Transport(msg)) => {
-                assert!(msg.contains("Failed to connect"), "Expected connection failure: {}", msg);
+                assert!(
+                    msg.contains("Failed to connect"),
+                    "Expected connection failure: {}",
+                    msg
+                );
             }
             other => panic!("Expected Transport error, got: {:?}", other),
         }
@@ -889,8 +905,7 @@ mod tests {
         manager.remove_peer(&test_key(2)).await;
         let final_state = manager.state().await;
         assert!(
-            final_state == NetworkState::DiscoveryOnly
-                || final_state == NetworkState::HubConnected
+            final_state == NetworkState::DiscoveryOnly || final_state == NetworkState::HubConnected
         );
     }
 
@@ -1029,40 +1044,19 @@ mod tests {
             .update_peer_status(&test_key(2), PeerStatus::DirectP2P)
             .await
             .unwrap();
-        assert!(
-            manager
-                .get_peer(&test_key(2))
-                .await
-                .unwrap()
-                .status
-                == PeerStatus::DirectP2P
-        );
+        assert!(manager.get_peer(&test_key(2)).await.unwrap().status == PeerStatus::DirectP2P);
 
         manager
             .update_peer_status(&test_key(2), PeerStatus::Relayed)
             .await
             .unwrap();
-        assert!(
-            manager
-                .get_peer(&test_key(2))
-                .await
-                .unwrap()
-                .status
-                == PeerStatus::Relayed
-        );
+        assert!(manager.get_peer(&test_key(2)).await.unwrap().status == PeerStatus::Relayed);
 
         manager
             .update_peer_status(&test_key(2), PeerStatus::Offline)
             .await
             .unwrap();
-        assert!(
-            manager
-                .get_peer(&test_key(2))
-                .await
-                .unwrap()
-                .status
-                == PeerStatus::Offline
-        );
+        assert!(manager.get_peer(&test_key(2)).await.unwrap().status == PeerStatus::Offline);
     }
 
     #[tokio::test]

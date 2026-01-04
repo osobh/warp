@@ -7,7 +7,7 @@
 
 use axum::{
     extract::{Path, State},
-    http::{header, StatusCode},
+    http::{StatusCode, header},
     response::{IntoResponse, Response},
 };
 use bytes::Bytes;
@@ -20,8 +20,8 @@ use warp_store::bucket::{
 };
 use warp_store::object::StorageClass;
 
-use crate::error::{ApiError, ApiResult};
 use crate::AppState;
+use crate::error::{ApiError, ApiResult};
 
 /// Query parameter to detect lifecycle requests
 #[derive(Debug, Deserialize, Default)]
@@ -286,7 +286,9 @@ fn rule_to_xml(rule: LifecycleRule) -> LifecycleRuleXml {
         prefix: None, // Use Filter instead of deprecated Prefix
         expiration: rule.expiration.map(|e| ExpirationXml {
             days: e.days,
-            date: e.date.map(|d| d.format("%Y-%m-%dT%H:%M:%S%.3fZ").to_string()),
+            date: e
+                .date
+                .map(|d| d.format("%Y-%m-%dT%H:%M:%S%.3fZ").to_string()),
             expired_object_delete_marker: Some(e.expired_object_delete_marker),
         }),
         transitions: rule
@@ -335,16 +337,14 @@ fn xml_to_rule(xml: LifecycleRuleXml) -> Result<LifecycleRule, ApiError> {
         (xml.prefix, Vec::new())
     };
 
-    let expiration = xml.expiration.map(|e| {
-        ExpirationAction {
-            days: e.days,
-            date: e.date.and_then(|d| {
-                chrono::DateTime::parse_from_rfc3339(&d)
-                    .ok()
-                    .map(|dt| dt.with_timezone(&chrono::Utc))
-            }),
-            expired_object_delete_marker: e.expired_object_delete_marker.unwrap_or(false),
-        }
+    let expiration = xml.expiration.map(|e| ExpirationAction {
+        days: e.days,
+        date: e.date.and_then(|d| {
+            chrono::DateTime::parse_from_rfc3339(&d)
+                .ok()
+                .map(|dt| dt.with_timezone(&chrono::Utc))
+        }),
+        expired_object_delete_marker: e.expired_object_delete_marker.unwrap_or(false),
     });
 
     let transitions = xml
@@ -358,10 +358,12 @@ fn xml_to_rule(xml: LifecycleRuleXml) -> Result<LifecycleRule, ApiError> {
         })
         .collect();
 
-    let noncurrent_expiration = xml.noncurrent_expiration.map(|e| NoncurrentExpirationAction {
-        noncurrent_days: e.noncurrent_days,
-        newer_noncurrent_versions: e.newer_noncurrent_versions,
-    });
+    let noncurrent_expiration = xml
+        .noncurrent_expiration
+        .map(|e| NoncurrentExpirationAction {
+            noncurrent_days: e.noncurrent_days,
+            newer_noncurrent_versions: e.newer_noncurrent_versions,
+        });
 
     let noncurrent_transitions = xml
         .noncurrent_transitions
@@ -531,10 +533,7 @@ mod tests {
 
     #[test]
     fn test_storage_class_conversion() {
-        assert_eq!(
-            storage_class_to_string(StorageClass::Standard),
-            "STANDARD"
-        );
+        assert_eq!(storage_class_to_string(StorageClass::Standard), "STANDARD");
         assert_eq!(
             storage_class_to_string(StorageClass::InfrequentAccess),
             "STANDARD_IA"

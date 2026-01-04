@@ -46,14 +46,13 @@ use dashmap::DashMap;
 use tracing::{debug, info, warn};
 
 use super::erasure::{ErasureBackend, StoreErasureConfig};
-use super::{StorageBackend, HpcStorageBackend, StorageProof};
+use super::{HpcStorageBackend, StorageBackend, StorageProof};
 use crate::error::{Error, Result};
 use crate::key::ObjectKey;
 use crate::object::{FieldData, ListOptions, ObjectData, ObjectList, ObjectMeta, PutOptions};
 use crate::replication::{
-    DomainId, DomainRegistry, DistributedShardManager, GeoRouter,
-    ReplicationPolicy, ShardHealth, ShardIndex, ShardLocation,
-    WireGuardTunnelManager, WireGuardConfig,
+    DistributedShardManager, DomainId, DomainRegistry, GeoRouter, ReplicationPolicy, ShardHealth,
+    ShardIndex, ShardLocation, WireGuardConfig, WireGuardTunnelManager,
 };
 
 /// Configuration for distributed backend
@@ -127,19 +126,14 @@ pub struct DistributedBackend {
 
 impl DistributedBackend {
     /// Create a new distributed backend
-    pub async fn new(
-        root: impl AsRef<Path>,
-        config: DistributedConfig,
-    ) -> Result<Self> {
+    pub async fn new(root: impl AsRef<Path>, config: DistributedConfig) -> Result<Self> {
         // Create erasure config from default policy
         let erasure_config = StoreErasureConfig::new(
             config.default_policy.erasure.data_shards,
             config.default_policy.erasure.parity_shards,
         )?;
 
-        let local_backend = Arc::new(
-            ErasureBackend::new(root, erasure_config).await?
-        );
+        let local_backend = Arc::new(ErasureBackend::new(root, erasure_config).await?);
 
         let domain_registry = Arc::new(DomainRegistry::new(config.local_domain_id));
         let tunnel_manager = Arc::new(WireGuardTunnelManager::new(config.wireguard.clone()));
@@ -225,10 +219,9 @@ impl DistributedBackend {
         let policy = self.get_bucket_policy(key.bucket());
 
         // Encode data to shards
-        let (shards, meta) = self.local_backend.encode_to_shards(
-            data.as_ref(),
-            opts.content_type.clone(),
-        )?;
+        let (shards, meta) = self
+            .local_backend
+            .encode_to_shards(data.as_ref(), opts.content_type.clone())?;
 
         // Get available domains
         let available_domains = self.domain_registry.domain_ids();
@@ -251,29 +244,33 @@ impl DistributedBackend {
         let local_domain = self.config.local_domain_id;
 
         for (shard_idx, shard_data) in shards.iter().enumerate() {
-            let target_domain = placement.get(&(shard_idx as ShardIndex))
+            let target_domain = placement
+                .get(&(shard_idx as ShardIndex))
                 .copied()
                 .unwrap_or(local_domain);
 
             if target_domain == local_domain {
                 // Store locally
-                self.local_backend.put_shard(key, shard_idx, shard_data).await?;
-                shard_locations.insert(shard_idx as ShardIndex, ShardLocation {
-                    domain_id: local_domain,
-                    node_id: "local".to_string(),
-                    path: format!("{}/{}", key.bucket(), key.key()),
-                    last_verified: None,
-                    health: ShardHealth::Healthy,
-                });
+                self.local_backend
+                    .put_shard(key, shard_idx, shard_data)
+                    .await?;
+                shard_locations.insert(
+                    shard_idx as ShardIndex,
+                    ShardLocation {
+                        domain_id: local_domain,
+                        node_id: "local".to_string(),
+                        path: format!("{}/{}", key.bucket(), key.key()),
+                        last_verified: None,
+                        health: ShardHealth::Healthy,
+                    },
+                );
                 acks += 1;
             } else {
                 // Send to remote domain via WireGuard
-                if let Err(e) = self.send_shard_to_domain(
-                    target_domain,
-                    key,
-                    shard_idx,
-                    shard_data,
-                ).await {
+                if let Err(e) = self
+                    .send_shard_to_domain(target_domain, key, shard_idx, shard_data)
+                    .await
+                {
                     warn!(
                         domain = target_domain,
                         shard = shard_idx,
@@ -281,13 +278,16 @@ impl DistributedBackend {
                         "Failed to send shard to remote domain"
                     );
                 } else {
-                    shard_locations.insert(shard_idx as ShardIndex, ShardLocation {
-                        domain_id: target_domain,
-                        node_id: "remote".to_string(),
-                        path: format!("{}/{}", key.bucket(), key.key()),
-                        last_verified: None,
-                        health: ShardHealth::Healthy,
-                    });
+                    shard_locations.insert(
+                        shard_idx as ShardIndex,
+                        ShardLocation {
+                            domain_id: target_domain,
+                            node_id: "remote".to_string(),
+                            path: format!("{}/{}", key.bucket(), key.key()),
+                            last_verified: None,
+                            health: ShardHealth::Healthy,
+                        },
+                    );
                     acks += 1;
                 }
             }
@@ -305,12 +305,9 @@ impl DistributedBackend {
         self.local_backend.store_shard_meta(key, &meta).await?;
 
         // Register shard distribution
-        self.shard_manager.register_distribution(
-            key.bucket(),
-            key.key(),
-            &policy.erasure,
-            shard_locations,
-        ).await?;
+        self.shard_manager
+            .register_distribution(key.bucket(), key.key(), &policy.erasure, shard_locations)
+            .await?;
 
         debug!(
             key = %key,
@@ -337,12 +334,14 @@ impl DistributedBackend {
         let policy = self.get_bucket_policy(key.bucket());
 
         // Get shard metadata
-        let meta = self.local_backend.get_shard_meta(key).await.map_err(|_| {
-            Error::ObjectNotFound {
-                bucket: key.bucket().to_string(),
-                key: key.key().to_string(),
-            }
-        })?;
+        let meta =
+            self.local_backend
+                .get_shard_meta(key)
+                .await
+                .map_err(|_| Error::ObjectNotFound {
+                    bucket: key.bucket().to_string(),
+                    key: key.key().to_string(),
+                })?;
 
         let total_shards = meta.data_shards + meta.parity_shards;
 
@@ -357,11 +356,14 @@ impl DistributedBackend {
             let dist_info = dist.read().await;
 
             // Get read plan from geo-router
-            let read_plan = self.geo_router.plan_read(
-                &dist_info,
-                policy.read_preference,
-                policy.placement.primary_domain,
-            ).await?;
+            let read_plan = self
+                .geo_router
+                .plan_read(
+                    &dist_info,
+                    policy.read_preference,
+                    policy.placement.primary_domain,
+                )
+                .await?;
 
             // Fetch shards in parallel (simplified - fetch needed shards)
             for shard_idx in 0..total_shards {
@@ -373,13 +375,17 @@ impl DistributedBackend {
                 if let Some(domain) = read_plan.preferred_domain(idx) {
                     if domain == self.config.local_domain_id {
                         // Fetch locally
-                        if let Ok(Some(shard_data)) = self.local_backend.get_shard(key, shard_idx).await {
+                        if let Ok(Some(shard_data)) =
+                            self.local_backend.get_shard(key, shard_idx).await
+                        {
                             shards[shard_idx] = Some(shard_data);
                             fetched += 1;
                         }
                     } else {
                         // Fetch from remote domain via WireGuard
-                        if let Ok(shard_data) = self.fetch_shard_from_domain(domain, key, shard_idx).await {
+                        if let Ok(shard_data) =
+                            self.fetch_shard_from_domain(domain, key, shard_idx).await
+                        {
                             shards[shard_idx] = Some(shard_data);
                             fetched += 1;
                         }
@@ -401,7 +407,9 @@ impl DistributedBackend {
         }
 
         // Decode shards
-        let original = self.local_backend.decode_from_shards(&shards, meta.original_size)?;
+        let original = self
+            .local_backend
+            .decode_from_shards(&shards, meta.original_size)?;
 
         debug!(
             key = %key,
@@ -421,16 +429,23 @@ impl DistributedBackend {
         data: &[u8],
     ) -> Result<()> {
         // Get domain info for WireGuard endpoint
-        let domain = self.domain_registry.get_domain(domain_id)
+        let domain = self
+            .domain_registry
+            .get_domain(domain_id)
             .ok_or_else(|| Error::DomainNotFound(domain_id))?;
 
         let (pubkey, endpoint) = match (domain.wg_pubkey, domain.wg_endpoint) {
             (Some(pk), Some(ep)) => (pk, ep),
-            _ => return Err(Error::WireGuard("Domain has no WireGuard config".to_string())),
+            _ => {
+                return Err(Error::WireGuard(
+                    "Domain has no WireGuard config".to_string(),
+                ));
+            }
         };
 
         // Get or establish tunnel
-        let tunnel = self.tunnel_manager
+        let tunnel = self
+            .tunnel_manager
             .get_or_connect(domain_id, pubkey, endpoint)
             .await?;
 
@@ -460,16 +475,23 @@ impl DistributedBackend {
         shard_index: usize,
     ) -> Result<Vec<u8>> {
         // Get domain info for WireGuard endpoint
-        let domain = self.domain_registry.get_domain(domain_id)
+        let domain = self
+            .domain_registry
+            .get_domain(domain_id)
             .ok_or_else(|| Error::DomainNotFound(domain_id))?;
 
         let (pubkey, endpoint) = match (domain.wg_pubkey, domain.wg_endpoint) {
             (Some(pk), Some(ep)) => (pk, ep),
-            _ => return Err(Error::WireGuard("Domain has no WireGuard config".to_string())),
+            _ => {
+                return Err(Error::WireGuard(
+                    "Domain has no WireGuard config".to_string(),
+                ));
+            }
         };
 
         // Get or establish tunnel
-        let tunnel = self.tunnel_manager
+        let tunnel = self
+            .tunnel_manager
             .get_or_connect(domain_id, pubkey, endpoint)
             .await?;
 
@@ -587,7 +609,8 @@ impl StorageBackend for DistributedBackend {
         self.local_backend.delete(key).await?;
 
         // Remove from shard manager
-        self.shard_manager.remove_distribution(key.bucket(), key.key());
+        self.shard_manager
+            .remove_distribution(key.bucket(), key.key());
 
         debug!(key = %key, "Deleted distributed object");
         Ok(())
@@ -629,9 +652,11 @@ impl HpcStorageBackend for DistributedBackend {
         gpu_buffer: &warp_gpu::GpuBuffer<u8>,
     ) -> Result<ObjectMeta> {
         // Copy from GPU to host memory first, then use distributed put
-        let data = gpu_buffer.copy_to_host()
+        let data = gpu_buffer
+            .copy_to_host()
             .map_err(|e| Error::Backend(format!("GPU copy failed: {}", e)))?;
-        self.put(key, ObjectData::from(data), PutOptions::default()).await
+        self.put(key, ObjectData::from(data), PutOptions::default())
+            .await
     }
 
     async fn verified_get(&self, key: &ObjectKey) -> Result<(ObjectData, StorageProof)> {
@@ -657,7 +682,9 @@ mod tests {
         let temp_dir = tempfile::tempdir().unwrap();
         let config = DistributedConfig::default();
 
-        let backend = DistributedBackend::new(temp_dir.path(), config).await.unwrap();
+        let backend = DistributedBackend::new(temp_dir.path(), config)
+            .await
+            .unwrap();
 
         // Create bucket
         backend.create_bucket("test").await.unwrap();
@@ -666,11 +693,10 @@ mod tests {
         // Put object (will use local-only mode since no remote domains)
         let key = ObjectKey::new("test", "hello.txt").unwrap();
         let data = b"Hello, distributed storage!".to_vec();
-        let meta = backend.put(
-            &key,
-            ObjectData::from(data.clone()),
-            PutOptions::default(),
-        ).await.unwrap();
+        let meta = backend
+            .put(&key, ObjectData::from(data.clone()), PutOptions::default())
+            .await
+            .unwrap();
 
         assert_eq!(meta.size, data.len() as u64);
 
@@ -688,7 +714,9 @@ mod tests {
         let temp_dir = tempfile::tempdir().unwrap();
         let config = DistributedConfig::default();
 
-        let backend = DistributedBackend::new(temp_dir.path(), config).await.unwrap();
+        let backend = DistributedBackend::new(temp_dir.path(), config)
+            .await
+            .unwrap();
 
         // Set custom policy
         let policy = ReplicationPolicy::high_durability();
@@ -704,7 +732,9 @@ mod tests {
         let temp_dir = tempfile::tempdir().unwrap();
         let config = DistributedConfig::default();
 
-        let backend = DistributedBackend::new(temp_dir.path(), config).await.unwrap();
+        let backend = DistributedBackend::new(temp_dir.path(), config)
+            .await
+            .unwrap();
 
         let stats = backend.stats().await;
         assert_eq!(stats.local_domain_id, 1);

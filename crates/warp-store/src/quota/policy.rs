@@ -312,6 +312,9 @@ mod tests {
     #[test]
     fn test_scope_display() {
         assert_eq!(QuotaScope::Global.to_string(), "Global");
-        assert_eq!(QuotaScope::Bucket("test".to_string()).to_string(), "Bucket:test");
+        assert_eq!(
+            QuotaScope::Bucket("test".to_string()).to_string(),
+            "Bucket:test"
+        );
     }
 }

@@ -26,7 +26,7 @@ impl KeyAlgorithm {
     /// Get the key size in bytes for this algorithm
     pub fn key_size(&self) -> usize {
         match self {
-            KeyAlgorithm::Aes256Gcm => 32,       // 256 bits
+            KeyAlgorithm::Aes256Gcm => 32,        // 256 bits
             KeyAlgorithm::ChaCha20Poly1305 => 32, // 256 bits
         }
     }

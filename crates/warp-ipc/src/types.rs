@@ -243,7 +243,11 @@ impl Alert {
     }
 
     /// Create an alert with source
-    pub fn with_source(level: AlertLevel, message: impl Into<String>, source: impl Into<String>) -> Self {
+    pub fn with_source(
+        level: AlertLevel,
+        message: impl Into<String>,
+        source: impl Into<String>,
+    ) -> Self {
         let mut alert = Self::new(level, message);
         alert.source = Some(source.into());
         alert

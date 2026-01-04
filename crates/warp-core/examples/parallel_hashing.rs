@@ -6,7 +6,7 @@
 //! Run with: cargo run --example parallel_hashing --release
 
 use std::time::Instant;
-use warp_hash::{hash, hash_chunks_parallel, keyed_hash, derive_key, Hasher};
+use warp_hash::{Hasher, derive_key, hash, hash_chunks_parallel, keyed_hash};
 
 fn main() {
     println!("=== BLAKE3 Parallel Hashing Demo ===\n");
@@ -15,16 +15,16 @@ fn main() {
     let num_chunks = 100;
     let chunk_size = 1024 * 1024;
     let chunks: Vec<Vec<u8>> = (0..num_chunks)
-        .map(|i| {
-            (0..chunk_size)
-                .map(|j| ((i + j) % 256) as u8)
-                .collect()
-        })
+        .map(|i| (0..chunk_size).map(|j| ((i + j) % 256) as u8).collect())
         .collect();
 
     let total_size = num_chunks * chunk_size;
-    println!("Data: {} chunks x {} MB = {} MB\n",
-             num_chunks, chunk_size / 1024 / 1024, total_size / 1024 / 1024);
+    println!(
+        "Data: {} chunks x {} MB = {} MB\n",
+        num_chunks,
+        chunk_size / 1024 / 1024,
+        total_size / 1024 / 1024
+    );
 
     // Sequential hashing
     println!("Sequential hashing...");
@@ -44,7 +44,10 @@ fn main() {
     let par_throughput = total_size as f64 / 1024.0 / 1024.0 / par_time.as_secs_f64();
     println!("  Time: {:?}", par_time);
     println!("  Throughput: {:.2} MB/s", par_throughput);
-    println!("  Speedup: {:.2}x\n", seq_time.as_secs_f64() / par_time.as_secs_f64());
+    println!(
+        "  Speedup: {:.2}x\n",
+        seq_time.as_secs_f64() / par_time.as_secs_f64()
+    );
 
     // Verify consistency
     assert_eq!(seq_hashes, par_hashes, "Hash mismatch!");

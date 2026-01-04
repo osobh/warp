@@ -52,7 +52,7 @@ impl NegotiatedParams {
             .find(|c| remote.compression.contains(c))
             .cloned()
             .unwrap_or_else(|| "none".into());
-        
+
         // Find common hash
         let hash = local
             .hashes
@@ -60,7 +60,7 @@ impl NegotiatedParams {
             .find(|h| remote.hashes.contains(h))
             .cloned()
             .unwrap_or_else(|| "blake3".into());
-        
+
         Self {
             compression,
             hash,

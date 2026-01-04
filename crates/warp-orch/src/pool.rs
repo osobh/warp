@@ -10,12 +10,12 @@
 use bytes::Bytes;
 use dashmap::DashMap;
 use std::collections::HashMap;
-use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};
 use thiserror::Error;
 use tokio::sync::Semaphore;
-use tokio::time::{timeout, Duration};
+use tokio::time::{Duration, timeout};
 use warp_net::WarpConnection;
 use warp_sched::EdgeIdx;
 
@@ -115,16 +115,16 @@ pub enum ConnectionState {
 #[repr(C, align(64))]
 pub struct Connection {
     // === Hot fields (checked on every acquire) ===
-    pub state: ConnectionState,      // 1 byte - checked most frequently
-    _pad1: [u8; 3],                  // 3 bytes padding for alignment
-    pub edge_idx: EdgeIdx,           // 4 bytes - used with state
-    pub id: u64,                     // 8 bytes - returned on match
-    pub last_used_ms: u64,           // 8 bytes - timeout checks
-    pub created_at_ms: u64,          // 8 bytes - rarely accessed
+    pub state: ConnectionState, // 1 byte - checked most frequently
+    _pad1: [u8; 3],             // 3 bytes padding for alignment
+    pub edge_idx: EdgeIdx,      // 4 bytes - used with state
+    pub id: u64,                // 8 bytes - returned on match
+    pub last_used_ms: u64,      // 8 bytes - timeout checks
+    pub created_at_ms: u64,     // 8 bytes - rarely accessed
     // === Metrics (accessed on send/recv) ===
-    pub bytes_sent: u64,             // 8 bytes
-    pub bytes_received: u64,         // 8 bytes
-    _pad2: [u8; 16],                 // 16 bytes padding to reach 64 bytes
+    pub bytes_sent: u64,     // 8 bytes
+    pub bytes_received: u64, // 8 bytes
+    _pad2: [u8; 16],         // 16 bytes padding to reach 64 bytes
 }
 
 // Compile-time assertions to prevent cache line regression
@@ -176,7 +176,9 @@ impl Connection {
 
     fn mock_send(&mut self, data: &[u8]) -> Result<()> {
         if self.state != ConnectionState::InUse {
-            return Err(PoolError::InvalidConfig("connection not in use".to_string()));
+            return Err(PoolError::InvalidConfig(
+                "connection not in use".to_string(),
+            ));
         }
         self.bytes_sent += data.len() as u64;
         Ok(())
@@ -276,7 +278,9 @@ impl PooledConnection {
     fn send_chunk_mock_fallback(&self) -> Result<()> {
         if let Some(conn) = self.pool.connections.get(&self.conn_id) {
             if conn.state != ConnectionState::InUse {
-                return Err(PoolError::InvalidConfig("connection not in use".to_string()));
+                return Err(PoolError::InvalidConfig(
+                    "connection not in use".to_string(),
+                ));
             }
             Ok(())
         } else {
@@ -304,7 +308,9 @@ impl PooledConnection {
         // Fall back to mock
         if let Some(conn) = self.pool.connections.get(&self.conn_id) {
             if conn.state != ConnectionState::InUse {
-                return Err(PoolError::InvalidConfig("connection not in use".to_string()));
+                return Err(PoolError::InvalidConfig(
+                    "connection not in use".to_string(),
+                ));
             }
             Ok(())
         } else {
@@ -329,7 +335,9 @@ impl PooledConnection {
         // Fall back to mock for tests
         if let Some(conn) = self.pool.connections.get(&self.conn_id) {
             if conn.state != ConnectionState::InUse {
-                return Err(PoolError::InvalidConfig("connection not in use".to_string()));
+                return Err(PoolError::InvalidConfig(
+                    "connection not in use".to_string(),
+                ));
             }
             Ok(())
         } else {
@@ -360,7 +368,9 @@ impl PooledConnection {
         // Fall back to mock for tests - return empty chunk
         if let Some(mut conn) = self.pool.connections.get_mut(&self.conn_id) {
             if conn.state != ConnectionState::InUse {
-                return Err(PoolError::InvalidConfig("connection not in use".to_string()));
+                return Err(PoolError::InvalidConfig(
+                    "connection not in use".to_string(),
+                ));
             }
             let mock_data = Bytes::from(vec![0u8; 1024]);
             conn.bytes_received += mock_data.len() as u64;
@@ -896,11 +906,7 @@ mod tests {
         let _conn2 = pool.acquire(edge_idx).await.unwrap();
 
         // Third acquisition should block
-        let result = tokio::time::timeout(
-            Duration::from_millis(100),
-            pool.acquire(edge_idx),
-        )
-        .await;
+        let result = tokio::time::timeout(Duration::from_millis(100), pool.acquire(edge_idx)).await;
         assert!(result.is_err()); // Timeout
     }
 

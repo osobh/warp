@@ -3,8 +3,8 @@
 //! Implements thin provisioning with allocate-on-write semantics.
 
 use std::collections::HashMap;
-use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
 
 use dashmap::DashMap;
 use parking_lot::RwLock;
@@ -112,7 +112,10 @@ impl ThinPool {
     }
 
     /// Get a volume by ID
-    pub fn get_volume(&self, id: &VolumeId) -> Option<dashmap::mapref::one::Ref<VolumeId, ThinVolume>> {
+    pub fn get_volume(
+        &self,
+        id: &VolumeId,
+    ) -> Option<dashmap::mapref::one::Ref<VolumeId, ThinVolume>> {
         self.volumes.get(id)
     }
 

@@ -14,7 +14,7 @@
 use crate::{Compressor, Error, Result};
 use std::sync::Arc;
 use tracing::{debug, warn};
-use warp_gpu::{GpuContext, PinnedMemoryPool, GpuCompressor as GpuCompressorTrait, GpuOp};
+use warp_gpu::{GpuCompressor as GpuCompressorTrait, GpuContext, GpuOp, PinnedMemoryPool};
 
 /// GPU-accelerated LZ4 compressor
 ///
@@ -39,8 +39,10 @@ impl GpuLz4Compressor {
     /// # Errors
     /// Returns an error if GPU initialization fails
     pub fn new() -> Result<Self> {
-        let context = Arc::new(GpuContext::new()
-            .map_err(|e| Error::Gpu(format!("Failed to initialize GPU context: {}", e)))?);
+        let context = Arc::new(
+            GpuContext::new()
+                .map_err(|e| Error::Gpu(format!("Failed to initialize GPU context: {}", e)))?,
+        );
 
         let memory_pool = Arc::new(PinnedMemoryPool::with_defaults(context.context().clone()));
 
@@ -122,7 +124,8 @@ impl GpuLz4Compressor {
         }
 
         // Acquire pinned buffer from pool for efficient transfer
-        let mut pinned_input = self.memory_pool
+        let mut pinned_input = self
+            .memory_pool
             .acquire(input.len())
             .map_err(|e| Error::Gpu(format!("Failed to acquire pinned buffer: {}", e)))?;
 
@@ -131,8 +134,12 @@ impl GpuLz4Compressor {
             .map_err(|e| Error::Gpu(format!("Failed to copy to pinned buffer: {}", e)))?;
 
         // Transfer data to GPU using stream-based API
-        debug!("Transferring {} bytes to GPU via pinned memory", input.len());
-        let d_input = self.context
+        debug!(
+            "Transferring {} bytes to GPU via pinned memory",
+            input.len()
+        );
+        let d_input = self
+            .context
             .host_to_device(pinned_input.as_slice())
             .map_err(|e| Error::Gpu(format!("Failed to copy data to GPU: {}", e)))?;
 
@@ -140,7 +147,8 @@ impl GpuLz4Compressor {
         self.memory_pool.release(pinned_input);
 
         // Copy back from GPU (in real nvCOMP implementation, compression happens on GPU)
-        let processed = self.context
+        let processed = self
+            .context
             .device_to_host(&d_input)
             .map_err(|e| Error::Gpu(format!("Failed to copy data from GPU: {}", e)))?;
 
@@ -177,7 +185,8 @@ impl GpuLz4Compressor {
         }
 
         // Acquire pinned buffer for efficient transfer
-        let mut pinned_data = self.memory_pool
+        let mut pinned_data = self
+            .memory_pool
             .acquire(decompressed.len())
             .map_err(|e| Error::Gpu(format!("Failed to acquire pinned buffer: {}", e)))?;
 
@@ -186,8 +195,12 @@ impl GpuLz4Compressor {
             .map_err(|e| Error::Gpu(format!("Failed to copy to pinned buffer: {}", e)))?;
 
         // Transfer to GPU for any post-processing using stream-based API
-        debug!("Transferring {} bytes to GPU for post-processing", decompressed.len());
-        let d_data = self.context
+        debug!(
+            "Transferring {} bytes to GPU for post-processing",
+            decompressed.len()
+        );
+        let d_data = self
+            .context
             .host_to_device(pinned_data.as_slice())
             .map_err(|e| Error::Gpu(format!("Failed to copy data to GPU: {}", e)))?;
 
@@ -195,7 +208,8 @@ impl GpuLz4Compressor {
         self.memory_pool.release(pinned_data);
 
         // Copy back from GPU
-        let result = self.context
+        let result = self
+            .context
             .device_to_host(&d_data)
             .map_err(|e| Error::Gpu(format!("Failed to copy data from GPU: {}", e)))?;
 
@@ -430,7 +444,10 @@ mod tests {
             // Check memory pool statistics
             let stats = compressor.memory_pool().statistics();
             assert!(stats.allocations > 0);
-            assert!(stats.cache_hits > 0, "Expected cache hits from buffer reuse");
+            assert!(
+                stats.cache_hits > 0,
+                "Expected cache hits from buffer reuse"
+            );
         }
     }
 }

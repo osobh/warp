@@ -8,8 +8,8 @@ use dashmap::DashMap;
 use parking_lot::RwLock;
 use serde::{Deserialize, Serialize};
 
-use super::predictor::{WorkloadPredictor, WorkloadType, PredictionResult};
-use super::tracker::{AccessTracker, AccessOp, AccessPattern, AccessStats};
+use super::predictor::{PredictionResult, WorkloadPredictor, WorkloadType};
+use super::tracker::{AccessOp, AccessPattern, AccessStats, AccessTracker};
 
 /// Placement hint for the storage layer
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -135,10 +135,7 @@ impl PlacementEngine {
     }
 
     /// Create with custom predictor and tracker
-    pub fn with_components(
-        predictor: Arc<WorkloadPredictor>,
-        tracker: Arc<AccessTracker>,
-    ) -> Self {
+    pub fn with_components(predictor: Arc<WorkloadPredictor>, tracker: Arc<AccessTracker>) -> Self {
         let mut engine = Self::new();
         engine.predictor = predictor;
         engine.tracker = tracker;
@@ -192,7 +189,8 @@ impl PlacementEngine {
         let mut hint = PlacementHint::default();
 
         // Set cache priority based on workload
-        hint.cache_priority = *self.cache_weights
+        hint.cache_priority = *self
+            .cache_weights
             .get(&prediction.workload_type)
             .unwrap_or(&50);
 
@@ -207,7 +205,10 @@ impl PlacementEngine {
         hint.preferred_nodes = self.get_preferred_nodes(&prediction, &access_pattern);
 
         // Set GPU affinity for training/inference workloads
-        if matches!(prediction.workload_type, WorkloadType::Training | WorkloadType::Inference) {
+        if matches!(
+            prediction.workload_type,
+            WorkloadType::Training | WorkloadType::Inference
+        ) {
             if let Some(gpu_node) = self.find_best_gpu_node() {
                 hint.gpu_affinity = Some(0); // Simplified
                 hint.preferred_nodes.insert(0, gpu_node);
@@ -260,13 +261,12 @@ impl PlacementEngine {
         nodes.sort_by(|a, b| {
             let score_a = self.node_score(a.value(), prediction, access_pattern);
             let score_b = self.node_score(b.value(), prediction, access_pattern);
-            score_b.partial_cmp(&score_a).unwrap_or(std::cmp::Ordering::Equal)
+            score_b
+                .partial_cmp(&score_a)
+                .unwrap_or(std::cmp::Ordering::Equal)
         });
 
-        nodes.into_iter()
-            .take(3)
-            .map(|n| n.key().clone())
-            .collect()
+        nodes.into_iter().take(3).map(|n| n.key().clone()).collect()
     }
 
     /// Score a node for placement
@@ -285,7 +285,10 @@ impl PlacementEngine {
         score += (1.0 - node.load) * 30.0;
 
         // Prefer nodes with GPU for training/inference
-        if matches!(prediction.workload_type, WorkloadType::Training | WorkloadType::Inference) {
+        if matches!(
+            prediction.workload_type,
+            WorkloadType::Training | WorkloadType::Inference
+        ) {
             if node.has_gpu {
                 score += 40.0;
             }
@@ -314,19 +317,20 @@ impl PlacementEngine {
     /// Get prefetch suggestions for upcoming accesses
     pub fn get_prefetch_suggestions(&self, session_id: &str, limit: usize) -> Vec<String> {
         let prediction = self.predictor.predict(session_id);
-        prediction.predicted_objects.into_iter().take(limit).collect()
+        prediction
+            .predicted_objects
+            .into_iter()
+            .take(limit)
+            .collect()
     }
 
     /// Pre-stage data to a node
-    pub fn suggest_prestage(
-        &self,
-        session_id: &str,
-        target_node: &str,
-    ) -> Vec<String> {
+    pub fn suggest_prestage(&self, session_id: &str, target_node: &str) -> Vec<String> {
         let prediction = self.predictor.predict(session_id);
 
         // Suggest objects to pre-stage based on prediction
-        prediction.predicted_objects
+        prediction
+            .predicted_objects
             .into_iter()
             .filter(|obj| {
                 // Don't suggest if already on target node

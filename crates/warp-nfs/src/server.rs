@@ -7,9 +7,7 @@ use dashmap::DashMap;
 use tokio::net::TcpListener;
 use tracing::{debug, info, warn};
 
-use warp_gateway_common::{
-    DelegationManager, InMemoryLockManager, LockManager, SessionManager,
-};
+use warp_gateway_common::{DelegationManager, InMemoryLockManager, LockManager, SessionManager};
 use warp_store::Store;
 
 use crate::config::{NfsConfig, NfsExport};
@@ -141,8 +139,8 @@ mod tests {
             ..Default::default()
         };
         let store = Arc::new(Store::new(store_config).await.unwrap());
-        let config = NfsConfig::default()
-            .add_export(crate::config::NfsExport::new("test").with_id(1));
+        let config =
+            NfsConfig::default().add_export(crate::config::NfsExport::new("test").with_id(1));
 
         let server = NfsServer::new(store, config);
         assert!(server.get_export(1).is_some());

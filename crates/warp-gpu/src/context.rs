@@ -5,10 +5,8 @@
 
 use crate::{Error, Result};
 use cudarc::driver::{
-    result as cuda_result,
-    sys::CUdevice_attribute,
-    CudaContext, CudaFunction, CudaModule, CudaSlice, CudaStream,
-    DeviceRepr, LaunchConfig, ValidAsZeroBits,
+    CudaContext, CudaFunction, CudaModule, CudaSlice, CudaStream, DeviceRepr, LaunchConfig,
+    ValidAsZeroBits, result as cuda_result, sys::CUdevice_attribute,
 };
 use std::sync::Arc;
 use tracing::{debug, info};
@@ -102,10 +100,10 @@ impl GpuContext {
     pub fn with_device(device_id: usize) -> Result<Self> {
         debug!("Initializing CUDA device {}", device_id);
 
-        let ctx = CudaContext::new(device_id)
-            .map_err(|e| Error::device_init(device_id, e))?;
+        let ctx = CudaContext::new(device_id).map_err(|e| Error::device_init(device_id, e))?;
 
-        let name = ctx.name()
+        let name = ctx
+            .name()
             .map_err(|e| Error::DeviceQuery(format!("Failed to get device name: {:?}", e)))?;
 
         info!("CUDA device {} initialized: {}", device_id, name);
@@ -129,29 +127,40 @@ impl GpuContext {
     /// Query device capabilities via CUDA API
     fn query_capabilities(device_id: usize) -> Result<DeviceCapabilities> {
         // Get the CUdevice handle for attribute queries
-        let dev = cuda_result::device::get(device_id as i32)
-            .map_err(|e| Error::DeviceQuery(format!("Failed to get device {}: {:?}", device_id, e)))?;
+        let dev = cuda_result::device::get(device_id as i32).map_err(|e| {
+            Error::DeviceQuery(format!("Failed to get device {}: {:?}", device_id, e))
+        })?;
 
         // Helper to query a device attribute
         let get_attr = |attr: CUdevice_attribute| -> Result<i32> {
+            // SAFETY: cuda_result::device::get_attribute is safe to call when:
+            // 1. dev is a valid CUdevice handle (obtained from cuda_result::device::get above)
+            // 2. attr is a valid CUdevice_attribute enum value (guaranteed by type system)
+            // The CUDA driver handles invalid device IDs gracefully by returning an error.
             unsafe {
-                cuda_result::device::get_attribute(dev, attr)
-                    .map_err(|e| Error::DeviceQuery(format!("Failed to get attribute {:?}: {:?}", attr, e)))
+                cuda_result::device::get_attribute(dev, attr).map_err(|e| {
+                    Error::DeviceQuery(format!("Failed to get attribute {:?}: {:?}", attr, e))
+                })
             }
         };
 
         // Query total memory
+        // SAFETY: cuda_result::device::total_mem is safe when dev is a valid CUdevice
+        // handle, which we obtained from cuda_result::device::get above.
         let total_memory = unsafe {
             cuda_result::device::total_mem(dev)
                 .map_err(|e| Error::DeviceQuery(format!("Failed to get total memory: {:?}", e)))?
         };
 
         // Query compute capability
-        let compute_major = get_attr(CUdevice_attribute::CU_DEVICE_ATTRIBUTE_COMPUTE_CAPABILITY_MAJOR)?;
-        let compute_minor = get_attr(CUdevice_attribute::CU_DEVICE_ATTRIBUTE_COMPUTE_CAPABILITY_MINOR)?;
+        let compute_major =
+            get_attr(CUdevice_attribute::CU_DEVICE_ATTRIBUTE_COMPUTE_CAPABILITY_MAJOR)?;
+        let compute_minor =
+            get_attr(CUdevice_attribute::CU_DEVICE_ATTRIBUTE_COMPUTE_CAPABILITY_MINOR)?;
 
         // Query thread/block limits
-        let max_threads_per_block = get_attr(CUdevice_attribute::CU_DEVICE_ATTRIBUTE_MAX_THREADS_PER_BLOCK)?;
+        let max_threads_per_block =
+            get_attr(CUdevice_attribute::CU_DEVICE_ATTRIBUTE_MAX_THREADS_PER_BLOCK)?;
         let max_block_dim_x = get_attr(CUdevice_attribute::CU_DEVICE_ATTRIBUTE_MAX_BLOCK_DIM_X)?;
         let max_block_dim_y = get_attr(CUdevice_attribute::CU_DEVICE_ATTRIBUTE_MAX_BLOCK_DIM_Y)?;
         let max_block_dim_z = get_attr(CUdevice_attribute::CU_DEVICE_ATTRIBUTE_MAX_BLOCK_DIM_Z)?;
@@ -163,7 +172,14 @@ impl GpuContext {
 
         // Query other properties
         let warp_size = get_attr(CUdevice_attribute::CU_DEVICE_ATTRIBUTE_WARP_SIZE)?;
-        let multiprocessor_count = get_attr(CUdevice_attribute::CU_DEVICE_ATTRIBUTE_MULTIPROCESSOR_COUNT)?;
+        let multiprocessor_count =
+            get_attr(CUdevice_attribute::CU_DEVICE_ATTRIBUTE_MULTIPROCESSOR_COUNT)?;
+
+        debug_assert!(
+            total_memory > 0,
+            "total_memory should be positive, got {}",
+            total_memory
+        );
 
         Ok(DeviceCapabilities {
             compute_capability: (compute_major, compute_minor),
@@ -270,7 +286,10 @@ impl GpuContext {
     }
 
     /// Copy data from device to host
-    pub fn device_to_host<T: DeviceRepr + Clone + Default>(&self, src: &CudaSlice<T>) -> Result<Vec<T>> {
+    pub fn device_to_host<T: DeviceRepr + Clone + Default>(
+        &self,
+        src: &CudaSlice<T>,
+    ) -> Result<Vec<T>> {
         Ok(self.stream.clone_dtoh(src)?)
     }
 
@@ -299,7 +318,9 @@ impl GpuContext {
         debug!("PTX compilation successful, loading module");
 
         // Load the PTX module
-        let module = self.ctx.load_module(ptx)
+        let module = self
+            .ctx
+            .load_module(ptx)
             .map_err(|e| Error::CudaOperation(format!("Module load failed: {:?}", e)))?;
 
         Ok(module)
@@ -313,7 +334,9 @@ impl GpuContext {
     /// # Returns
     /// Arc-wrapped CudaModule
     pub fn load_ptx(&self, ptx: cudarc::nvrtc::Ptx) -> Result<Arc<CudaModule>> {
-        let module = self.ctx.load_module(ptx)
+        let module = self
+            .ctx
+            .load_module(ptx)
             .map_err(|e| Error::CudaOperation(format!("Module load failed: {:?}", e)))?;
         Ok(module)
     }
@@ -327,7 +350,8 @@ impl GpuContext {
     /// # Returns
     /// CudaFunction handle for kernel launching
     pub fn get_function(&self, module: &Arc<CudaModule>, name: &str) -> Result<CudaFunction> {
-        module.load_function(name)
+        module
+            .load_function(name)
             .map_err(|e| Error::CudaOperation(format!("Function '{}' not found: {:?}", name, e)))
     }
 

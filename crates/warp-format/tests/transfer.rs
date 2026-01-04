@@ -39,7 +39,10 @@ fn test_archive_creation_for_transfer() {
     assert!(metadata.len() > 256, "Archive should be larger than header");
     assert!(metadata.len() < 10_000, "Test archive should be small");
 
-    println!("Archive created successfully for transfer: {} bytes", metadata.len());
+    println!(
+        "Archive created successfully for transfer: {} bytes",
+        metadata.len()
+    );
 }
 
 #[test]
@@ -226,7 +229,12 @@ fn test_network_protocol_compatibility() {
     plan.encode(&mut buf).unwrap();
     let decoded = Frame::decode(&mut buf).unwrap().unwrap();
     match decoded {
-        Frame::Plan { total_size, num_chunks, chunk_size, metadata } => {
+        Frame::Plan {
+            total_size,
+            num_chunks,
+            chunk_size,
+            metadata,
+        } => {
             assert_eq!(total_size, 1_000_000_000);
             assert_eq!(num_chunks, 1000);
             assert_eq!(chunk_size, 1_000_000);
@@ -242,7 +250,9 @@ fn test_network_protocol_compatibility() {
     verify.encode(&mut buf).unwrap();
     let decoded = Frame::decode(&mut buf).unwrap().unwrap();
     match decoded {
-        Frame::Verify { merkle_root: decoded_root } => {
+        Frame::Verify {
+            merkle_root: decoded_root,
+        } => {
             assert_eq!(decoded_root, merkle_root);
         }
         _ => panic!("Expected Verify frame"),
@@ -250,7 +260,10 @@ fn test_network_protocol_compatibility() {
 
     // Test Chunk frame round-trip
     let chunk_data = Bytes::from(vec![0u8; 1024]);
-    let chunk = Frame::Chunk { chunk_id: 42, data: chunk_data.clone() };
+    let chunk = Frame::Chunk {
+        chunk_id: 42,
+        data: chunk_data.clone(),
+    };
     let mut buf = BytesMut::new();
     chunk.encode(&mut buf).unwrap();
     let decoded = Frame::decode(&mut buf).unwrap().unwrap();
@@ -263,7 +276,9 @@ fn test_network_protocol_compatibility() {
     }
 
     // Test Ack/Nack frames
-    let ack = Frame::Ack { chunk_ids: vec![1, 2, 3, 4, 5] };
+    let ack = Frame::Ack {
+        chunk_ids: vec![1, 2, 3, 4, 5],
+    };
     let mut buf = BytesMut::new();
     ack.encode(&mut buf).unwrap();
     let decoded = Frame::decode(&mut buf).unwrap().unwrap();
@@ -274,7 +289,7 @@ fn test_network_protocol_compatibility() {
 
     let nack = Frame::Nack {
         chunk_ids: vec![6, 7],
-        reason: "Checksum mismatch".to_string()
+        reason: "Checksum mismatch".to_string(),
     };
     let mut buf = BytesMut::new();
     nack.encode(&mut buf).unwrap();
@@ -317,9 +332,9 @@ fn test_chunk_size_calculation() {
     // This is a logic test, not a network test
 
     let file_sizes = vec![
-        1024,           // 1KB
-        1024 * 1024,    // 1MB
-        10 * 1024 * 1024, // 10MB
+        1024,              // 1KB
+        1024 * 1024,       // 1MB
+        10 * 1024 * 1024,  // 10MB
         100 * 1024 * 1024, // 100MB
     ];
 
@@ -345,7 +360,7 @@ fn calculate_optimal_chunk_size(file_size: u64) -> u64 {
     // - Memory constraints
     // - Progress update frequency
 
-    const MIN_CHUNK: u64 = 64 * 1024;      // 64KB
+    const MIN_CHUNK: u64 = 64 * 1024; // 64KB
     const MAX_CHUNK: u64 = 4 * 1024 * 1024; // 4MB
 
     let calculated = file_size / 100; // 1% of file size
@@ -357,7 +372,7 @@ fn test_transfer_progress_tracking() {
     // Test progress tracking logic without actual network transfer
 
     let total_size = 1_000_000u64; // 1MB
-    let chunk_size = 100_000u64;   // 100KB
+    let chunk_size = 100_000u64; // 100KB
 
     let mut transferred = 0u64;
     let mut chunks_sent = 0;
@@ -368,13 +383,19 @@ fn test_transfer_progress_tracking() {
         chunks_sent += 1;
 
         let progress = (transferred as f64 / total_size as f64) * 100.0;
-        assert!(progress >= 0.0 && progress <= 100.0, "Progress should be in [0, 100]");
+        assert!(
+            progress >= 0.0 && progress <= 100.0,
+            "Progress should be in [0, 100]"
+        );
     }
 
     assert_eq!(transferred, total_size, "Should transfer entire file");
     assert_eq!(chunks_sent, 10, "Should send 10 chunks");
 
-    println!("Progress tracking test: {} chunks, 100% complete", chunks_sent);
+    println!(
+        "Progress tracking test: {} chunks, 100% complete",
+        chunks_sent
+    );
 }
 
 #[test]
@@ -382,7 +403,7 @@ fn test_bandwidth_estimation() {
     // Test bandwidth estimation logic
 
     let bytes_transferred = 1_000_000u64; // 1MB
-    let elapsed_ms = 1000u64;             // 1 second
+    let elapsed_ms = 1000u64; // 1 second
 
     let bandwidth_bps = (bytes_transferred * 8 * 1000) / elapsed_ms;
     let bandwidth_mbps = bandwidth_bps / (1024 * 1024);

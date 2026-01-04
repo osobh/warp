@@ -90,8 +90,8 @@ impl Default for ChannelAttrs {
     fn default() -> Self {
         Self {
             header_pad_size: 0,
-            max_request_size: 1024 * 1024,      // 1 MB
-            max_response_size: 1024 * 1024,     // 1 MB
+            max_request_size: 1024 * 1024,       // 1 MB
+            max_response_size: 1024 * 1024,      // 1 MB
             max_response_size_cached: 64 * 1024, // 64 KB
             max_ops: 16,
             max_requests: 16,
@@ -224,7 +224,10 @@ impl Nfs4SessionManager {
     }
 
     /// Get a session by ID
-    pub fn get_session(&self, id: &SessionId) -> Option<dashmap::mapref::one::Ref<SessionId, Nfs4Session>> {
+    pub fn get_session(
+        &self,
+        id: &SessionId,
+    ) -> Option<dashmap::mapref::one::Ref<SessionId, Nfs4Session>> {
         self.sessions.get(id)
     }
 
@@ -285,9 +288,7 @@ mod tests {
     #[test]
     fn test_session_manager() {
         let mgr = Nfs4SessionManager::default();
-        let id = mgr
-            .create_session(12345, ChannelAttrs::default())
-            .unwrap();
+        let id = mgr.create_session(12345, ChannelAttrs::default()).unwrap();
 
         assert!(mgr.get_session(&id).is_some());
 

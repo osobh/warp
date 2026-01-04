@@ -62,14 +62,14 @@ pub mod vfs;
 
 pub use error::{Error, Result};
 pub use inode::{Inode, InodeKind};
-pub use metadata::{InodeMetadata, DirectoryEntry, DataExtent, FileType};
+pub use metadata::{DataExtent, DirectoryEntry, FileType, InodeMetadata};
 pub use vfs::VirtualFilesystem;
 
 use std::path::Path;
 use std::sync::Arc;
 use std::time::Duration;
-use tracing::{info, debug};
-use warp_store::{Store, StoreConfig, ObjectKey};
+use tracing::{debug, info};
+use warp_store::{ObjectKey, Store, StoreConfig};
 
 /// Configuration for the WARP filesystem
 #[derive(Debug, Clone)]
@@ -162,7 +162,9 @@ impl WarpFs {
         let buckets = store.list_buckets().await;
         if !buckets.contains(&config.bucket) {
             debug!(bucket = %config.bucket, "Creating filesystem bucket");
-            store.create_bucket(&config.bucket, warp_store::BucketConfig::default()).await?;
+            store
+                .create_bucket(&config.bucket, warp_store::BucketConfig::default())
+                .await?;
         }
 
         // Initialize the VFS
@@ -173,7 +175,8 @@ impl WarpFs {
             config.dentry_cache_size,
             config.data_cache_bytes,
             config.cache_ttl,
-        ).await?;
+        )
+        .await?;
 
         Ok(Self {
             config,
@@ -202,10 +205,7 @@ impl WarpFs {
         }
 
         // Create the FUSE filesystem handler
-        let fuse_fs = fuse_ops::WarpFuseFs::new(
-            self.vfs.clone(),
-            self.config.clone(),
-        );
+        let fuse_fs = fuse_ops::WarpFuseFs::new(self.vfs.clone(), self.config.clone());
 
         // Mount (this blocks)
         fuser::mount2(fuse_fs, mountpoint, &options)?;
@@ -228,10 +228,7 @@ impl WarpFs {
             fuser::MountOption::AutoUnmount,
         ];
 
-        let fuse_fs = fuse_ops::WarpFuseFs::new(
-            self.vfs.clone(),
-            self.config.clone(),
-        );
+        let fuse_fs = fuse_ops::WarpFuseFs::new(self.vfs.clone(), self.config.clone());
 
         let session = fuser::Session::new(fuse_fs, &mountpoint, &options)?;
         let session_guard = session.spawn()?;

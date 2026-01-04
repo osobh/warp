@@ -39,11 +39,11 @@ mod clone;
 mod cow;
 mod manager;
 
-pub use clone::{CloneManager, CloneInfo, CloneConfig, CloneState, CloneHandle};
-pub use cow::{CowBlock, CowManager, CowConfig, BlockRef, BlockState};
+pub use clone::{CloneConfig, CloneHandle, CloneInfo, CloneManager, CloneState};
+pub use cow::{BlockRef, BlockState, CowBlock, CowConfig, CowManager};
 pub use manager::{
-    SnapshotManager, SnapshotConfig, Snapshot, SnapshotId, SnapshotState,
-    SnapshotPolicy, SnapshotSchedule, SnapshotStats,
+    Snapshot, SnapshotConfig, SnapshotId, SnapshotManager, SnapshotPolicy, SnapshotSchedule,
+    SnapshotState, SnapshotStats,
 };
 
 use std::time::Duration;

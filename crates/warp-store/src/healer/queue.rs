@@ -75,6 +75,11 @@ impl RepairJob {
 
     /// Check if job can be retried
     pub fn can_retry(&self) -> bool {
+        debug_assert!(
+            self.max_retries > 0,
+            "max_retries should be positive, got {}",
+            self.max_retries
+        );
         self.retry_count < self.max_retries
     }
 
@@ -286,10 +291,7 @@ mod tests {
     fn test_retry() {
         let queue = RepairQueue::new();
 
-        let mut job = RepairJob::new(
-            ShardKey::new("bucket", "key", 0),
-            RepairPriority::Critical,
-        );
+        let mut job = RepairJob::new(ShardKey::new("bucket", "key", 0), RepairPriority::Critical);
 
         assert!(job.can_retry());
         job.increment_retry();

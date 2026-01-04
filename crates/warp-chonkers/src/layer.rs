@@ -49,10 +49,7 @@ impl Layer {
 
     /// Get chunk sizes from current boundaries
     pub fn chunk_sizes(&self) -> Vec<usize> {
-        self.boundaries
-            .windows(2)
-            .map(|w| w[1] - w[0])
-            .collect()
+        self.boundaries.windows(2).map(|w| w[1] - w[0]).collect()
     }
 
     /// Find "kittens" - chunks lighter than both neighbors
@@ -78,7 +75,10 @@ impl Layer {
             // (we use the right boundary's weight as the chunk's weight)
             let prev_weight = self.weights[i - 1].max(self.weights[i]);
             let next_weight = self.weights[i + 1].max(
-                self.weights.get(i + 2).copied().unwrap_or(ChunkWeight::new(u64::MAX))
+                self.weights
+                    .get(i + 2)
+                    .copied()
+                    .unwrap_or(ChunkWeight::new(u64::MAX)),
             );
 
             if right_weight.is_lighter_than(&prev_weight)
@@ -101,7 +101,10 @@ impl Layer {
 
         // Determine which neighbor is lighter
         let left_weight = self.weights[kitten_idx];
-        let right_weight = self.weights.get(kitten_idx + 2).copied()
+        let right_weight = self
+            .weights
+            .get(kitten_idx + 2)
+            .copied()
             .unwrap_or(ChunkWeight::new(u64::MAX));
 
         if left_weight.is_lighter_than(&right_weight) {
@@ -119,9 +122,9 @@ impl Layer {
 
     /// Check if any chunks violate size constraints
     pub fn has_violations(&self) -> bool {
-        self.chunk_sizes().iter().any(|&size| {
-            size < self.config.min_size || size > self.config.max_size
-        })
+        self.chunk_sizes()
+            .iter()
+            .any(|&size| size < self.config.min_size || size > self.config.max_size)
     }
 
     /// Count chunks that are too small (kittens)
@@ -154,7 +157,6 @@ impl Layer {
         }
     }
 }
-
 
 #[cfg(test)]
 mod tests {

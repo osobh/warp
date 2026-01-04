@@ -35,8 +35,8 @@
 
 use crate::types::{Assignment, AssignmentBatch};
 use parking_lot::Mutex;
-use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use std::time::Duration;
 use tokio::sync::Notify;
 
@@ -379,7 +379,11 @@ mod tests {
         Assignment {
             chunk_hash,
             chunk_size: 1024 * u32::from(chunk_idx),
-            source_edges: vec![EdgeIdx(edge_idx), EdgeIdx(edge_idx + 1), EdgeIdx(edge_idx + 2)],
+            source_edges: vec![
+                EdgeIdx(edge_idx),
+                EdgeIdx(edge_idx + 1),
+                EdgeIdx(edge_idx + 2),
+            ],
             priority: chunk_idx,
             estimated_duration_ms: 100 + u32::from(chunk_idx),
         }
@@ -633,9 +637,7 @@ mod tests {
             let q = Arc::clone(&queue);
             let handle = tokio::spawn(async move {
                 for _ in 0..15 {
-                    let batch = q
-                        .read_with_timeout(Duration::from_millis(100))
-                        .await;
+                    let batch = q.read_with_timeout(Duration::from_millis(100)).await;
                     if let Some(b) = batch {
                         assert!(!b.is_empty() || b.generation > 0);
                     }

@@ -451,16 +451,14 @@ mod tests {
 
     #[test]
     fn test_edge_list_response_serialization() {
-        let edges = vec![
-            EdgeInfo {
-                id: "edge-01".to_string(),
-                address: "192.168.1.100:5000".to_string(),
-                status: "online".to_string(),
-                active_transfers: 3,
-                total_storage_bytes: 1_000_000_000,
-                available_storage_bytes: 500_000_000,
-            },
-        ];
+        let edges = vec![EdgeInfo {
+            id: "edge-01".to_string(),
+            address: "192.168.1.100:5000".to_string(),
+            status: "online".to_string(),
+            active_transfers: 3,
+            total_storage_bytes: 1_000_000_000,
+            available_storage_bytes: 500_000_000,
+        }];
 
         let response = EdgeListResponse {
             edges: edges.clone(),

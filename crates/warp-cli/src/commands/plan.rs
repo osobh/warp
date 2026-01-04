@@ -1,7 +1,7 @@
 //! plan command implementation - analyzes source and shows transfer plan
 
 use anyhow::{Context, Result};
-use console::{style, Term};
+use console::{Term, style};
 use indicatif::{ProgressBar, ProgressStyle};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -164,10 +164,7 @@ fn display_plan(stats: &SourceStats) -> Result<()> {
     term.write_line(&format!("Files:       {}", style(stats.file_count).cyan()))?;
 
     if stats.dir_count > 0 {
-        term.write_line(&format!(
-            "Directories: {}",
-            style(stats.dir_count).cyan()
-        ))?;
+        term.write_line(&format!("Directories: {}", style(stats.dir_count).cyan()))?;
     }
 
     term.write_line(&format!(
@@ -218,8 +215,7 @@ fn display_plan(stats: &SourceStats) -> Result<()> {
 
     // Compression estimate
     let estimated_compression_ratio = estimate_compression_ratio(&stats.extension_stats);
-    let estimated_compressed_size =
-        (stats.total_size as f64 * estimated_compression_ratio) as u64;
+    let estimated_compressed_size = (stats.total_size as f64 * estimated_compression_ratio) as u64;
 
     term.write_line(&format!(
         "{}",

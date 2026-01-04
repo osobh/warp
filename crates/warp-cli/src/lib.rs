@@ -3,8 +3,8 @@
 //! This library provides the core functionality for the warp CLI,
 //! including shell completion generation.
 
-pub mod completions;
 pub mod commands;
+pub mod completions;
 
 use clap::Parser;
 
@@ -120,7 +120,6 @@ pub enum Commands {
     },
 
     // ============= S3-Compatible Storage Commands =============
-
     /// List buckets or objects (mc ls)
     #[command(name = "ls")]
     List {

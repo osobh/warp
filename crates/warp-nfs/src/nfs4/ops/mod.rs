@@ -92,10 +92,7 @@ pub fn process_savefh(ctx: &mut CompoundContext) -> OpResult {
 
 /// Process RESTOREFH operation
 pub fn process_restorefh(ctx: &mut CompoundContext) -> OpResult {
-    let fh = ctx
-        .saved_fh
-        .clone()
-        .ok_or(NfsStatus::RestoreFh)?;
+    let fh = ctx.saved_fh.clone().ok_or(NfsStatus::RestoreFh)?;
     ctx.current_fh = Some(fh);
     Ok(Nfs4OpRes::ok(Nfs4Op::RestoreFh, Bytes::new()))
 }

@@ -397,13 +397,21 @@ impl AccessMask {
     /// Full control
     pub const FILE_ALL_ACCESS: u32 = 0x001F01FF;
     /// Read
-    pub const FILE_GENERIC_READ: u32 =
-        Self::FILE_READ_DATA | Self::FILE_READ_EA | Self::FILE_READ_ATTRIBUTES | Self::READ_CONTROL | Self::SYNCHRONIZE;
+    pub const FILE_GENERIC_READ: u32 = Self::FILE_READ_DATA
+        | Self::FILE_READ_EA
+        | Self::FILE_READ_ATTRIBUTES
+        | Self::READ_CONTROL
+        | Self::SYNCHRONIZE;
     /// Write
-    pub const FILE_GENERIC_WRITE: u32 =
-        Self::FILE_WRITE_DATA | Self::FILE_WRITE_EA | Self::FILE_WRITE_ATTRIBUTES | Self::FILE_APPEND_DATA | Self::READ_CONTROL | Self::SYNCHRONIZE;
+    pub const FILE_GENERIC_WRITE: u32 = Self::FILE_WRITE_DATA
+        | Self::FILE_WRITE_EA
+        | Self::FILE_WRITE_ATTRIBUTES
+        | Self::FILE_APPEND_DATA
+        | Self::READ_CONTROL
+        | Self::SYNCHRONIZE;
     /// Execute
-    pub const FILE_GENERIC_EXECUTE: u32 = Self::FILE_EXECUTE | Self::FILE_READ_ATTRIBUTES | Self::READ_CONTROL | Self::SYNCHRONIZE;
+    pub const FILE_GENERIC_EXECUTE: u32 =
+        Self::FILE_EXECUTE | Self::FILE_READ_ATTRIBUTES | Self::READ_CONTROL | Self::SYNCHRONIZE;
 
     /// Create new mask
     pub fn new(mask: u32) -> Self {

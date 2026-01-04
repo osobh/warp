@@ -10,17 +10,17 @@
 
 use axum::{
     extract::{Path, State},
-    http::{header, StatusCode},
+    http::{StatusCode, header},
     response::{IntoResponse, Response},
 };
 use bytes::Bytes;
 use serde::{Deserialize, Serialize};
 
-use warp_store::backend::StorageBackend;
 use warp_store::ObjectKey;
+use warp_store::backend::StorageBackend;
 
-use crate::error::{ApiError, ApiResult};
 use crate::AppState;
+use crate::error::{ApiError, ApiResult};
 
 // =============================================================================
 // XML Types for S3 Tagging API
@@ -377,34 +377,28 @@ mod tests {
 
     #[test]
     fn test_validate_tags_ok() {
-        let tags = vec![
-            TagXml {
-                key: "Name".to_string(),
-                value: "Test".to_string(),
-            },
-        ];
+        let tags = vec![TagXml {
+            key: "Name".to_string(),
+            value: "Test".to_string(),
+        }];
         assert!(validate_tags(&tags).is_ok());
     }
 
     #[test]
     fn test_validate_tags_empty_key() {
-        let tags = vec![
-            TagXml {
-                key: "".to_string(),
-                value: "Test".to_string(),
-            },
-        ];
+        let tags = vec![TagXml {
+            key: "".to_string(),
+            value: "Test".to_string(),
+        }];
         assert!(validate_tags(&tags).is_err());
     }
 
     #[test]
     fn test_validate_tags_aws_prefix() {
-        let tags = vec![
-            TagXml {
-                key: "aws:reserved".to_string(),
-                value: "value".to_string(),
-            },
-        ];
+        let tags = vec![TagXml {
+            key: "aws:reserved".to_string(),
+            value: "value".to_string(),
+        }];
         let result = validate_tags(&tags);
         assert!(result.is_err());
         assert!(result.unwrap_err().to_string().contains("aws:"));

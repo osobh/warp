@@ -766,6 +766,9 @@ mod tests {
         assert_eq!(portal.id, deserialized.id);
         assert_eq!(portal.name, deserialized.name);
         assert_eq!(portal.state, deserialized.state);
-        assert_eq!(portal.stats.download_count, deserialized.stats.download_count);
+        assert_eq!(
+            portal.stats.download_count,
+            deserialized.stats.download_count
+        );
     }
 }

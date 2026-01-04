@@ -15,12 +15,14 @@ use crate::error::{Error, Result};
 use crate::model::presets::{ModelConfig, ModelPreset};
 
 /// Global ONNX Runtime environment initialization flag
-static ORT_INITIALIZED: Lazy<Result<()>> = Lazy::new(|| {
-    match ort::init().with_name("warp-neural").commit() {
+static ORT_INITIALIZED: Lazy<Result<()>> =
+    Lazy::new(|| match ort::init().with_name("warp-neural").commit() {
         Ok(_) => Ok(()),
-        Err(e) => Err(Error::ModelLoad(format!("Failed to initialize ONNX Runtime: {}", e))),
-    }
-});
+        Err(e) => Err(Error::ModelLoad(format!(
+            "Failed to initialize ONNX Runtime: {}",
+            e
+        ))),
+    });
 
 /// Thread-safe model session cache
 ///
@@ -54,7 +56,9 @@ impl SessionCache {
     /// Otherwise, loads the model and caches it.
     pub fn get_or_load(&self, model_path: &Path, use_cuda: bool) -> Result<Arc<Session>> {
         // Ensure ORT is initialized
-        ORT_INITIALIZED.as_ref().map_err(|e| Error::ModelLoad(e.to_string()))?;
+        ORT_INITIALIZED
+            .as_ref()
+            .map_err(|e| Error::ModelLoad(e.to_string()))?;
 
         let cache_key = format!("{}:{}", model_path.display(), use_cuda);
 
@@ -115,7 +119,7 @@ impl SessionCache {
     /// Check if CUDA is available
     #[cfg(feature = "cuda")]
     pub fn is_cuda_available() -> bool {
-        use ort::execution_providers::{cuda::CUDAExecutionProvider, ExecutionProvider};
+        use ort::execution_providers::{ExecutionProvider, cuda::CUDAExecutionProvider};
         CUDAExecutionProvider::default()
             .is_available()
             .unwrap_or(false)
@@ -170,18 +174,20 @@ impl ModelResolver {
     pub fn resolve(config: &ModelConfig) -> Result<(PathBuf, PathBuf)> {
         match config.preset {
             ModelPreset::Custom => {
-                let encoder = config
-                    .custom_encoder_path
-                    .clone()
-                    .ok_or_else(|| Error::ModelNotFound {
-                        path: PathBuf::from("custom encoder path not specified"),
-                    })?;
-                let decoder = config
-                    .custom_decoder_path
-                    .clone()
-                    .ok_or_else(|| Error::ModelNotFound {
-                        path: PathBuf::from("custom decoder path not specified"),
-                    })?;
+                let encoder =
+                    config
+                        .custom_encoder_path
+                        .clone()
+                        .ok_or_else(|| Error::ModelNotFound {
+                            path: PathBuf::from("custom encoder path not specified"),
+                        })?;
+                let decoder =
+                    config
+                        .custom_decoder_path
+                        .clone()
+                        .ok_or_else(|| Error::ModelNotFound {
+                            path: PathBuf::from("custom decoder path not specified"),
+                        })?;
                 Ok((encoder, decoder))
             }
             _ => {

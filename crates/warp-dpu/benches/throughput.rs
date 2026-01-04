@@ -1,6 +1,6 @@
 //! DPU throughput benchmarks
 
-use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
+use criterion::{BenchmarkId, Criterion, Throughput, black_box, criterion_group, criterion_main};
 use warp_dpu::{
     CpuCipher, CpuCompressor, CpuErasureCoder, CpuHasher, DpuCipher, DpuCompressor,
     DpuErasureCoder, DpuHasher,
@@ -74,5 +74,11 @@ fn bench_erasure(c: &mut Criterion) {
     group.finish();
 }
 
-criterion_group!(benches, bench_hasher, bench_cipher, bench_compressor, bench_erasure);
+criterion_group!(
+    benches,
+    bench_hasher,
+    bench_cipher,
+    bench_compressor,
+    bench_erasure
+);
 criterion_main!(benches);

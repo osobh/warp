@@ -1,9 +1,9 @@
 //! Ed25519 signatures
 
-pub use ed25519_dalek::{SigningKey, VerifyingKey, Signature};
-use ed25519_dalek::Signer;
-use rand::rngs::OsRng;
 use crate::{Error, Result};
+use ed25519_dalek::Signer;
+pub use ed25519_dalek::{Signature, SigningKey, VerifyingKey};
+use rand::rngs::OsRng;
 
 /// Sign data with Ed25519
 pub fn sign(key: &SigningKey, data: &[u8]) -> Signature {
@@ -25,13 +25,13 @@ pub fn generate_keypair() -> SigningKey {
 #[cfg(test)]
 mod tests {
     use super::*;
-    
+
     #[test]
     fn test_sign_verify() {
         let signing_key = generate_keypair();
         let verifying_key = signing_key.verifying_key();
         let data = b"test message";
-        
+
         let signature = sign(&signing_key, data);
         verify(&verifying_key, data, &signature).unwrap();
     }

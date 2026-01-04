@@ -32,7 +32,7 @@
 
 use axum::{
     extract::{Path, State},
-    http::{header, StatusCode},
+    http::{StatusCode, header},
     response::{IntoResponse, Response},
 };
 use bytes::Bytes;
@@ -40,8 +40,8 @@ use serde::{Deserialize, Serialize};
 
 use warp_store::backend::StorageBackend;
 
-use crate::error::{ApiError, ApiResult};
 use crate::AppState;
+use crate::error::{ApiError, ApiResult};
 
 // Re-export policy types from warp-iam when available
 #[cfg(feature = "iam")]
@@ -265,10 +265,7 @@ pub async fn get_policy<B: StorageBackend>(
     }
 
     // Get policy from manager
-    let policy = state
-        .policy_manager
-        .as_ref()
-        .and_then(|pm| pm.get(&bucket));
+    let policy = state.policy_manager.as_ref().and_then(|pm| pm.get(&bucket));
 
     match policy {
         Some(policy) => {
@@ -648,11 +645,9 @@ fn string_equals(actual: &Option<String>, expected: &serde_json::Value) -> bool 
 
     match expected {
         serde_json::Value::String(s) => actual == s,
-        serde_json::Value::Array(arr) => arr.iter().any(|v| {
-            v.as_str()
-                .map(|s| actual == s)
-                .unwrap_or(false)
-        }),
+        serde_json::Value::Array(arr) => arr
+            .iter()
+            .any(|v| v.as_str().map(|s| actual == s).unwrap_or(false)),
         _ => false,
     }
 }
@@ -684,10 +679,7 @@ fn string_like(actual: &Option<String>, expected: &serde_json::Value) -> bool {
 
     let patterns: Vec<&str> = match expected {
         serde_json::Value::String(s) => vec![s.as_str()],
-        serde_json::Value::Array(arr) => arr
-            .iter()
-            .filter_map(|v| v.as_str())
-            .collect(),
+        serde_json::Value::Array(arr) => arr.iter().filter_map(|v| v.as_str()).collect(),
         _ => return false,
     };
 
@@ -716,10 +708,7 @@ fn ip_address_matches(actual: &Option<String>, expected: &serde_json::Value) -> 
 
     let cidrs: Vec<&str> = match expected {
         serde_json::Value::String(s) => vec![s.as_str()],
-        serde_json::Value::Array(arr) => arr
-            .iter()
-            .filter_map(|v| v.as_str())
-            .collect(),
+        serde_json::Value::Array(arr) => arr.iter().filter_map(|v| v.as_str()).collect(),
         _ => return false,
     };
 
@@ -879,7 +868,10 @@ mod tests {
     fn test_get_s3_action() {
         assert_eq!(get_s3_action("GET", "/bucket/key", ""), "s3:GetObject");
         assert_eq!(get_s3_action("PUT", "/bucket/key", ""), "s3:PutObject");
-        assert_eq!(get_s3_action("DELETE", "/bucket/key", ""), "s3:DeleteObject");
+        assert_eq!(
+            get_s3_action("DELETE", "/bucket/key", ""),
+            "s3:DeleteObject"
+        );
         assert_eq!(get_s3_action("GET", "/bucket", ""), "s3:ListBucket");
         assert_eq!(
             get_s3_action("PUT", "/bucket", "policy"),

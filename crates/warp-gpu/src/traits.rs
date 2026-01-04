@@ -33,8 +33,7 @@ pub trait GpuOp: Send + Sync {
 
     /// Check if input should use GPU based on size
     fn should_use_gpu(&self, input_size: usize) -> bool {
-        input_size >= self.min_gpu_size()
-            && self.context().has_sufficient_memory(input_size * 3)
+        input_size >= self.min_gpu_size() && self.context().has_sufficient_memory(input_size * 3)
     }
 
     /// Get operation name for logging/metrics
@@ -232,12 +231,18 @@ pub trait GpuCompressor: GpuOp {
     /// # Returns
     /// Vector of compressed buffers in same order
     fn compress_batch(&self, inputs: &[&[u8]]) -> Result<Vec<Vec<u8>>> {
-        inputs.par_iter().map(|input| self.compress(input)).collect()
+        inputs
+            .par_iter()
+            .map(|input| self.compress(input))
+            .collect()
     }
 
     /// Decompress multiple chunks in batch
     fn decompress_batch(&self, inputs: &[&[u8]]) -> Result<Vec<Vec<u8>>> {
-        inputs.par_iter().map(|input| self.decompress(input)).collect()
+        inputs
+            .par_iter()
+            .map(|input| self.decompress(input))
+            .collect()
     }
 
     /// Algorithm name (e.g., "lz4", "zstd")

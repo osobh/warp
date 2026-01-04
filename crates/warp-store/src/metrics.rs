@@ -167,7 +167,8 @@ impl MetricsCollector {
     pub fn record_delete(&self, latency: Duration) {
         self.delete_count.fetch_add(1, Ordering::Relaxed);
         let us = latency.as_micros() as u64;
-        self.delete_latency_total_us.fetch_add(us, Ordering::Relaxed);
+        self.delete_latency_total_us
+            .fetch_add(us, Ordering::Relaxed);
     }
 
     /// Record a LIST operation
@@ -270,7 +271,8 @@ impl MetricsCollector {
 
     /// Record recovery latency (decode with missing shards)
     pub fn record_recovery_latency(&self, latency: Duration) {
-        self.recovery_latency_total_us.fetch_add(latency.as_micros() as u64, Ordering::Relaxed);
+        self.recovery_latency_total_us
+            .fetch_add(latency.as_micros() as u64, Ordering::Relaxed);
         self.recovery_count.fetch_add(1, Ordering::Relaxed);
     }
 
@@ -431,7 +433,8 @@ impl MetricsCollector {
     fn update_min(&self, atomic: &AtomicU64, value: u64) {
         let mut current = atomic.load(Ordering::Relaxed);
         while value < current {
-            match atomic.compare_exchange_weak(current, value, Ordering::Relaxed, Ordering::Relaxed) {
+            match atomic.compare_exchange_weak(current, value, Ordering::Relaxed, Ordering::Relaxed)
+            {
                 Ok(_) => break,
                 Err(c) => current = c,
             }
@@ -441,7 +444,8 @@ impl MetricsCollector {
     fn update_max(&self, atomic: &AtomicU64, value: u64) {
         let mut current = atomic.load(Ordering::Relaxed);
         while value > current {
-            match atomic.compare_exchange_weak(current, value, Ordering::Relaxed, Ordering::Relaxed) {
+            match atomic.compare_exchange_weak(current, value, Ordering::Relaxed, Ordering::Relaxed)
+            {
                 Ok(_) => break,
                 Err(c) => current = c,
             }
@@ -624,7 +628,9 @@ pub struct LatencyTimer {
 impl LatencyTimer {
     /// Start a new timer
     pub fn start() -> Self {
-        Self { start: Instant::now() }
+        Self {
+            start: Instant::now(),
+        }
     }
 
     /// Get elapsed duration

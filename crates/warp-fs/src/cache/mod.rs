@@ -5,13 +5,13 @@
 //! - **Dentry cache**: Maps (parent_ino, name) to child inode
 //! - **Data cache**: Caches file content blocks
 
-mod inode_cache;
-mod dentry_cache;
 mod data_cache;
+mod dentry_cache;
+mod inode_cache;
 
-pub use inode_cache::InodeCache;
-pub use dentry_cache::DentryCache;
 pub use data_cache::DataCache;
+pub use dentry_cache::DentryCache;
+pub use inode_cache::InodeCache;
 
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Duration, Instant};
@@ -74,11 +74,7 @@ impl CacheStats {
     pub fn hit_ratio(&self) -> f64 {
         let hits = self.hits() as f64;
         let total = hits + self.misses() as f64;
-        if total == 0.0 {
-            0.0
-        } else {
-            hits / total
-        }
+        if total == 0.0 { 0.0 } else { hits / total }
     }
 }
 

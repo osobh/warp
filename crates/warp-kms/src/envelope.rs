@@ -10,15 +10,15 @@
 use std::sync::Arc;
 
 use aes_gcm::{
-    aead::{Aead, KeyInit},
     Aes256Gcm, Nonce,
+    aead::{Aead, KeyInit},
 };
 use rand::RngCore;
 use serde::{Deserialize, Serialize};
 
+use crate::KmsProvider;
 use crate::error::{KmsError, KmsResult};
 use crate::key::KeyAlgorithm;
-use crate::KmsProvider;
 
 /// Encrypted data with envelope encryption
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -144,9 +144,9 @@ impl<K: KmsProvider> EnvelopeEncryption<K> {
                 rand::thread_rng().fill_bytes(&mut nonce_bytes);
                 let nonce = Nonce::from_slice(&nonce_bytes);
 
-                let ciphertext = cipher.encrypt(nonce, plaintext).map_err(|e| {
-                    KmsError::EncryptionFailed(format!("Encryption failed: {}", e))
-                })?;
+                let ciphertext = cipher
+                    .encrypt(nonce, plaintext)
+                    .map_err(|e| KmsError::EncryptionFailed(format!("Encryption failed: {}", e)))?;
 
                 Ok((ciphertext, nonce_bytes.to_vec()))
             }
@@ -161,9 +161,9 @@ impl<K: KmsProvider> EnvelopeEncryption<K> {
                 rand::thread_rng().fill_bytes(&mut nonce_bytes);
                 let nonce = Nonce::from_slice(&nonce_bytes);
 
-                let ciphertext = cipher.encrypt(nonce, plaintext).map_err(|e| {
-                    KmsError::EncryptionFailed(format!("Encryption failed: {}", e))
-                })?;
+                let ciphertext = cipher
+                    .encrypt(nonce, plaintext)
+                    .map_err(|e| KmsError::EncryptionFailed(format!("Encryption failed: {}", e)))?;
 
                 Ok((ciphertext, nonce_bytes.to_vec()))
             }
@@ -193,9 +193,9 @@ impl<K: KmsProvider> EnvelopeEncryption<K> {
                     KmsError::InternalError(format!("Failed to create cipher: {}", e))
                 })?;
 
-                cipher.decrypt(nonce, ciphertext).map_err(|e| {
-                    KmsError::DecryptionFailed(format!("Decryption failed: {}", e))
-                })
+                cipher
+                    .decrypt(nonce, ciphertext)
+                    .map_err(|e| KmsError::DecryptionFailed(format!("Decryption failed: {}", e)))
             }
             KeyAlgorithm::ChaCha20Poly1305 => {
                 use chacha20poly1305::ChaCha20Poly1305;
@@ -204,9 +204,9 @@ impl<K: KmsProvider> EnvelopeEncryption<K> {
                     KmsError::InternalError(format!("Failed to create cipher: {}", e))
                 })?;
 
-                cipher.decrypt(nonce, ciphertext).map_err(|e| {
-                    KmsError::DecryptionFailed(format!("Decryption failed: {}", e))
-                })
+                cipher
+                    .decrypt(nonce, ciphertext)
+                    .map_err(|e| KmsError::DecryptionFailed(format!("Decryption failed: {}", e)))
             }
         }
     }
@@ -254,7 +254,8 @@ impl<K: KmsProvider> StreamingEnvelope<K> {
         let mut chunk_index = 0u64;
 
         for chunk in plaintext.chunks(self.chunk_size) {
-            let (ciphertext, nonce) = self.encrypt_chunk(&data_key.plaintext, chunk, chunk_index)?;
+            let (ciphertext, nonce) =
+                self.encrypt_chunk(&data_key.plaintext, chunk, chunk_index)?;
             chunks.push(EncryptedChunk {
                 index: chunk_index,
                 nonce,
@@ -352,7 +353,9 @@ impl<K: KmsProvider> StreamingEnvelope<K> {
     ) -> KmsResult<Vec<u8>> {
         // Verify chunk index in nonce
         if nonce.len() != 12 {
-            return Err(KmsError::InvalidCiphertext("Invalid nonce length".to_string()));
+            return Err(KmsError::InvalidCiphertext(
+                "Invalid nonce length".to_string(),
+            ));
         }
 
         let stored_index = u64::from_le_bytes(nonce[4..12].try_into().unwrap());
@@ -488,13 +491,17 @@ mod tests {
 
         let streaming = StreamingEnvelope::new(kms).with_chunk_size(16); // Small chunks for testing
 
-        let plaintext = b"This is a longer message that will be split into multiple chunks for encryption.";
+        let plaintext =
+            b"This is a longer message that will be split into multiple chunks for encryption.";
         let encrypted = streaming.encrypt_chunked(&key_id, plaintext).await.unwrap();
 
         assert!(encrypted.total_chunks > 1);
         assert_eq!(encrypted.chunks.len(), encrypted.total_chunks);
 
-        let decrypted = streaming.decrypt_chunked(&key_id, &encrypted).await.unwrap();
+        let decrypted = streaming
+            .decrypt_chunked(&key_id, &encrypted)
+            .await
+            .unwrap();
         assert_eq!(decrypted, plaintext);
     }
 

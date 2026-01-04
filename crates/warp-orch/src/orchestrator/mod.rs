@@ -15,8 +15,8 @@ use crate::upload::{DistributedUploader, UploadConfig, UploadSession};
 use crate::{OrchError, Result};
 use parking_lot::RwLock;
 use std::collections::HashMap;
-use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};
 use tokio::sync::broadcast;
 use warp_sched::{ChunkId, EdgeIdx};
@@ -52,9 +52,9 @@ impl OrchestratorConfig {
     }
 
     pub fn validate(&self) -> Result<()> {
-        self.pool_config.validate().map_err(|e| {
-            OrchError::InvalidState(format!("Invalid pool config: {}", e))
-        })?;
+        self.pool_config
+            .validate()
+            .map_err(|e| OrchError::InvalidState(format!("Invalid pool config: {}", e)))?;
 
         if self.tick_interval_ms == 0 {
             return Err(OrchError::InvalidState(
@@ -155,11 +155,8 @@ impl Orchestrator {
             pool.clone(),
             progress.clone(),
         );
-        let uploader = DistributedUploader::new(
-            config.upload_config.clone(),
-            pool.clone(),
-            progress.clone(),
-        );
+        let uploader =
+            DistributedUploader::new(config.upload_config.clone(), pool.clone(), progress.clone());
 
         Ok(Self {
             config,
@@ -351,9 +348,8 @@ impl Orchestrator {
             .iter()
             .position(|h| ChunkId::from_hash(h) == chunk_id);
 
-        let chunk_idx = chunk_idx.ok_or_else(|| {
-            OrchError::InvalidState("Chunk not part of transfer".to_string())
-        })?;
+        let chunk_idx = chunk_idx
+            .ok_or_else(|| OrchError::InvalidState("Chunk not part of transfer".to_string()))?;
         let expected_size = session.request.chunk_sizes[chunk_idx] as usize;
         if data.len() != expected_size {
             return Err(OrchError::InvalidState(format!(
@@ -386,7 +382,8 @@ impl Orchestrator {
         // Optimized: Single read lock to identify completed transfers
         let completed_ids: Vec<TransferId> = {
             let downloads = self.active_downloads.read();
-            downloads.iter()
+            downloads
+                .iter()
                 .filter(|(_, session)| {
                     let is_started = session.state.status.is_active();
                     let is_complete = session.state.completed_chunks >= session.state.total_chunks;
@@ -438,10 +435,14 @@ impl Orchestrator {
         // Optimized: Single read lock to identify completed transfers
         let completed_ids: Vec<TransferId> = {
             let uploads = self.active_uploads.read();
-            uploads.iter()
+            uploads
+                .iter()
                 .filter(|(_, session)| {
                     // Check if all chunk data is queued
-                    session.request.chunks.iter()
+                    session
+                        .request
+                        .chunks
+                        .iter()
                         .all(|hash| session.chunk_data.contains_key(&ChunkId::from_hash(hash)))
                 })
                 .map(|(id, _)| *id)

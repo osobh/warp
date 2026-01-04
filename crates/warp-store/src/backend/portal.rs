@@ -94,9 +94,16 @@ impl PortalBackend {
             // Only store if not already present (deduplication)
             if !self.storage.has_chunk(content_id) {
                 self.storage.store_chunk(*content_id, data.clone());
-                trace!(chunk = hex::encode(content_id), size = data.len(), "Stored new chunk");
+                trace!(
+                    chunk = hex::encode(content_id),
+                    size = data.len(),
+                    "Stored new chunk"
+                );
             } else {
-                trace!(chunk = hex::encode(content_id), "Chunk already exists (dedup)");
+                trace!(
+                    chunk = hex::encode(content_id),
+                    "Chunk already exists (dedup)"
+                );
             }
         }
     }
@@ -107,7 +114,11 @@ impl PortalBackend {
 
         for content_id in chunk_ids {
             let chunk = self.storage.get_chunk(content_id).map_err(|e| {
-                Error::Backend(format!("Failed to retrieve chunk {}: {}", hex::encode(content_id), e))
+                Error::Backend(format!(
+                    "Failed to retrieve chunk {}: {}",
+                    hex::encode(content_id),
+                    e
+                ))
             })?;
             data.extend_from_slice(&chunk);
         }
@@ -186,16 +197,18 @@ impl PortalBackend {
 #[async_trait]
 impl StorageBackend for PortalBackend {
     async fn get(&self, key: &ObjectKey) -> Result<ObjectData> {
-        let bucket = self.buckets.get(key.bucket()).ok_or_else(|| {
-            Error::BucketNotFound(key.bucket().to_string())
-        })?;
+        let bucket = self
+            .buckets
+            .get(key.bucket())
+            .ok_or_else(|| Error::BucketNotFound(key.bucket().to_string()))?;
 
-        let index = bucket.objects.get(key.key()).ok_or_else(|| {
-            Error::ObjectNotFound {
+        let index = bucket
+            .objects
+            .get(key.key())
+            .ok_or_else(|| Error::ObjectNotFound {
                 bucket: key.bucket().to_string(),
                 key: key.key().to_string(),
-            }
-        })?;
+            })?;
 
         debug!(key = %key, chunks = index.chunk_ids.len(), "Retrieving object from Portal mesh");
         self.retrieve_chunks(&index.chunk_ids)
@@ -263,26 +276,29 @@ impl StorageBackend for PortalBackend {
     }
 
     async fn delete(&self, key: &ObjectKey) -> Result<()> {
-        let bucket = self.buckets.get(key.bucket()).ok_or_else(|| {
-            Error::BucketNotFound(key.bucket().to_string())
-        })?;
+        let bucket = self
+            .buckets
+            .get(key.bucket())
+            .ok_or_else(|| Error::BucketNotFound(key.bucket().to_string()))?;
 
         // Remove from index (chunks stay for dedup - GC handles cleanup)
-        bucket.objects.remove(key.key()).ok_or_else(|| {
-            Error::ObjectNotFound {
+        bucket
+            .objects
+            .remove(key.key())
+            .ok_or_else(|| Error::ObjectNotFound {
                 bucket: key.bucket().to_string(),
                 key: key.key().to_string(),
-            }
-        })?;
+            })?;
 
         debug!(key = %key, "Deleted object from Portal mesh index");
         Ok(())
     }
 
     async fn list(&self, bucket: &str, prefix: &str, opts: ListOptions) -> Result<ObjectList> {
-        let bucket_index = self.buckets.get(bucket).ok_or_else(|| {
-            Error::BucketNotFound(bucket.to_string())
-        })?;
+        let bucket_index = self
+            .buckets
+            .get(bucket)
+            .ok_or_else(|| Error::BucketNotFound(bucket.to_string()))?;
 
         let mut objects = Vec::new();
         let mut common_prefixes = Vec::new();
@@ -345,30 +361,34 @@ impl StorageBackend for PortalBackend {
     }
 
     async fn head(&self, key: &ObjectKey) -> Result<ObjectMeta> {
-        let bucket = self.buckets.get(key.bucket()).ok_or_else(|| {
-            Error::BucketNotFound(key.bucket().to_string())
-        })?;
+        let bucket = self
+            .buckets
+            .get(key.bucket())
+            .ok_or_else(|| Error::BucketNotFound(key.bucket().to_string()))?;
 
-        let index = bucket.objects.get(key.key()).ok_or_else(|| {
-            Error::ObjectNotFound {
+        let index = bucket
+            .objects
+            .get(key.key())
+            .ok_or_else(|| Error::ObjectNotFound {
                 bucket: key.bucket().to_string(),
                 key: key.key().to_string(),
-            }
-        })?;
+            })?;
 
         Ok(index.meta.clone())
     }
 
     async fn create_bucket(&self, name: &str) -> Result<()> {
-        self.buckets.insert(name.to_string(), BucketIndex::default());
+        self.buckets
+            .insert(name.to_string(), BucketIndex::default());
         debug!(bucket = name, "Created bucket in Portal mesh");
         Ok(())
     }
 
     async fn delete_bucket(&self, name: &str) -> Result<()> {
-        let bucket = self.buckets.remove(name).ok_or_else(|| {
-            Error::BucketNotFound(name.to_string())
-        })?;
+        let bucket = self
+            .buckets
+            .remove(name)
+            .ok_or_else(|| Error::BucketNotFound(name.to_string()))?;
 
         // Check if empty
         if !bucket.1.objects.is_empty() {
@@ -389,16 +409,18 @@ impl StorageBackend for PortalBackend {
 #[async_trait]
 impl HpcStorageBackend for PortalBackend {
     async fn verified_get(&self, key: &ObjectKey) -> Result<(ObjectData, StorageProof)> {
-        let bucket = self.buckets.get(key.bucket()).ok_or_else(|| {
-            Error::BucketNotFound(key.bucket().to_string())
-        })?;
+        let bucket = self
+            .buckets
+            .get(key.bucket())
+            .ok_or_else(|| Error::BucketNotFound(key.bucket().to_string()))?;
 
-        let index = bucket.objects.get(key.key()).ok_or_else(|| {
-            Error::ObjectNotFound {
+        let index = bucket
+            .objects
+            .get(key.key())
+            .ok_or_else(|| Error::ObjectNotFound {
                 bucket: key.bucket().to_string(),
                 key: key.key().to_string(),
-            }
-        })?;
+            })?;
 
         // Retrieve data
         let data = self.retrieve_chunks(&index.chunk_ids)?;
@@ -449,7 +471,8 @@ impl HpcStorageBackend for PortalBackend {
         gpu_buffer: &warp_gpu::GpuBuffer<u8>,
     ) -> Result<ObjectMeta> {
         // Copy from GPU to CPU, then store
-        let buffer = gpu_buffer.copy_to_host()
+        let buffer = gpu_buffer
+            .copy_to_host()
             .map_err(|e| crate::Error::Backend(format!("GPU copy failed: {}", e)))?;
 
         let data = ObjectData::from(buffer);
@@ -480,7 +503,10 @@ mod tests {
         // Put object
         let key = ObjectKey::new("test", "hello.txt").unwrap();
         let data = ObjectData::from(b"Hello, Portal!".to_vec());
-        let meta = backend.put(&key, data.clone(), PutOptions::default()).await.unwrap();
+        let meta = backend
+            .put(&key, data.clone(), PutOptions::default())
+            .await
+            .unwrap();
 
         assert_eq!(meta.size, 14);
 
@@ -505,10 +531,16 @@ mod tests {
         let key1 = ObjectKey::new("test", "file1.bin").unwrap();
         let key2 = ObjectKey::new("test", "file2.bin").unwrap();
 
-        backend.put(&key1, data.clone(), PutOptions::default()).await.unwrap();
+        backend
+            .put(&key1, data.clone(), PutOptions::default())
+            .await
+            .unwrap();
         let initial_chunks = storage.chunk_count();
 
-        backend.put(&key2, data, PutOptions::default()).await.unwrap();
+        backend
+            .put(&key2, data, PutOptions::default())
+            .await
+            .unwrap();
         let final_chunks = storage.chunk_count();
 
         // Should have same number of chunks due to deduplication
@@ -524,7 +556,10 @@ mod tests {
 
         let key = ObjectKey::new("test", "verified.bin").unwrap();
         let data = ObjectData::from(vec![1, 2, 3, 4, 5]);
-        backend.put(&key, data, PutOptions::default()).await.unwrap();
+        backend
+            .put(&key, data, PutOptions::default())
+            .await
+            .unwrap();
 
         // Get with verification
         let (retrieved, proof) = backend.verified_get(&key).await.unwrap();
@@ -545,15 +580,24 @@ mod tests {
         for i in 0..5 {
             let key = ObjectKey::new("test", &format!("data/{}.txt", i)).unwrap();
             let data = ObjectData::from(format!("content {}", i).into_bytes());
-            backend.put(&key, data, PutOptions::default()).await.unwrap();
+            backend
+                .put(&key, data, PutOptions::default())
+                .await
+                .unwrap();
         }
 
         // List all
-        let list = backend.list("test", "", ListOptions::default()).await.unwrap();
+        let list = backend
+            .list("test", "", ListOptions::default())
+            .await
+            .unwrap();
         assert_eq!(list.key_count, 5);
 
         // List with prefix
-        let list = backend.list("test", "data/", ListOptions::default()).await.unwrap();
+        let list = backend
+            .list("test", "data/", ListOptions::default())
+            .await
+            .unwrap();
         assert_eq!(list.key_count, 5);
     }
 

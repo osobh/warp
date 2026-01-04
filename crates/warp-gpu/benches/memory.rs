@@ -1,6 +1,6 @@
 //! Benchmarks for pinned memory pool allocation and transfer performance
 
-use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
+use criterion::{BenchmarkId, Criterion, Throughput, black_box, criterion_group, criterion_main};
 use warp_gpu::{GpuContext, PinnedMemoryPool, PoolConfig};
 
 fn pool_allocation_benchmark(c: &mut Criterion) {
@@ -66,16 +66,12 @@ fn memory_transfer_benchmark(c: &mut Criterion) {
         let data = vec![42u8; *size];
 
         group.throughput(Throughput::Bytes(*size as u64));
-        group.bench_with_input(
-            BenchmarkId::new("host_to_device", size),
-            size,
-            |b, _| {
-                b.iter(|| {
-                    let d_data = ctx.host_to_device(&data).unwrap();
-                    black_box(&d_data);
-                });
-            },
-        );
+        group.bench_with_input(BenchmarkId::new("host_to_device", size), size, |b, _| {
+            b.iter(|| {
+                let d_data = ctx.host_to_device(&data).unwrap();
+                black_box(&d_data);
+            });
+        });
     }
 
     group.finish();

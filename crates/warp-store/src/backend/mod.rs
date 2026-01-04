@@ -18,13 +18,13 @@ pub use portal::PortalBackend;
 mod parcode;
 
 #[cfg(feature = "parcode")]
-pub use parcode::{ParcodeBackend, FieldEntry, FieldType, ParcodeHeader, Promise};
+pub use parcode::{FieldEntry, FieldType, ParcodeBackend, ParcodeHeader, Promise};
 
 #[cfg(feature = "erasure")]
 mod erasure;
 
 #[cfg(feature = "erasure")]
-pub use erasure::{ErasureBackend, StoreErasureConfig, ShardHealth, EncodedShardMeta};
+pub use erasure::{EncodedShardMeta, ErasureBackend, ShardHealth, StoreErasureConfig};
 
 #[cfg(feature = "erasure")]
 mod distributed;
@@ -37,8 +37,7 @@ mod gpu_direct;
 
 #[cfg(feature = "gpu")]
 pub use gpu_direct::{
-    GpuDirectBackend, GpuDirectConfig, GpuDirectStats,
-    NvLinkTopology, P2PPath, GpuBufferHandle,
+    GpuBufferHandle, GpuDirectBackend, GpuDirectConfig, GpuDirectStats, NvLinkTopology, P2PPath,
 };
 
 #[cfg(feature = "chonkers")]
@@ -61,9 +60,9 @@ pub use warp_oprf::dedup::{DedupIndex, DedupReference, DedupToken, MemoryDedupIn
 
 use async_trait::async_trait;
 
+use crate::Result;
 use crate::key::ObjectKey;
 use crate::object::{FieldData, ListOptions, ObjectData, ObjectList, ObjectMeta, PutOptions};
-use crate::Result;
 
 /// Core storage backend trait
 ///
@@ -108,7 +107,9 @@ pub trait StorageBackend: Send + Sync + 'static {
     /// Initiate a multipart upload
     async fn create_multipart(&self, key: &ObjectKey) -> Result<MultipartUpload> {
         let _ = key;
-        Err(crate::Error::Backend("multipart upload not supported".to_string()))
+        Err(crate::Error::Backend(
+            "multipart upload not supported".to_string(),
+        ))
     }
 
     /// Upload a part
@@ -119,7 +120,9 @@ pub trait StorageBackend: Send + Sync + 'static {
         data: ObjectData,
     ) -> Result<PartInfo> {
         let _ = (upload, part_number, data);
-        Err(crate::Error::Backend("multipart upload not supported".to_string()))
+        Err(crate::Error::Backend(
+            "multipart upload not supported".to_string(),
+        ))
     }
 
     /// Complete a multipart upload
@@ -129,13 +132,17 @@ pub trait StorageBackend: Send + Sync + 'static {
         parts: Vec<PartInfo>,
     ) -> Result<ObjectMeta> {
         let _ = (upload, parts);
-        Err(crate::Error::Backend("multipart upload not supported".to_string()))
+        Err(crate::Error::Backend(
+            "multipart upload not supported".to_string(),
+        ))
     }
 
     /// Abort a multipart upload
     async fn abort_multipart(&self, upload: &MultipartUpload) -> Result<()> {
         let _ = upload;
-        Err(crate::Error::Backend("multipart upload not supported".to_string()))
+        Err(crate::Error::Backend(
+            "multipart upload not supported".to_string(),
+        ))
     }
 }
 
@@ -198,11 +205,7 @@ pub trait HpcStorageBackend: StorageBackend {
     ///
     /// Streams object data in chunks, useful for very large objects
     /// or when memory is constrained.
-    async fn stream_chunked(
-        &self,
-        key: &ObjectKey,
-        chunk_size: usize,
-    ) -> Result<ChunkedStream> {
+    async fn stream_chunked(&self, key: &ObjectKey, chunk_size: usize) -> Result<ChunkedStream> {
         let data = self.get(key).await?;
         Ok(ChunkedStream::from_data(data, chunk_size))
     }

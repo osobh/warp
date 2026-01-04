@@ -49,18 +49,18 @@
 //! # }
 //! ```
 
-pub mod error;
 pub mod config;
-pub mod stats;
+pub mod error;
 pub mod flow;
 pub mod gpu_crypto;
-pub mod pooled;
 pub mod pipeline;
+pub mod pooled;
+pub mod stats;
 
-pub use error::{StreamError, Result};
 pub use config::StreamConfig;
-pub use stats::{PipelineStats, StageStats, StatsSummary, SharedStats};
+pub use error::{Result, StreamError};
 pub use flow::{BackpressureController, FlowControl};
 pub use gpu_crypto::{CryptoBackend, GpuCryptoContext, SharedCryptoContext, create_crypto_context};
-pub use pooled::{BufferPoolManager, PooledBuffer, SharedPoolManager, create_pool_manager};
 pub use pipeline::{Pipeline, PipelineBuilder};
+pub use pooled::{BufferPoolManager, PooledBuffer, SharedPoolManager, create_pool_manager};
+pub use stats::{PipelineStats, SharedStats, StageStats, StatsSummary};

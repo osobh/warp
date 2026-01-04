@@ -38,7 +38,10 @@ fn verify_directory_match(expected: &Path, actual: &Path) -> std::io::Result<()>
 
     let expected_nested = fs::read_to_string(expected.join("subdir/nested.txt"))?;
     let actual_nested = fs::read_to_string(actual.join("subdir/nested.txt"))?;
-    assert_eq!(expected_nested, actual_nested, "subdir/nested.txt content mismatch");
+    assert_eq!(
+        expected_nested, actual_nested,
+        "subdir/nested.txt content mismatch"
+    );
 
     Ok(())
 }
@@ -62,7 +65,10 @@ fn test_archive_roundtrip() {
     // Verify archive file exists
     assert!(archive.exists(), "Archive file should exist");
     let metadata = fs::metadata(&archive).unwrap();
-    assert!(metadata.len() > 256, "Archive should be larger than header size");
+    assert!(
+        metadata.len() > 256,
+        "Archive should be larger than header size"
+    );
 
     // Extract archive
     let reader = WarpReader::open(&archive).unwrap();
@@ -70,7 +76,10 @@ fn test_archive_roundtrip() {
     reader.extract_all(&extract).unwrap();
 
     // Verify integrity
-    assert!(reader.verify().unwrap(), "Archive verification should succeed");
+    assert!(
+        reader.verify().unwrap(),
+        "Archive verification should succeed"
+    );
 
     // Verify extracted files match source
     verify_directory_match(&source, &extract).unwrap();
@@ -98,10 +107,22 @@ fn test_compression_zstd() {
     let (original, compressed, ratio) = reader.stats();
 
     assert_eq!(original, 100_000, "Original size should be 100KB");
-    assert!(compressed < original, "Compressed size should be less than original");
-    assert!(ratio < 0.1, "Compression ratio should be very good for repeated data, got {}", ratio);
+    assert!(
+        compressed < original,
+        "Compressed size should be less than original"
+    );
+    assert!(
+        ratio < 0.1,
+        "Compression ratio should be very good for repeated data, got {}",
+        ratio
+    );
 
-    println!("Zstd compression: {}B -> {}B (ratio: {:.2}%)", original, compressed, ratio * 100.0);
+    println!(
+        "Zstd compression: {}B -> {}B (ratio: {:.2}%)",
+        original,
+        compressed,
+        ratio * 100.0
+    );
 }
 
 #[test]
@@ -126,10 +147,22 @@ fn test_compression_lz4() {
     let (original, compressed, ratio) = reader.stats();
 
     assert_eq!(original, 50_000, "Original size should be 50KB");
-    assert!(compressed < original, "Compressed size should be less than original");
-    assert!(ratio < 0.5, "LZ4 should provide reasonable compression, got {}", ratio);
+    assert!(
+        compressed < original,
+        "Compressed size should be less than original"
+    );
+    assert!(
+        ratio < 0.5,
+        "LZ4 should provide reasonable compression, got {}",
+        ratio
+    );
 
-    println!("LZ4 compression: {}B -> {}B (ratio: {:.2}%)", original, compressed, ratio * 100.0);
+    println!(
+        "LZ4 compression: {}B -> {}B (ratio: {:.2}%)",
+        original,
+        compressed,
+        ratio * 100.0
+    );
 }
 
 #[test]
@@ -151,7 +184,10 @@ fn test_merkle_verification() {
 
     // Verify archive before corruption
     let reader = WarpReader::open(&archive).unwrap();
-    assert!(reader.verify().unwrap(), "Archive should verify successfully before corruption");
+    assert!(
+        reader.verify().unwrap(),
+        "Archive should verify successfully before corruption"
+    );
 
     // Get header info to find where data section is
     let header = reader.header();
@@ -194,13 +230,17 @@ fn test_merkle_verification() {
                             // If extraction succeeded with different data, that's acceptable
                             if let Some(content) = file1 {
                                 if content != "Hello, world!" {
-                                    println!("Corruption detected: extracted data differs from original");
+                                    println!(
+                                        "Corruption detected: extracted data differs from original"
+                                    );
                                     return;
                                 }
                             }
                         }
                         // If we get here, verification didn't catch the corruption
-                        println!("Warning: Merkle verification may not have detected corruption in this specific case");
+                        println!(
+                            "Warning: Merkle verification may not have detected corruption in this specific case"
+                        );
                     } else {
                         println!("Merkle verification correctly detected corruption");
                     }
@@ -242,11 +282,21 @@ fn test_large_file() {
     reader.extract_all(&extract).unwrap();
 
     let extracted_data = fs::read(extract.join("large.bin")).unwrap();
-    assert_eq!(extracted_data.len(), 10_000_000, "Extracted file size should match");
-    assert_eq!(extracted_data, large_data, "Extracted data should match original");
+    assert_eq!(
+        extracted_data.len(),
+        10_000_000,
+        "Extracted file size should match"
+    );
+    assert_eq!(
+        extracted_data, large_data,
+        "Extracted data should match original"
+    );
 
     // Verify integrity
-    assert!(reader.verify().unwrap(), "Large file archive should verify successfully");
+    assert!(
+        reader.verify().unwrap(),
+        "Large file archive should verify successfully"
+    );
 
     println!("Large file test: 10MB file archived and extracted successfully");
 }
@@ -287,7 +337,10 @@ fn test_many_files() {
     }
 
     // Verify integrity
-    assert!(reader.verify().unwrap(), "Many files archive should verify successfully");
+    assert!(
+        reader.verify().unwrap(),
+        "Many files archive should verify successfully"
+    );
 
     println!("Many files test: 100 files archived and extracted successfully");
 }
@@ -317,13 +370,18 @@ fn test_encrypted_archive() {
     let archive_bytes = fs::read(&archive).unwrap();
     let plaintext = b"This is secret data!";
     assert!(
-        !archive_bytes.windows(plaintext.len()).any(|w| w == plaintext),
+        !archive_bytes
+            .windows(plaintext.len())
+            .any(|w| w == plaintext),
         "Secret data should not appear in plaintext in archive"
     );
 
     // Decrypt and extract with correct password
     let reader = WarpReader::open_encrypted(&archive, key).unwrap();
-    assert!(reader.is_encrypted(), "Archive should be marked as encrypted");
+    assert!(
+        reader.is_encrypted(),
+        "Archive should be marked as encrypted"
+    );
 
     fs::create_dir_all(&extract).unwrap();
     reader.extract_all(&extract).unwrap();
@@ -336,7 +394,10 @@ fn test_encrypted_archive() {
     assert_eq!(password, "SuperSecretPassword123");
 
     // Verify integrity
-    assert!(reader.verify().unwrap(), "Encrypted archive should verify successfully");
+    assert!(
+        reader.verify().unwrap(),
+        "Encrypted archive should verify successfully"
+    );
 
     println!("Encrypted archive test: Files encrypted and decrypted successfully");
 }
@@ -390,7 +451,10 @@ fn test_encrypted_no_key_provided() {
     // Try to open without providing key
     let result = WarpReader::open(&archive);
 
-    assert!(result.is_err(), "Opening encrypted archive without key should fail");
+    assert!(
+        result.is_err(),
+        "Opening encrypted archive without key should fail"
+    );
     println!("No key test: Opening encrypted archive without key correctly failed");
 }
 
@@ -414,7 +478,11 @@ fn test_empty_directory() {
 
     // Extract
     let reader = WarpReader::open(&archive).unwrap();
-    assert_eq!(reader.file_count(), 0, "Empty directory should have 0 files");
+    assert_eq!(
+        reader.file_count(),
+        0,
+        "Empty directory should have 0 files"
+    );
 
     fs::create_dir_all(&extract).unwrap();
     reader.extract_all(&extract).unwrap();
@@ -457,7 +525,11 @@ fn test_unicode_filenames() {
 
     // Extract and verify
     let reader = WarpReader::open(&archive).unwrap();
-    assert_eq!(reader.file_count(), unicode_files.len(), "Should have all unicode files");
+    assert_eq!(
+        reader.file_count(),
+        unicode_files.len(),
+        "Should have all unicode files"
+    );
 
     fs::create_dir_all(&extract).unwrap();
     reader.extract_all(&extract).unwrap();
@@ -465,13 +537,23 @@ fn test_unicode_filenames() {
     // Verify all unicode files
     for (filename, expected_content) in &unicode_files {
         let actual = fs::read_to_string(extract.join(filename)).unwrap();
-        assert_eq!(&actual, expected_content, "Unicode file {} content mismatch", filename);
+        assert_eq!(
+            &actual, expected_content,
+            "Unicode file {} content mismatch",
+            filename
+        );
     }
 
     // Verify integrity
-    assert!(reader.verify().unwrap(), "Unicode archive should verify successfully");
+    assert!(
+        reader.verify().unwrap(),
+        "Unicode archive should verify successfully"
+    );
 
-    println!("Unicode test: {} files with unicode names archived successfully", unicode_files.len());
+    println!(
+        "Unicode test: {} files with unicode names archived successfully",
+        unicode_files.len()
+    );
 }
 
 #[test]
@@ -513,7 +595,9 @@ fn test_mixed_compressibility() {
     // Verify integrity
     assert!(reader.verify().unwrap());
 
-    println!("Mixed compressibility test: Both compressible and incompressible files handled correctly");
+    println!(
+        "Mixed compressibility test: Both compressible and incompressible files handled correctly"
+    );
 }
 
 #[test]
@@ -537,8 +621,14 @@ fn test_archive_with_no_compression() {
     let (original, compressed, ratio) = reader.stats();
 
     // With no compression, sizes should be equal
-    assert_eq!(original, compressed, "No compression should have equal original and compressed sizes");
-    assert!((ratio - 1.0).abs() < 0.01, "Compression ratio should be ~1.0");
+    assert_eq!(
+        original, compressed,
+        "No compression should have equal original and compressed sizes"
+    );
+    assert!(
+        (ratio - 1.0).abs() < 0.01,
+        "Compression ratio should be ~1.0"
+    );
 
     fs::create_dir_all(&extract).unwrap();
     reader.extract_all(&extract).unwrap();
@@ -566,13 +656,25 @@ fn test_verify_individual_file() {
     // Open and verify individual files
     let reader = WarpReader::open(&archive).unwrap();
 
-    assert!(reader.verify_file("file1.txt").unwrap(), "file1.txt should verify");
-    assert!(reader.verify_file("file2.txt").unwrap(), "file2.txt should verify");
-    assert!(reader.verify_file("subdir/nested.txt").unwrap(), "subdir/nested.txt should verify");
+    assert!(
+        reader.verify_file("file1.txt").unwrap(),
+        "file1.txt should verify"
+    );
+    assert!(
+        reader.verify_file("file2.txt").unwrap(),
+        "file2.txt should verify"
+    );
+    assert!(
+        reader.verify_file("subdir/nested.txt").unwrap(),
+        "subdir/nested.txt should verify"
+    );
 
     // Try to verify non-existent file
     let result = reader.verify_file("nonexistent.txt");
-    assert!(result.is_err(), "Verifying non-existent file should return error");
+    assert!(
+        result.is_err(),
+        "Verifying non-existent file should return error"
+    );
 
     println!("Individual file verification test: All files verified successfully");
 }
@@ -599,7 +701,11 @@ fn test_archive_metadata() {
     assert!(reader.chunk_count() > 0, "Should have at least one chunk");
 
     let header = reader.header();
-    assert_eq!(header.compression, Compression::Zstd, "Should use Zstd compression");
+    assert_eq!(
+        header.compression,
+        Compression::Zstd,
+        "Should use Zstd compression"
+    );
     assert_eq!(header.total_files, 3, "Header should report 3 files");
 
     // Verify all files can be listed
@@ -644,7 +750,10 @@ fn test_encrypted_with_compression() {
 
     // Archive should be both encrypted and compressed
     let archive_size = fs::metadata(&archive).unwrap().len();
-    assert!(archive_size < 50_000, "Encrypted + compressed archive should be smaller than original");
+    assert!(
+        archive_size < 50_000,
+        "Encrypted + compressed archive should be smaller than original"
+    );
 
     println!("Encrypted with compression test: Data is both encrypted and compressed");
 }

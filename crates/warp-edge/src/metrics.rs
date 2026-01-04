@@ -208,8 +208,7 @@ impl RttEstimator {
                 // RFC 6298: subsequent samples
                 let rtt_diff = (m.srtt_us as i64 - rtt_us as i64).abs() as u64;
                 m.rttvar_us =
-                    ((1.0 - Self::BETA) * m.rttvar_us as f64 + Self::BETA * rtt_diff as f64)
-                        as u64;
+                    ((1.0 - Self::BETA) * m.rttvar_us as f64 + Self::BETA * rtt_diff as f64) as u64;
                 m.srtt_us =
                     ((1.0 - Self::ALPHA) * m.srtt_us as f64 + Self::ALPHA * rtt_us as f64) as u64;
 
@@ -419,9 +418,7 @@ mod tests {
         let edge = test_edge(1);
 
         assert!(estimator.estimate_upload_time(&edge, 1_000_000).is_none());
-        assert!(estimator
-            .estimate_download_time(&edge, 1_000_000)
-            .is_none());
+        assert!(estimator.estimate_download_time(&edge, 1_000_000).is_none());
     }
 
     #[test]

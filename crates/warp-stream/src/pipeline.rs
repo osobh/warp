@@ -15,7 +15,7 @@
 
 use std::sync::Arc;
 use std::time::Instant;
-use tokio::io::{AsyncRead, AsyncWrite, AsyncReadExt, AsyncWriteExt};
+use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use tokio::sync::mpsc;
 use tracing::{debug, info, trace, warn};
 
@@ -132,9 +132,7 @@ pub struct Pipeline {
 impl Pipeline {
     /// Create a new pipeline with given configuration
     pub fn new(config: StreamConfig) -> Result<Self> {
-        PipelineBuilder::new()
-            .with_config(config)
-            .build()
+        PipelineBuilder::new().with_config(config).build()
     }
 
     /// Create a pipeline builder
@@ -171,15 +169,25 @@ impl Pipeline {
         // Spawn input stage
         let input_stats = Arc::clone(&stats);
         let input_config = config.clone();
-        let input_handle = tokio::spawn(async move {
-            input_stage(input, input_tx, input_config, input_stats).await
-        });
+        let input_handle =
+            tokio::spawn(
+                async move { input_stage(input, input_tx, input_config, input_stats).await },
+            );
 
         // Spawn process stage
         let process_stats = Arc::clone(&stats);
         let process_config = config.clone();
         let process_handle = tokio::spawn(async move {
-            process_stage(input_rx, process_tx, key, nonce, process_config, process_stats, crypto_ctx).await
+            process_stage(
+                input_rx,
+                process_tx,
+                key,
+                nonce,
+                process_config,
+                process_stats,
+                crypto_ctx,
+            )
+            .await
         });
 
         // Spawn output stage
@@ -191,10 +199,9 @@ impl Pipeline {
 
         // Wait for all stages to complete
         let (input_result, process_result, output_result) =
-            tokio::try_join!(input_handle, process_handle, output_handle)
-                .map_err(|e| StreamError::IoError(std::io::Error::other(
-                    format!("Task join error: {}", e)
-                )))?;
+            tokio::try_join!(input_handle, process_handle, output_handle).map_err(|e| {
+                StreamError::IoError(std::io::Error::other(format!("Task join error: {}", e)))
+            })?;
 
         // Propagate any errors
         input_result?;
@@ -295,14 +302,20 @@ async fn process_stage(
             process_time: start,
         };
 
-        trace!("Process stage: encrypted chunk {} ({} -> {} bytes)",
-               chunk.seq, chunk.data.len(), processed.data.len());
+        trace!(
+            "Process stage: encrypted chunk {} ({} -> {} bytes)",
+            chunk.seq,
+            chunk.data.len(),
+            processed.data.len()
+        );
 
         // Check latency target
         let total_latency = chunk.input_time.elapsed();
         if total_latency > config.target_latency {
-            warn!("Latency target exceeded: {:?} > {:?}",
-                  total_latency, config.target_latency);
+            warn!(
+                "Latency target exceeded: {:?} > {:?}",
+                total_latency, config.target_latency
+            );
         }
 
         // Send to output stage
@@ -326,7 +339,9 @@ async fn output_stage<W: AsyncWrite + Unpin>(
         let start = Instant::now();
 
         // Write the chunk
-        output.write_all(&chunk.data).await
+        output
+            .write_all(&chunk.data)
+            .await
             .map_err(StreamError::IoError)?;
 
         let latency = start.elapsed();
@@ -336,13 +351,19 @@ async fn output_stage<W: AsyncWrite + Unpin>(
         stats.record_completed();
 
         let total_latency = chunk.input_time.elapsed();
-        trace!("Output stage: wrote chunk {} ({} bytes, total latency: {:?})",
-               chunk.seq, chunk.data.len(), total_latency);
+        trace!(
+            "Output stage: wrote chunk {} ({} bytes, total latency: {:?})",
+            chunk.seq,
+            chunk.data.len(),
+            total_latency
+        );
 
         // Check latency target
         if total_latency > config.target_latency {
-            warn!("End-to-end latency exceeded: {:?} > {:?}",
-                  total_latency, config.target_latency);
+            warn!(
+                "End-to-end latency exceeded: {:?} > {:?}",
+                total_latency, config.target_latency
+            );
         }
     }
 

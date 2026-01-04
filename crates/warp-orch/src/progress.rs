@@ -65,7 +65,8 @@ impl SpeedEstimator {
         if self.current_speed_bps == 0.0 {
             self.current_speed_bps = speed_bps;
         } else {
-            self.current_speed_bps = self.alpha * speed_bps + (1.0 - self.alpha) * self.current_speed_bps;
+            self.current_speed_bps =
+                self.alpha * speed_bps + (1.0 - self.alpha) * self.current_speed_bps;
         }
 
         self.last_update = Some(Instant::now());
@@ -432,7 +433,9 @@ mod tests {
         progress.status = TransferStatus::Completed;
         assert!(progress.is_complete());
 
-        progress.status = TransferStatus::Failed { reason: "test".to_string() };
+        progress.status = TransferStatus::Failed {
+            reason: "test".to_string(),
+        };
         assert!(progress.is_complete());
 
         progress.status = TransferStatus::Cancelled;

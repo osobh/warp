@@ -7,19 +7,19 @@ use std::collections::HashMap;
 use std::sync::RwLock;
 
 use aes_gcm::{
-    aead::{Aead, KeyInit},
     Aes256Gcm, Nonce,
+    aead::{Aead, KeyInit},
 };
 use async_trait::async_trait;
 use chrono::Utc;
 use rand::RngCore;
-use sha2::{Sha256, Digest};
+use sha2::{Digest, Sha256};
 use tracing::{debug, info, warn};
 use uuid::Uuid;
 
+use crate::KmsProvider;
 use crate::error::{KmsError, KmsResult};
 use crate::key::{DataKey, KeyAlgorithm, KeyMetadata, KeyState, MasterKey};
-use crate::KmsProvider;
 
 /// Local KMS implementation
 ///
@@ -139,7 +139,7 @@ impl LocalKms {
             match meta.state {
                 KeyState::Disabled => return Err(KmsError::KeyDisabled(key_id.to_string())),
                 KeyState::PendingDeletion => {
-                    return Err(KmsError::KeyPendingDeletion(key_id.to_string()))
+                    return Err(KmsError::KeyPendingDeletion(key_id.to_string()));
                 }
                 _ => return Err(KmsError::InvalidKeyState(format!("{:?}", meta.state))),
             }
@@ -161,7 +161,12 @@ impl LocalKms {
 
         let material = self.decrypt_key_material(&encrypted.ciphertext, &encrypted.nonce)?;
 
-        Ok(MasterKey::new(key_id.to_string(), version, material, algorithm))
+        Ok(MasterKey::new(
+            key_id.to_string(),
+            version,
+            material,
+            algorithm,
+        ))
     }
 
     /// Get a specific version of a master key
@@ -186,7 +191,12 @@ impl LocalKms {
 
         let material = self.decrypt_key_material(&encrypted.ciphertext, &encrypted.nonce)?;
 
-        Ok(MasterKey::new(key_id.to_string(), version, material, algorithm))
+        Ok(MasterKey::new(
+            key_id.to_string(),
+            version,
+            material,
+            algorithm,
+        ))
     }
 
     /// Encrypt data using a cipher based on algorithm
@@ -227,7 +237,10 @@ impl LocalKms {
                 let nonce = Nonce::from_slice(&nonce_bytes);
 
                 let ciphertext = cipher.encrypt(nonce, plaintext).map_err(|e| {
-                    KmsError::EncryptionFailed(format!("ChaCha20-Poly1305 encryption failed: {}", e))
+                    KmsError::EncryptionFailed(format!(
+                        "ChaCha20-Poly1305 encryption failed: {}",
+                        e
+                    ))
                 })?;
 
                 // Prepend nonce to ciphertext
@@ -272,7 +285,10 @@ impl LocalKms {
                 })?;
 
                 cipher.decrypt(nonce, actual_ciphertext).map_err(|e| {
-                    KmsError::DecryptionFailed(format!("ChaCha20-Poly1305 decryption failed: {}", e))
+                    KmsError::DecryptionFailed(format!(
+                        "ChaCha20-Poly1305 decryption failed: {}",
+                        e
+                    ))
                 })
             }
         }

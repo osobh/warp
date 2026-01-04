@@ -60,7 +60,10 @@ use warp_ec::{ErasureConfig, ErasureDecoder, ErasureEncoder};
 use crate::backend::{HpcStorageBackend, StorageBackend, StorageProof};
 use crate::error::{Error, Result};
 use crate::key::ObjectKey;
-use crate::object::{FieldData, ListOptions, ObjectData, ObjectEntry, ObjectList, ObjectMeta, PutOptions, StorageClass};
+use crate::object::{
+    FieldData, ListOptions, ObjectData, ObjectEntry, ObjectList, ObjectMeta, PutOptions,
+    StorageClass,
+};
 
 /// Erasure coding configuration for storage
 #[derive(Debug, Clone)]
@@ -74,6 +77,13 @@ pub struct StoreErasureConfig {
 impl StoreErasureConfig {
     /// Create a new erasure config
     pub fn new(data_shards: usize, parity_shards: usize) -> Result<Self> {
+        debug_assert!(data_shards > 0, "data_shards must be positive");
+        debug_assert!(parity_shards > 0, "parity_shards must be positive");
+        debug_assert!(
+            data_shards + parity_shards <= 256,
+            "total shards {} exceeds maximum 256",
+            data_shards + parity_shards
+        );
         let inner = ErasureConfig::new(data_shards, parity_shards)
             .map_err(|e| Error::Backend(format!("invalid erasure config: {}", e)))?;
         Ok(Self {
@@ -229,12 +239,14 @@ impl ErasureBackend {
 
     /// Path for object metadata
     fn meta_path(&self, key: &ObjectKey) -> PathBuf {
-        self.bucket_path(key.bucket()).join(format!("{}.meta", key.key()))
+        self.bucket_path(key.bucket())
+            .join(format!("{}.meta", key.key()))
     }
 
     /// Path for a shard
     fn shard_path(&self, key: &ObjectKey, shard_index: usize) -> PathBuf {
-        self.bucket_path(key.bucket()).join(format!("{}.shard.{}", key.key(), shard_index))
+        self.bucket_path(key.bucket())
+            .join(format!("{}.shard.{}", key.key(), shard_index))
     }
 
     /// Read shard metadata
@@ -318,7 +330,11 @@ impl ErasureBackend {
     /// Encode data into shards without storing
     ///
     /// Returns (shards, metadata) for distributed placement.
-    pub fn encode_to_shards(&self, data: &[u8], content_type: Option<String>) -> Result<(Vec<Vec<u8>>, EncodedShardMeta)> {
+    pub fn encode_to_shards(
+        &self,
+        data: &[u8],
+        content_type: Option<String>,
+    ) -> Result<(Vec<Vec<u8>>, EncodedShardMeta)> {
         let original_size = data.len();
         let content_hash = *blake3::hash(data).as_bytes();
 
@@ -328,7 +344,9 @@ impl ErasureBackend {
         padded.resize(padded_size, 0);
 
         // Encode to shards
-        let shards = self.encoder.encode(&padded)
+        let shards = self
+            .encoder
+            .encode(&padded)
             .map_err(|e| Error::ErasureCoding(format!("encode failed: {}", e)))?;
 
         let meta = EncodedShardMeta {
@@ -348,7 +366,11 @@ impl ErasureBackend {
     ///
     /// Takes a sparse array of shards (Some for available, None for missing).
     /// Needs at least `data_shards` available to reconstruct.
-    pub fn decode_from_shards(&self, shards: &[Option<Vec<u8>>], original_size: u64) -> Result<Vec<u8>> {
+    pub fn decode_from_shards(
+        &self,
+        shards: &[Option<Vec<u8>>],
+        original_size: u64,
+    ) -> Result<Vec<u8>> {
         // Count available shards
         let available = shards.iter().filter(|s| s.is_some()).count();
         if available < self.config.data_shards() {
@@ -360,7 +382,9 @@ impl ErasureBackend {
         }
 
         // Decode
-        let padded = self.decoder.decode(shards)
+        let padded = self
+            .decoder
+            .decode(shards)
             .map_err(|e| Error::ErasureCoding(format!("decode failed: {}", e)))?;
 
         // Trim padding
@@ -447,17 +471,22 @@ impl ErasureBackend {
         }
 
         // Decode to get original data
-        let original = self.decoder.decode(&shards)
+        let original = self
+            .decoder
+            .decode(&shards)
             .map_err(|e| Error::Backend(format!("decode failed: {}", e)))?;
 
         // Re-encode to regenerate all shards
-        let new_shards = self.encoder.encode(&original)
+        let new_shards = self
+            .encoder
+            .encode(&original)
             .map_err(|e| Error::Backend(format!("encode failed: {}", e)))?;
 
         // Write missing shards
         let mut repaired = 0;
         for &missing_idx in &health.missing_shards {
-            self.write_shard(key, missing_idx, &new_shards[missing_idx]).await?;
+            self.write_shard(key, missing_idx, &new_shards[missing_idx])
+                .await?;
             repaired += 1;
         }
 
@@ -488,10 +517,13 @@ pub struct ShardHealth {
 impl StorageBackend for ErasureBackend {
     async fn get(&self, key: &ObjectKey) -> Result<ObjectData> {
         // Read metadata
-        let meta = self.read_meta(key).await.map_err(|_| Error::ObjectNotFound {
-            bucket: key.bucket().to_string(),
-            key: key.key().to_string(),
-        })?;
+        let meta = self
+            .read_meta(key)
+            .await
+            .map_err(|_| Error::ObjectNotFound {
+                bucket: key.bucket().to_string(),
+                key: key.key().to_string(),
+            })?;
 
         let total = meta.data_shards + meta.parity_shards;
 
@@ -515,7 +547,9 @@ impl StorageBackend for ErasureBackend {
         }
 
         // Decode
-        let padded = self.decoder.decode(&shards)
+        let padded = self
+            .decoder
+            .decode(&shards)
             .map_err(|e| Error::Backend(format!("decode failed: {}", e)))?;
 
         // Trim padding
@@ -546,7 +580,9 @@ impl StorageBackend for ErasureBackend {
         padded.resize(padded_size, 0);
 
         // Encode to shards
-        let shards = self.encoder.encode(&padded)
+        let shards = self
+            .encoder
+            .encode(&padded)
             .map_err(|e| Error::Backend(format!("encode failed: {}", e)))?;
 
         // Write all shards
@@ -672,10 +708,13 @@ impl StorageBackend for ErasureBackend {
     }
 
     async fn head(&self, key: &ObjectKey) -> Result<ObjectMeta> {
-        let meta = self.read_meta(key).await.map_err(|_| Error::ObjectNotFound {
-            bucket: key.bucket().to_string(),
-            key: key.key().to_string(),
-        })?;
+        let meta = self
+            .read_meta(key)
+            .await
+            .map_err(|_| Error::ObjectNotFound {
+                bucket: key.bucket().to_string(),
+                key: key.key().to_string(),
+            })?;
 
         Ok(ObjectMeta {
             size: meta.original_size,
@@ -734,7 +773,8 @@ impl HpcStorageBackend for ErasureBackend {
         gpu_buffer: &warp_gpu::GpuBuffer<u8>,
     ) -> Result<ObjectMeta> {
         // Copy from GPU to CPU then store with erasure coding
-        let buffer = gpu_buffer.copy_to_host()
+        let buffer = gpu_buffer
+            .copy_to_host()
             .map_err(|e| Error::Backend(format!("GPU copy failed: {}", e)))?;
 
         let data = ObjectData::from(buffer);
@@ -766,7 +806,10 @@ mod tests {
         // Put object
         let key = ObjectKey::new("test", "hello.txt").unwrap();
         let data = b"Hello, erasure coding!".to_vec();
-        let meta = backend.put(&key, ObjectData::from(data.clone()), PutOptions::default()).await.unwrap();
+        let meta = backend
+            .put(&key, ObjectData::from(data.clone()), PutOptions::default())
+            .await
+            .unwrap();
 
         assert_eq!(meta.size, data.len() as u64);
 
@@ -794,7 +837,10 @@ mod tests {
         // Put object (data must be divisible by 4 for RS(4,2))
         let key = ObjectKey::new("test", "recoverable.bin").unwrap();
         let data: Vec<u8> = (0..1024).map(|i| (i % 256) as u8).collect();
-        backend.put(&key, ObjectData::from(data.clone()), PutOptions::default()).await.unwrap();
+        backend
+            .put(&key, ObjectData::from(data.clone()), PutOptions::default())
+            .await
+            .unwrap();
 
         // Delete 2 shards (max we can lose with RS(4,2))
         let shard0_path = backend.shard_path(&key, 0);
@@ -817,7 +863,10 @@ mod tests {
 
         let key = ObjectKey::new("test", "health.bin").unwrap();
         let data: Vec<u8> = (0..256).map(|i| (i % 256) as u8).collect();
-        backend.put(&key, ObjectData::from(data), PutOptions::default()).await.unwrap();
+        backend
+            .put(&key, ObjectData::from(data), PutOptions::default())
+            .await
+            .unwrap();
 
         // Check health - all shards present
         let health = backend.shard_health(&key).await.unwrap();
@@ -827,7 +876,9 @@ mod tests {
         assert!(health.can_recover);
 
         // Delete one shard
-        tokio::fs::remove_file(backend.shard_path(&key, 2)).await.unwrap();
+        tokio::fs::remove_file(backend.shard_path(&key, 2))
+            .await
+            .unwrap();
 
         let health = backend.shard_health(&key).await.unwrap();
         assert_eq!(health.available_shards, 5);
@@ -845,11 +896,18 @@ mod tests {
 
         let key = ObjectKey::new("test", "repair.bin").unwrap();
         let data: Vec<u8> = (0..256).map(|i| (i % 256) as u8).collect();
-        backend.put(&key, ObjectData::from(data.clone()), PutOptions::default()).await.unwrap();
+        backend
+            .put(&key, ObjectData::from(data.clone()), PutOptions::default())
+            .await
+            .unwrap();
 
         // Delete shards
-        tokio::fs::remove_file(backend.shard_path(&key, 1)).await.unwrap();
-        tokio::fs::remove_file(backend.shard_path(&key, 4)).await.unwrap();
+        tokio::fs::remove_file(backend.shard_path(&key, 1))
+            .await
+            .unwrap();
+        tokio::fs::remove_file(backend.shard_path(&key, 4))
+            .await
+            .unwrap();
 
         // Repair
         let repaired = backend.repair_shards(&key).await.unwrap();
@@ -875,12 +933,21 @@ mod tests {
 
         let key = ObjectKey::new("test", "unrecoverable.bin").unwrap();
         let data: Vec<u8> = (0..256).map(|i| (i % 256) as u8).collect();
-        backend.put(&key, ObjectData::from(data), PutOptions::default()).await.unwrap();
+        backend
+            .put(&key, ObjectData::from(data), PutOptions::default())
+            .await
+            .unwrap();
 
         // Delete 3 shards (more than parity count of 2)
-        tokio::fs::remove_file(backend.shard_path(&key, 0)).await.unwrap();
-        tokio::fs::remove_file(backend.shard_path(&key, 1)).await.unwrap();
-        tokio::fs::remove_file(backend.shard_path(&key, 2)).await.unwrap();
+        tokio::fs::remove_file(backend.shard_path(&key, 0))
+            .await
+            .unwrap();
+        tokio::fs::remove_file(backend.shard_path(&key, 1))
+            .await
+            .unwrap();
+        tokio::fs::remove_file(backend.shard_path(&key, 2))
+            .await
+            .unwrap();
 
         // Should fail to recover
         let result = backend.get(&key).await;

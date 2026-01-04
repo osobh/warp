@@ -228,27 +228,21 @@ impl TensorData {
     /// Create tensor from f32 slice
     pub fn from_f32(name: impl Into<String>, shape: Vec<usize>, data: &[f32]) -> Self {
         let meta = TensorMeta::new(name, shape, TensorDtype::Float32);
-        let bytes: Vec<u8> = data.iter()
-            .flat_map(|f| f.to_le_bytes())
-            .collect();
+        let bytes: Vec<u8> = data.iter().flat_map(|f| f.to_le_bytes()).collect();
         Self::new(meta, Bytes::from(bytes))
     }
 
     /// Create tensor from f64 slice
     pub fn from_f64(name: impl Into<String>, shape: Vec<usize>, data: &[f64]) -> Self {
         let meta = TensorMeta::new(name, shape, TensorDtype::Float64);
-        let bytes: Vec<u8> = data.iter()
-            .flat_map(|f| f.to_le_bytes())
-            .collect();
+        let bytes: Vec<u8> = data.iter().flat_map(|f| f.to_le_bytes()).collect();
         Self::new(meta, Bytes::from(bytes))
     }
 
     /// Create tensor from i32 slice
     pub fn from_i32(name: impl Into<String>, shape: Vec<usize>, data: &[i32]) -> Self {
         let meta = TensorMeta::new(name, shape, TensorDtype::Int32);
-        let bytes: Vec<u8> = data.iter()
-            .flat_map(|i| i.to_le_bytes())
-            .collect();
+        let bytes: Vec<u8> = data.iter().flat_map(|i| i.to_le_bytes()).collect();
         Self::new(meta, Bytes::from(bytes))
     }
 
@@ -264,7 +258,7 @@ impl TensorData {
                     let arr: [u8; 4] = chunk.try_into().unwrap();
                     f32::from_le_bytes(arr)
                 })
-                .collect()
+                .collect(),
         )
     }
 
@@ -280,7 +274,7 @@ impl TensorData {
                     let arr: [u8; 8] = chunk.try_into().unwrap();
                     f64::from_le_bytes(arr)
                 })
-                .collect()
+                .collect(),
         )
     }
 

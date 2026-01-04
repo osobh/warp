@@ -9,8 +9,8 @@ use parking_lot::RwLock;
 use tracing::{debug, error, info, warn};
 
 use super::detector::{PartitionInfo, PartitionState};
-use super::fencing::{FencingManager, FenceAction};
-use super::vote::{NodeId, VoteTracker, QuorumStatus};
+use super::fencing::{FenceAction, FencingManager};
+use super::vote::{NodeId, QuorumStatus, VoteTracker};
 use crate::replication::DomainId;
 
 /// State of recovery
@@ -318,10 +318,7 @@ pub struct RecoveryRecord {
 
 impl RecoveryCoordinator {
     /// Create a new recovery coordinator
-    pub fn new(
-        vote_tracker: Arc<VoteTracker>,
-        fencing_manager: Arc<FencingManager>,
-    ) -> Self {
+    pub fn new(vote_tracker: Arc<VoteTracker>, fencing_manager: Arc<FencingManager>) -> Self {
         Self {
             config: RecoveryConfig::default(),
             state: RwLock::new(RecoveryState::Idle),
@@ -353,7 +350,10 @@ impl RecoveryCoordinator {
     }
 
     /// Start recovery from a partition event
-    pub async fn start_recovery(&self, partition_info: &PartitionInfo) -> Result<RecoveryPlan, String> {
+    pub async fn start_recovery(
+        &self,
+        partition_info: &PartitionInfo,
+    ) -> Result<RecoveryPlan, String> {
         let mut state = self.state.write();
         if *state != RecoveryState::Idle {
             return Err("Recovery already in progress".to_string());
@@ -531,9 +531,16 @@ impl RecoveryCoordinator {
                     error!(step = ?step.step_type, error = %e, "Recovery step failed");
 
                     // Record failure
-                    self.record_recovery(plan.id, false, plan.involved_nodes.clone(),
-                        conflicts_detected, conflicts_resolved, bytes_synced,
-                        start.elapsed(), Some(e.clone()));
+                    self.record_recovery(
+                        plan.id,
+                        false,
+                        plan.involved_nodes.clone(),
+                        conflicts_detected,
+                        conflicts_resolved,
+                        bytes_synced,
+                        start.elapsed(),
+                        Some(e.clone()),
+                    );
 
                     *self.state.write() = RecoveryState::Failed;
                     return Err(e);
@@ -542,9 +549,16 @@ impl RecoveryCoordinator {
         }
 
         // Record success
-        self.record_recovery(plan.id, true, plan.involved_nodes.clone(),
-            conflicts_detected, conflicts_resolved, bytes_synced,
-            start.elapsed(), None);
+        self.record_recovery(
+            plan.id,
+            true,
+            plan.involved_nodes.clone(),
+            conflicts_detected,
+            conflicts_resolved,
+            bytes_synced,
+            start.elapsed(),
+            None,
+        );
 
         *self.state.write() = RecoveryState::Complete;
         *self.current_plan.write() = None;
@@ -682,14 +696,12 @@ impl RecoveryCoordinator {
                     resolved_at: SystemTime::now(),
                 })
             }
-            ConflictStrategy::KeepBoth => {
-                Ok(ConflictResolution {
-                    strategy: ConflictStrategy::KeepBoth,
-                    winner: None,
-                    kept_both: true,
-                    resolved_at: SystemTime::now(),
-                })
-            }
+            ConflictStrategy::KeepBoth => Ok(ConflictResolution {
+                strategy: ConflictStrategy::KeepBoth,
+                winner: None,
+                kept_both: true,
+                resolved_at: SystemTime::now(),
+            }),
             _ => {
                 // Default to last write wins for other strategies
                 self.resolve_conflict(&Conflict {

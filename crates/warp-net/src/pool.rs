@@ -14,9 +14,9 @@
 //! - Pre-warming avoids cold-start allocations
 
 use bytes::BytesMut;
+use parking_lot::Mutex;
 use std::cell::RefCell;
 use std::ops::{Deref, DerefMut};
-use std::sync::Mutex;
 
 /// Small buffer size for control frames
 pub const SMALL_BUF_SIZE: usize = 256;
@@ -62,6 +62,12 @@ impl LocalBufferCache {
     }
 
     fn return_small(&mut self, buf: BytesMut) -> Option<BytesMut> {
+        debug_assert!(
+            buf.capacity() >= SMALL_BUF_SIZE,
+            "returning buffer with capacity {} to small pool (expected >= {})",
+            buf.capacity(),
+            SMALL_BUF_SIZE
+        );
         if self.small.len() < MAX_LOCAL_CACHE_SIZE {
             self.small.push(buf);
             None
@@ -118,6 +124,24 @@ impl FrameBufferPool {
 
     /// Create a pre-warmed pool with initial buffers
     pub fn with_capacity(small_count: usize, medium_count: usize, large_count: usize) -> Self {
+        debug_assert!(
+            small_count <= MAX_POOL_SIZE,
+            "small_count {} exceeds MAX_POOL_SIZE {}",
+            small_count,
+            MAX_POOL_SIZE
+        );
+        debug_assert!(
+            medium_count <= MAX_POOL_SIZE,
+            "medium_count {} exceeds MAX_POOL_SIZE {}",
+            medium_count,
+            MAX_POOL_SIZE
+        );
+        debug_assert!(
+            large_count <= MAX_POOL_SIZE,
+            "large_count {} exceeds MAX_POOL_SIZE {}",
+            large_count,
+            MAX_POOL_SIZE
+        );
         let small = (0..small_count)
             .map(|_| BytesMut::with_capacity(SMALL_BUF_SIZE))
             .collect();
@@ -146,7 +170,6 @@ impl FrameBufferPool {
             // Fall back to global pool (requires lock)
             self.small
                 .lock()
-                .expect("small buffer pool lock poisoned")
                 .pop()
                 .unwrap_or_else(|| BytesMut::with_capacity(SMALL_BUF_SIZE))
         });
@@ -163,7 +186,6 @@ impl FrameBufferPool {
         let buf = buf.unwrap_or_else(|| {
             self.medium
                 .lock()
-                .expect("medium buffer pool lock poisoned")
                 .pop()
                 .unwrap_or_else(|| BytesMut::with_capacity(MEDIUM_BUF_SIZE))
         });
@@ -180,7 +202,6 @@ impl FrameBufferPool {
         let buf = buf.unwrap_or_else(|| {
             self.large
                 .lock()
-                .expect("large buffer pool lock poisoned")
                 .pop()
                 .unwrap_or_else(|| BytesMut::with_capacity(LARGE_BUF_SIZE))
         });
@@ -226,7 +247,7 @@ impl FrameBufferPool {
                 BufferTier::Large => &self.large,
             };
 
-            let mut guard = pool.lock().expect("buffer pool lock poisoned");
+            let mut guard = pool.lock();
             if guard.len() < MAX_POOL_SIZE {
                 guard.push(buf);
             }
@@ -237,9 +258,9 @@ impl FrameBufferPool {
     /// Get pool statistics
     pub fn stats(&self) -> PoolStats {
         PoolStats {
-            small_available: self.small.lock().expect("small pool lock poisoned").len(),
-            medium_available: self.medium.lock().expect("medium pool lock poisoned").len(),
-            large_available: self.large.lock().expect("large pool lock poisoned").len(),
+            small_available: self.small.lock().len(),
+            medium_available: self.medium.lock().len(),
+            large_available: self.large.lock().len(),
         }
     }
 }

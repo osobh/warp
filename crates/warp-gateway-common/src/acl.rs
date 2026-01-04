@@ -147,7 +147,10 @@ impl AclPermissions {
             perms = perms.with(Self::READ_DATA).with(Self::READ_ATTRS);
         }
         if bits & 0o2 != 0 {
-            perms = perms.with(Self::WRITE_DATA).with(Self::APPEND_DATA).with(Self::WRITE_ATTRS);
+            perms = perms
+                .with(Self::WRITE_DATA)
+                .with(Self::APPEND_DATA)
+                .with(Self::WRITE_ATTRS);
         }
         if bits & 0o1 != 0 {
             perms = perms.with(Self::EXECUTE);
@@ -189,7 +192,11 @@ pub struct AclEntry {
 
 impl AclEntry {
     /// Create a new ACL entry
-    pub fn new(principal: PrincipalId, access_type: AccessType, permissions: AclPermissions) -> Self {
+    pub fn new(
+        principal: PrincipalId,
+        access_type: AccessType,
+        permissions: AclPermissions,
+    ) -> Self {
         Self {
             principal,
             access_type,
@@ -333,14 +340,18 @@ impl AclTranslator {
         let mut sd = WindowsSecurityDescriptor::default();
 
         // Map owner UID to SID (or create synthetic)
-        sd.owner_sid = self.uid_to_sid.get(&uid).cloned().or_else(|| {
-            Some(self.create_posix_sid(uid, false))
-        });
+        sd.owner_sid = self
+            .uid_to_sid
+            .get(&uid)
+            .cloned()
+            .or_else(|| Some(self.create_posix_sid(uid, false)));
 
         // Map group GID to SID
-        sd.group_sid = self.gid_to_sid.get(&gid).cloned().or_else(|| {
-            Some(self.create_posix_sid(gid, true))
-        });
+        sd.group_sid = self
+            .gid_to_sid
+            .get(&gid)
+            .cloned()
+            .or_else(|| Some(self.create_posix_sid(gid, true)));
 
         // Convert mode bits to DACL
         // Owner ACE
@@ -371,18 +382,28 @@ impl AclTranslator {
     /// Convert Windows security descriptor to POSIX mode, uid, gid
     pub fn windows_to_posix(&self, sd: &WindowsSecurityDescriptor) -> (u32, u32, u32) {
         // Extract UID from owner SID
-        let uid = sd.owner_sid.as_ref().and_then(|sid| {
-            self.sid_to_uid.get(sid).copied().or_else(|| {
-                self.extract_posix_id(sid, false)
+        let uid = sd
+            .owner_sid
+            .as_ref()
+            .and_then(|sid| {
+                self.sid_to_uid
+                    .get(sid)
+                    .copied()
+                    .or_else(|| self.extract_posix_id(sid, false))
             })
-        }).unwrap_or(0);
+            .unwrap_or(0);
 
         // Extract GID from group SID
-        let gid = sd.group_sid.as_ref().and_then(|sid| {
-            self.sid_to_gid.get(sid).copied().or_else(|| {
-                self.extract_posix_id(sid, true)
+        let gid = sd
+            .group_sid
+            .as_ref()
+            .and_then(|sid| {
+                self.sid_to_gid
+                    .get(sid)
+                    .copied()
+                    .or_else(|| self.extract_posix_id(sid, true))
             })
-        }).unwrap_or(0);
+            .unwrap_or(0);
 
         // Calculate mode from DACL
         let mut mode = 0u32;

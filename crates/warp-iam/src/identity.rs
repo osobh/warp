@@ -7,9 +7,9 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
+use crate::Credentials;
 use crate::error::Result;
 use crate::policy::PolicyDocument;
-use crate::Credentials;
 
 /// A principal represents who is making a request
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
@@ -33,10 +33,7 @@ pub enum Principal {
     Aws(String),
 
     /// Federated identity (from OIDC/SAML)
-    Federated {
-        provider: String,
-        subject: String,
-    },
+    Federated { provider: String, subject: String },
 
     /// Wildcard - matches everyone
     Wildcard,
@@ -82,10 +79,16 @@ impl Principal {
             (Principal::Group(a), Principal::Group(b)) => a == b,
             (Principal::Role(a), Principal::Role(b)) => a == b,
             (Principal::Aws(a), Principal::Aws(b)) => a == b,
-            (Principal::Federated { provider: p1, subject: s1 },
-             Principal::Federated { provider: p2, subject: s2 }) => {
-                p1 == p2 && s1 == s2
-            }
+            (
+                Principal::Federated {
+                    provider: p1,
+                    subject: s1,
+                },
+                Principal::Federated {
+                    provider: p2,
+                    subject: s2,
+                },
+            ) => p1 == p2 && s1 == s2,
             (Principal::Anonymous, Principal::Anonymous) => true,
             _ => false,
         }
@@ -360,16 +363,19 @@ impl LocalIdentityProvider {
         let id = id.into();
         let password_hash = *blake3::hash(password.as_ref()).as_bytes();
 
-        self.users.insert(id.clone(), LocalUser {
-            id: id.clone(),
-            username: username.into(),
-            password_hash,
-            email: None,
-            groups: Vec::new(),
-            roles: Vec::new(),
-            policies: Vec::new(),
-            attributes: HashMap::new(),
-        });
+        self.users.insert(
+            id.clone(),
+            LocalUser {
+                id: id.clone(),
+                username: username.into(),
+                password_hash,
+                email: None,
+                groups: Vec::new(),
+                roles: Vec::new(),
+                policies: Vec::new(),
+                attributes: HashMap::new(),
+            },
+        );
 
         self
     }
@@ -431,12 +437,16 @@ impl IdentityProvider for LocalIdentityProvider {
             Credentials::Password { username, password } => {
                 let password_hash = *blake3::hash(password.as_bytes()).as_bytes();
 
-                let user = self.users.iter()
+                let user = self
+                    .users
+                    .iter()
                     .find(|u| u.username == *username && u.password_hash == password_hash)
                     .map(|u| u.clone())
-                    .ok_or_else(|| crate::Error::AuthenticationFailed(
-                        "Invalid username or password".to_string()
-                    ))?;
+                    .ok_or_else(|| {
+                        crate::Error::AuthenticationFailed(
+                            "Invalid username or password".to_string(),
+                        )
+                    })?;
 
                 let mut identity = Identity::user(&user.id, &user.username, &self.id);
                 identity.email = user.email.clone();
@@ -448,17 +458,21 @@ impl IdentityProvider for LocalIdentityProvider {
                 Ok(identity)
             }
             _ => Err(crate::Error::AuthenticationFailed(
-                "Unsupported credential type".to_string()
+                "Unsupported credential type".to_string(),
             )),
         }
     }
 
     async fn validate_token(&self, _token: &str) -> Result<Identity> {
-        Err(crate::Error::InvalidToken("Local provider does not support tokens".to_string()))
+        Err(crate::Error::InvalidToken(
+            "Local provider does not support tokens".to_string(),
+        ))
     }
 
     async fn refresh_token(&self, _refresh_token: &str) -> Result<(String, Option<String>)> {
-        Err(crate::Error::InvalidToken("Local provider does not support token refresh".to_string()))
+        Err(crate::Error::InvalidToken(
+            "Local provider does not support token refresh".to_string(),
+        ))
     }
 
     async fn get_user(&self, user_id: &str) -> Result<Option<Identity>> {
@@ -476,7 +490,9 @@ impl IdentityProvider for LocalIdentityProvider {
 
     async fn get_user_groups(&self, user_id: &str) -> Result<Vec<Group>> {
         if let Some(user) = self.users.get(user_id) {
-            let groups: Vec<Group> = user.groups.iter()
+            let groups: Vec<Group> = user
+                .groups
+                .iter()
                 .filter_map(|gid| self.groups.get(gid).map(|g| g.clone()))
                 .collect();
             Ok(groups)
@@ -497,9 +513,18 @@ mod tests {
     #[test]
     fn test_principal_parse() {
         assert_eq!(Principal::parse("*"), Principal::Wildcard);
-        assert_eq!(Principal::parse("user:alice"), Principal::User("alice".to_string()));
-        assert_eq!(Principal::parse("group:admins"), Principal::Group("admins".to_string()));
-        assert_eq!(Principal::parse("role:reader"), Principal::Role("reader".to_string()));
+        assert_eq!(
+            Principal::parse("user:alice"),
+            Principal::User("alice".to_string())
+        );
+        assert_eq!(
+            Principal::parse("group:admins"),
+            Principal::Group("admins".to_string())
+        );
+        assert_eq!(
+            Principal::parse("role:reader"),
+            Principal::Role("reader".to_string())
+        );
     }
 
     #[test]
@@ -531,10 +556,12 @@ mod tests {
         let provider = LocalIdentityProvider::new("local", "Local Provider");
         provider.add_user("alice", "alice", "password123");
 
-        let result = provider.authenticate(&Credentials::Password {
-            username: "alice".to_string(),
-            password: "password123".to_string(),
-        }).await;
+        let result = provider
+            .authenticate(&Credentials::Password {
+                username: "alice".to_string(),
+                password: "password123".to_string(),
+            })
+            .await;
 
         assert!(result.is_ok());
         let identity = result.unwrap();
@@ -546,10 +573,12 @@ mod tests {
         let provider = LocalIdentityProvider::new("local", "Local Provider");
         provider.add_user("alice", "alice", "password123");
 
-        let result = provider.authenticate(&Credentials::Password {
-            username: "alice".to_string(),
-            password: "wrong".to_string(),
-        }).await;
+        let result = provider
+            .authenticate(&Credentials::Password {
+                username: "alice".to_string(),
+                password: "wrong".to_string(),
+            })
+            .await;
 
         assert!(result.is_err());
     }

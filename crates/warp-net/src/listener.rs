@@ -19,11 +19,7 @@ pub struct WarpListener {
 
 impl WarpListener {
     /// Bind to an address with TLS certificate and key files
-    pub async fn bind(
-        addr: SocketAddr,
-        cert_path: &Path,
-        key_path: &Path,
-    ) -> Result<Self> {
+    pub async fn bind(addr: SocketAddr, cert_path: &Path, key_path: &Path) -> Result<Self> {
         Self::bind_with_caps(addr, cert_path, key_path, Capabilities::default()).await
     }
 
@@ -46,10 +42,7 @@ impl WarpListener {
     }
 
     /// Bind with self-signed certificate and custom capabilities
-    pub async fn bind_self_signed_with_caps(
-        addr: SocketAddr,
-        caps: Capabilities,
-    ) -> Result<Self> {
+    pub async fn bind_self_signed_with_caps(addr: SocketAddr, caps: Capabilities) -> Result<Self> {
         let (cert_chain, key) = generate_self_signed()?;
         Self::bind_with_tls(addr, cert_chain, key, caps).await
     }
@@ -100,10 +93,8 @@ impl WarpListener {
 
         tracing::info!("Accepted connection from {}", remote_addr);
 
-        let warp_conn = crate::transport::WarpConnection::from_quinn(
-            connection,
-            self.local_caps.clone(),
-        );
+        let warp_conn =
+            crate::transport::WarpConnection::from_quinn(connection, self.local_caps.clone());
 
         Ok(warp_conn)
     }
@@ -186,9 +177,7 @@ mod tests {
             .unwrap();
         let addr = listener.local_addr();
 
-        let server_task = tokio::spawn(async move {
-            listener.accept().await.unwrap()
-        });
+        let server_task = tokio::spawn(async move { listener.accept().await.unwrap() });
 
         let client = WarpEndpoint::client().await.unwrap();
         let _client_conn = client.connect(addr, "localhost").await.unwrap();

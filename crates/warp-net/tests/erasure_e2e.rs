@@ -375,7 +375,10 @@ async fn test_erasure_e2e_too_many_losses() {
     tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
 
     let decode_result = server_task.await.unwrap();
-    assert!(decode_result.is_err(), "Decode should fail with insufficient shards");
+    assert!(
+        decode_result.is_err(),
+        "Decode should fail with insufficient shards"
+    );
 }
 
 /// Test multiple chunks with erasure coding
@@ -389,11 +392,7 @@ async fn test_erasure_e2e_multiple_chunks() {
     let decoder = ErasureDecoder::new(config);
 
     // Create 3 chunks of data
-    let chunks: Vec<Vec<u8>> = vec![
-        (0..64).collect(),
-        (64..128).collect(),
-        (128..192).collect(),
-    ];
+    let chunks: Vec<Vec<u8>> = vec![(0..64).collect(), (64..128).collect(), (128..192).collect()];
 
     // Encode all chunks
     let encoded_chunks: Vec<Vec<Vec<u8>>> = chunks

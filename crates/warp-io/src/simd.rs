@@ -25,11 +25,7 @@ pub struct ScanResult {
 /// Returns positions where `seq_length` consecutive increasing (or decreasing)
 /// bytes are found.
 #[inline]
-pub fn find_boundaries_scalar(
-    data: &[u8],
-    seq_length: usize,
-    mode: SeqMode,
-) -> Vec<usize> {
+pub fn find_boundaries_scalar(data: &[u8], seq_length: usize, mode: SeqMode) -> Vec<usize> {
     if data.len() < seq_length {
         return Vec::new();
     }
@@ -423,6 +419,9 @@ pub mod neon {
         seq_length: usize,
         mode: SeqMode,
     ) -> Option<usize> {
+        // SAFETY: Caller guarantees data.len() >= 17 per function contract.
+        // NEON intrinsics are safe on aarch64 (always available).
+        // vld1q_u8 loads are valid: we check data.len() >= 17 before loading.
         unsafe {
             if data.len() < 17 {
                 return None;
@@ -455,6 +454,8 @@ pub mod neon {
     /// - `data.len()` must be at least 17 bytes (16-byte vector + 1 for offset load)
     #[inline]
     pub unsafe fn count_opposing_pairs(data: &[u8], mode: SeqMode) -> u32 {
+        // SAFETY: Caller guarantees data.len() >= 17 per function contract.
+        // NEON intrinsics are safe on aarch64. All loads check bounds first.
         unsafe {
             if data.len() < 17 {
                 return 0;
@@ -497,6 +498,9 @@ pub mod neon {
         _skip_size: usize,
         mode: SeqMode,
     ) -> Vec<(usize, usize)> {
+        // SAFETY: NEON is always available on aarch64. All vld1q_u8 loads are
+        // guarded by bounds checks (remaining >= 17). The function falls back
+        // to scalar for short inputs.
         unsafe {
             let mut chunks = Vec::new();
             let mut chunk_start = 0usize;
@@ -570,6 +574,8 @@ pub mod neon {
     /// Each bit corresponds to whether that byte position was 0xFF
     #[inline]
     unsafe fn neon_movemask(v: uint8x16_t) -> u16 {
+        // SAFETY: NEON intrinsics are always safe on aarch64. The input v is a
+        // valid uint8x16_t register. Stack array powers has valid alignment.
         unsafe {
             // Use the high bit of each byte to form a bitmask
             // Shift each byte right by 7 to get just the sign bit
@@ -839,7 +845,10 @@ mod tests {
 
         unsafe {
             let result = avx2::find_boundary_in_window(&data, 4, SeqMode::Increasing);
-            assert!(result.is_some(), "Should find boundary in increasing sequence");
+            assert!(
+                result.is_some(),
+                "Should find boundary in increasing sequence"
+            );
         }
     }
 
@@ -896,7 +905,10 @@ mod tests {
 
         unsafe {
             let result = neon::find_boundary_in_window(&data, 4, SeqMode::Increasing);
-            assert!(result.is_some(), "Should find boundary in increasing sequence");
+            assert!(
+                result.is_some(),
+                "Should find boundary in increasing sequence"
+            );
         }
     }
 
@@ -926,11 +938,11 @@ mod tests {
         unsafe {
             let chunks = neon::chunk_buffer_neon(
                 &data,
-                100,  // min_size
-                500,  // max_size
-                5,    // seq_length
-                50,   // skip_trigger
-                256,  // skip_size
+                100, // min_size
+                500, // max_size
+                5,   // seq_length
+                50,  // skip_trigger
+                256, // skip_size
                 SeqMode::Increasing,
             );
 
@@ -954,9 +966,8 @@ mod tests {
 
         let scalar_chunks = chunk_buffer_scalar(&data, 200, 1000, 5, SeqMode::Increasing);
 
-        let neon_chunks = unsafe {
-            neon::chunk_buffer_neon(&data, 200, 1000, 5, 50, 256, SeqMode::Increasing)
-        };
+        let neon_chunks =
+            unsafe { neon::chunk_buffer_neon(&data, 200, 1000, 5, 50, 256, SeqMode::Increasing) };
 
         // Total bytes should match
         let scalar_total: usize = scalar_chunks.iter().map(|(_, len)| len).sum();
@@ -966,7 +977,11 @@ mod tests {
 
         // Number of chunks should be similar (may differ slightly due to SIMD boundary detection)
         let diff = (scalar_chunks.len() as i64 - neon_chunks.len() as i64).abs();
-        assert!(diff < 10, "Chunk count should be similar: scalar={}, neon={}",
-                scalar_chunks.len(), neon_chunks.len());
+        assert!(
+            diff < 10,
+            "Chunk count should be similar: scalar={}, neon={}",
+            scalar_chunks.len(),
+            neon_chunks.len()
+        );
     }
 }

@@ -236,8 +236,7 @@ impl ExtentMap {
         for offset in to_remove {
             if let Some(removed) = extents.remove(&offset) {
                 if !removed.is_hole() {
-                    self.allocated
-                        .fetch_sub(removed.length, Ordering::Relaxed);
+                    self.allocated.fetch_sub(removed.length, Ordering::Relaxed);
                 }
             }
         }
@@ -284,8 +283,7 @@ impl ExtentMap {
         for offset in to_remove {
             if let Some(removed) = extents.remove(&offset) {
                 if !removed.is_hole() {
-                    self.allocated
-                        .fetch_sub(removed.length, Ordering::Relaxed);
+                    self.allocated.fetch_sub(removed.length, Ordering::Relaxed);
                 }
             }
         }
@@ -349,11 +347,11 @@ mod tests {
     #[test]
     fn test_extent_overlap() {
         let extent = BlockExtent::new(1000, 2000, "obj1", 0);
-        assert!(extent.overlaps(500, 1500));  // Overlaps start
+        assert!(extent.overlaps(500, 1500)); // Overlaps start
         assert!(extent.overlaps(2000, 4000)); // Overlaps end
         assert!(extent.overlaps(1500, 2500)); // Fully inside
-        assert!(extent.overlaps(500, 4000));  // Fully covers
-        assert!(!extent.overlaps(0, 1000));   // Before
+        assert!(extent.overlaps(500, 4000)); // Fully covers
+        assert!(!extent.overlaps(0, 1000)); // Before
         assert!(!extent.overlaps(3000, 4000)); // After
     }
 

@@ -271,14 +271,8 @@ mod tests {
         assert_eq!(calculate_chunk_size(100 * 1024, 1), 1 * 1024 * 1024);
         assert_eq!(calculate_chunk_size(500 * 1024, 1), 2 * 1024 * 1024);
         assert_eq!(calculate_chunk_size(5 * 1024 * 1024, 1), 4 * 1024 * 1024);
-        assert_eq!(
-            calculate_chunk_size(50 * 1024 * 1024, 1),
-            8 * 1024 * 1024
-        );
-        assert_eq!(
-            calculate_chunk_size(200 * 1024 * 1024, 1),
-            16 * 1024 * 1024
-        );
+        assert_eq!(calculate_chunk_size(50 * 1024 * 1024, 1), 8 * 1024 * 1024);
+        assert_eq!(calculate_chunk_size(200 * 1024 * 1024, 1), 16 * 1024 * 1024);
     }
 
     #[test]

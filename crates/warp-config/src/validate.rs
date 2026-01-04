@@ -130,9 +130,7 @@ pub struct Validator {
 
 impl Validator {
     pub fn new() -> Self {
-        Self {
-            strict_mode: false,
-        }
+        Self { strict_mode: false }
     }
 
     pub fn with_strict_mode(mut self, enabled: bool) -> Self {
@@ -227,7 +225,9 @@ impl Validator {
         let mut result = ValidationResult::new();
 
         let resource_rule = ResourceLimitRule;
-        if let Some(error) = resource_rule.validate_concurrent_transfers(config.max_concurrent_transfers) {
+        if let Some(error) =
+            resource_rule.validate_concurrent_transfers(config.max_concurrent_transfers)
+        {
             result.add_error(error);
         }
 
@@ -262,7 +262,9 @@ impl Validator {
 
         // LogLevel is now an enum, so no validation needed
 
-        if (config.output == LogOutput::File || config.output == LogOutput::Both) && config.file_path.is_none() {
+        if (config.output == LogOutput::File || config.output == LogOutput::Both)
+            && config.file_path.is_none()
+        {
             result.add_error(ValidationError::new(
                 "log.file_path",
                 "file_path must be set when output is 'file' or 'both'",
@@ -362,13 +364,19 @@ impl PathExistsRule {
                             if metadata.permissions().readonly() {
                                 result.add_error(ValidationError::new(
                                     "storage.data_dir",
-                                    format!("Cannot create data directory, parent is readonly: {}", parent.display()),
+                                    format!(
+                                        "Cannot create data directory, parent is readonly: {}",
+                                        parent.display()
+                                    ),
                                     ErrorCode::PermissionDenied,
                                 ));
                             } else {
                                 result.add_warning(ValidationWarning::with_suggestion(
                                     "storage.data_dir",
-                                    format!("Data directory does not exist: {}", config.data_dir.display()),
+                                    format!(
+                                        "Data directory does not exist: {}",
+                                        config.data_dir.display()
+                                    ),
                                     "Directory will be created on first use",
                                 ));
                             }
@@ -397,7 +405,10 @@ impl PathExistsRule {
                 Err(_) => {
                     result.add_error(ValidationError::new(
                         "storage.data_dir",
-                        format!("Cannot access data directory: {}", config.data_dir.display()),
+                        format!(
+                            "Cannot access data directory: {}",
+                            config.data_dir.display()
+                        ),
                         ErrorCode::PermissionDenied,
                     ));
                 }
@@ -409,13 +420,19 @@ impl PathExistsRule {
                 if !parent.exists() {
                     result.add_error(ValidationError::new(
                         "storage.cache_dir",
-                        format!("Cache directory parent does not exist: {}", parent.display()),
+                        format!(
+                            "Cache directory parent does not exist: {}",
+                            parent.display()
+                        ),
                         ErrorCode::PathNotFound,
                     ));
                 } else {
                     result.add_warning(ValidationWarning::with_suggestion(
                         "storage.cache_dir",
-                        format!("Cache directory does not exist: {}", config.cache_dir.display()),
+                        format!(
+                            "Cache directory does not exist: {}",
+                            config.cache_dir.display()
+                        ),
                         "Directory will be created on first use",
                     ));
                 }
@@ -474,7 +491,10 @@ impl ResourceLimitRule {
         if max_transfers > 1000 {
             Some(ValidationError::new(
                 "scheduler.max_concurrent_transfers",
-                format!("Max concurrent transfers {} exceeds limit of 1000", max_transfers),
+                format!(
+                    "Max concurrent transfers {} exceeds limit of 1000",
+                    max_transfers
+                ),
                 ErrorCode::OutOfRange,
             ))
         } else if max_transfers == 0 {
@@ -495,7 +515,9 @@ impl ValidationRule for ResourceLimitRule {
         if let Some(error) = self.validate_max_connections(config.network.max_connections) {
             errors.push(error);
         }
-        if let Some(error) = self.validate_concurrent_transfers(config.scheduler.max_concurrent_transfers) {
+        if let Some(error) =
+            self.validate_concurrent_transfers(config.scheduler.max_concurrent_transfers)
+        {
             errors.push(error);
         }
         errors
@@ -611,8 +633,12 @@ mod tests {
     #[test]
     fn test_error_code_variants() {
         let codes = [
-            ErrorCode::Required, ErrorCode::OutOfRange, ErrorCode::InvalidFormat,
-            ErrorCode::PathNotFound, ErrorCode::PermissionDenied, ErrorCode::Conflict,
+            ErrorCode::Required,
+            ErrorCode::OutOfRange,
+            ErrorCode::InvalidFormat,
+            ErrorCode::PathNotFound,
+            ErrorCode::PermissionDenied,
+            ErrorCode::Conflict,
             ErrorCode::Deprecated,
         ];
         for code in &codes {

@@ -193,10 +193,7 @@ impl DataCache {
         self.stats.insert();
 
         // Track for bulk invalidation
-        self.inode_blocks
-            .entry(ino)
-            .or_default()
-            .push(block_idx);
+        self.inode_blocks.entry(ino).or_default().push(block_idx);
     }
 
     /// Invalidate all cached data for an inode

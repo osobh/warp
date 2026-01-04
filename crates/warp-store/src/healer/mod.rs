@@ -28,11 +28,11 @@
 //! ```
 
 mod daemon;
+mod metrics;
 mod queue;
 mod worker;
-mod metrics;
 
-pub use daemon::{HealerDaemon, HealerConfig};
-pub use queue::{RepairQueue, RepairJob, RepairPriority};
-pub use worker::{RepairWorker, RepairResult};
+pub use daemon::{HealerConfig, HealerDaemon};
 pub use metrics::{HealerMetrics, HealerStats};
+pub use queue::{RepairJob, RepairPriority, RepairQueue};
+pub use worker::{RepairResult, RepairWorker};

@@ -224,9 +224,8 @@ impl Session {
         fs::create_dir_all(sessions_dir)?;
 
         let session_path = sessions_dir.join(format!("{}.session", self.id));
-        let encoded = rmp_serde::to_vec(self).map_err(|e| {
-            crate::Error::Session(format!("Failed to serialize session: {}", e))
-        })?;
+        let encoded = rmp_serde::to_vec(self)
+            .map_err(|e| crate::Error::Session(format!("Failed to serialize session: {}", e)))?;
 
         fs::write(session_path, encoded)?;
         Ok(())
@@ -237,16 +236,12 @@ impl Session {
         let session_path = sessions_dir.join(format!("{}.session", id));
 
         if !session_path.exists() {
-            return Err(crate::Error::Session(format!(
-                "Session not found: {}",
-                id
-            )));
+            return Err(crate::Error::Session(format!("Session not found: {}", id)));
         }
 
         let data = fs::read(session_path)?;
-        let session: Session = rmp_serde::from_slice(&data).map_err(|e| {
-            crate::Error::Session(format!("Failed to deserialize session: {}", e))
-        })?;
+        let session: Session = rmp_serde::from_slice(&data)
+            .map_err(|e| crate::Error::Session(format!("Failed to deserialize session: {}", e)))?;
 
         Ok(session)
     }

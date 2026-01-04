@@ -9,10 +9,10 @@
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use warp_orch::{
-    ProgressTracker, TransferId, DriftConfig, DriftDetector,
-    AccessRecord, PatternConfig, PatternDetector,
+    AccessRecord, DriftConfig, DriftDetector, PatternConfig, PatternDetector, ProgressTracker,
+    TransferId,
 };
-use warp_sched::{EdgeIdx, ChunkId};
+use warp_sched::{ChunkId, EdgeIdx};
 
 /// Helper to get current time in ms
 fn now_ms() -> u64 {
@@ -30,7 +30,10 @@ fn stress_progress_tracker_updates() {
     let num_transfers = 1000;
     let updates_per_transfer = 100;
 
-    println!("Creating {} transfers with {} updates each...", num_transfers, updates_per_transfer);
+    println!(
+        "Creating {} transfers with {} updates each...",
+        num_transfers, updates_per_transfer
+    );
 
     // Register transfers
     for i in 0..num_transfers {
@@ -52,7 +55,10 @@ fn stress_progress_tracker_updates() {
     let elapsed = start.elapsed();
     let total_updates = num_transfers * updates_per_transfer;
     println!("{} updates completed in {:?}", total_updates, elapsed);
-    println!("Updates per second: {:.0}", total_updates as f64 / elapsed.as_secs_f64());
+    println!(
+        "Updates per second: {:.0}",
+        total_updates as f64 / elapsed.as_secs_f64()
+    );
 
     // Verify all transfers have progress
     for i in 0..num_transfers {
@@ -81,8 +87,10 @@ fn stress_drift_detector_samples() {
     let num_transfers = 100;
     let samples_per_transfer = 1000;
 
-    println!("Recording {} samples for {} transfers...",
-        samples_per_transfer, num_transfers);
+    println!(
+        "Recording {} samples for {} transfers...",
+        samples_per_transfer, num_transfers
+    );
     let start = Instant::now();
 
     // Set baselines
@@ -104,7 +112,10 @@ fn stress_drift_detector_samples() {
     let elapsed = start.elapsed();
     let total_samples = num_transfers * samples_per_transfer;
     println!("{} samples recorded in {:?}", total_samples, elapsed);
-    println!("Samples per second: {:.0}", total_samples as f64 / elapsed.as_secs_f64());
+    println!(
+        "Samples per second: {:.0}",
+        total_samples as f64 / elapsed.as_secs_f64()
+    );
 
     // Check drift for all transfers
     for transfer_id in 0..num_transfers {
@@ -133,8 +144,11 @@ fn stress_pattern_detector() {
     let num_chunks = 10000;
     let accesses_per_chunk = 10;
 
-    println!("Recording {} accesses for {} chunks...",
-        num_chunks * accesses_per_chunk, num_chunks);
+    println!(
+        "Recording {} accesses for {} chunks...",
+        num_chunks * accesses_per_chunk,
+        num_chunks
+    );
     let start = Instant::now();
 
     // Record many access patterns
@@ -158,7 +172,10 @@ fn stress_pattern_detector() {
     let elapsed = start.elapsed();
     let total_accesses = num_chunks * accesses_per_chunk;
     println!("{} accesses recorded in {:?}", total_accesses, elapsed);
-    println!("Accesses per second: {:.0}", total_accesses as f64 / elapsed.as_secs_f64());
+    println!(
+        "Accesses per second: {:.0}",
+        total_accesses as f64 / elapsed.as_secs_f64()
+    );
 
     let threshold = if cfg!(debug_assertions) {
         Duration::from_secs(15)
@@ -179,8 +196,10 @@ fn stress_progress_tracker_churn() {
     let churn_cycles = 100;
     let transfers_per_cycle = 100;
 
-    println!("Running {} churn cycles with {} transfers each...",
-        churn_cycles, transfers_per_cycle);
+    println!(
+        "Running {} churn cycles with {} transfers each...",
+        churn_cycles, transfers_per_cycle
+    );
     let start = Instant::now();
 
     let mut next_id = 0u64;
@@ -269,7 +288,12 @@ fn stress_mixed_orchestrator_load() {
             let speed = 90_000_000 + (cycle % 20) as u64 * 1_000_000;
             let recent_transfer = TransferId(transfer_id.saturating_sub(1));
             let timestamp = base_time + (cycle * 100 + edge_id) as u64;
-            drift_detector.record_sample(recent_transfer, EdgeIdx::new(edge_id as u32), speed, timestamp);
+            drift_detector.record_sample(
+                recent_transfer,
+                EdgeIdx::new(edge_id as u32),
+                speed,
+                timestamp,
+            );
         }
 
         // Detect patterns periodically

@@ -42,5 +42,5 @@
 mod delta;
 mod timeline;
 
-pub use delta::{Delta, DeltaBuilder, DeltaStats, ChunkMove};
+pub use delta::{ChunkMove, Delta, DeltaBuilder, DeltaStats};
 pub use timeline::{TimelineBuilder, VersionInfo, VersionTimeline};

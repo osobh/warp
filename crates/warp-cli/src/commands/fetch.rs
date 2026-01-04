@@ -34,11 +34,7 @@ fn get_decryption_password(password: Option<&str>) -> Result<String> {
 /// and exists locally, extracts the local archive. Otherwise, fetches from remote
 /// server (if source contains host:port format).
 pub async fn execute(source: &str, destination: &str, password: Option<&str>) -> Result<()> {
-    tracing::info!(
-        source = source,
-        destination = destination,
-        "Starting fetch"
-    );
+    tracing::info!(source = source, destination = destination, "Starting fetch");
 
     // Determine if this is a local archive extraction or remote fetch
     if is_remote_source(source) {
@@ -84,9 +80,7 @@ fn parse_remote_source(source: &str) -> Result<(String, u16, String)> {
     }
 
     let host = host_port_parts[0].to_string();
-    let port: u16 = host_port_parts[1]
-        .parse()
-        .context("Invalid port number")?;
+    let port: u16 = host_port_parts[1].parse().context("Invalid port number")?;
 
     Ok((host, port, remote_path))
 }
@@ -127,7 +121,11 @@ async fn fetch_remote(
 }
 
 /// Extract a local .warp archive
-async fn extract_local_archive(source: &str, destination: &str, password: Option<&str>) -> Result<()> {
+async fn extract_local_archive(
+    source: &str,
+    destination: &str,
+    password: Option<&str>,
+) -> Result<()> {
     let start_time = Instant::now();
 
     // Parse source path
@@ -145,8 +143,7 @@ async fn extract_local_archive(source: &str, destination: &str, password: Option
 
     // Create destination directory if it doesn't exist
     if !dest_path.exists() {
-        std::fs::create_dir_all(&dest_path)
-            .context("Failed to create destination directory")?;
+        std::fs::create_dir_all(&dest_path).context("Failed to create destination directory")?;
     }
 
     println!("Extracting archive: {}", source_path.display());
@@ -176,13 +173,13 @@ async fn extract_local_archive(source: &str, destination: &str, password: Option
         // We need to read the salt from the header
         // For now, we'll use a simple approach - derive key and try to open
         // In a proper implementation, we'd read the salt from header first
-        let reader_for_salt = WarpReader::open(&source_path)
-            .context("Failed to open archive for salt")?;
+        let reader_for_salt =
+            WarpReader::open(&source_path).context("Failed to open archive for salt")?;
         let salt = reader_for_salt.header().salt;
         drop(reader_for_salt);
 
-        let derived = derive_key(password.as_bytes(), &salt)
-            .context("Failed to derive decryption key")?;
+        let derived =
+            derive_key(password.as_bytes(), &salt).context("Failed to derive decryption key")?;
         let key = EncryptionKey::from_bytes(*derived.as_bytes());
 
         WarpReader::open_encrypted(&source_path, key)
@@ -221,10 +218,7 @@ async fn extract_local_archive(source: &str, destination: &str, password: Option
     println!("Files extracted: {}", file_count);
     println!("Total size: {}", format_bytes(original_size));
     println!("Compressed size: {}", format_bytes(compressed_size));
-    println!(
-        "Compression ratio: {:.1}%",
-        (1.0 - ratio) * 100.0
-    );
+    println!("Compression ratio: {:.1}%", (1.0 - ratio) * 100.0);
     println!("Duration: {:.2}s", duration.as_secs_f64());
 
     if original_size > 0 {

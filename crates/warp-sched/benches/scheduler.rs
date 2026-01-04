@@ -2,10 +2,10 @@
 //!
 //! Run with: cargo bench -p warp-sched
 
-use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
+use criterion::{BenchmarkId, Criterion, Throughput, black_box, criterion_group, criterion_main};
 use warp_sched::{
-    ChunkId, ChunkState, CostConfig, CpuCostMatrix, CpuPathSelector, CpuStateBuffers,
-    CpuChunkScheduler, EdgeIdx, EdgeStateGpu, PathConfig, ScheduleRequest, SchedulerConfig,
+    ChunkId, ChunkState, CostConfig, CpuChunkScheduler, CpuCostMatrix, CpuPathSelector,
+    CpuStateBuffers, EdgeIdx, EdgeStateGpu, PathConfig, ScheduleRequest, SchedulerConfig,
 };
 
 /// Create test state with specified number of chunks and edges
@@ -63,15 +63,11 @@ fn bench_cost_matrix(c: &mut Criterion) {
         let mut cost_matrix = CpuCostMatrix::new(num_chunks, num_edges, CostConfig::default());
 
         group.throughput(Throughput::Elements((num_chunks * num_edges) as u64));
-        group.bench_with_input(
-            BenchmarkId::new("compute", label),
-            &state,
-            |b, state| {
-                b.iter(|| {
-                    cost_matrix.compute(black_box(state));
-                })
-            },
-        );
+        group.bench_with_input(BenchmarkId::new("compute", label), &state, |b, state| {
+            b.iter(|| {
+                cost_matrix.compute(black_box(state));
+            })
+        });
     }
 
     group.finish();
@@ -91,19 +87,13 @@ fn bench_path_selection(c: &mut Criterion) {
 
     // Benchmark selecting paths for different batch sizes
     for batch_size in [10, 100, 500, 1000] {
-        let chunk_ids: Vec<ChunkId> = (0..batch_size)
-            .map(|i| ChunkId::new(i as u64))
-            .collect();
+        let chunk_ids: Vec<ChunkId> = (0..batch_size).map(|i| ChunkId::new(i as u64)).collect();
 
         group.throughput(Throughput::Elements(batch_size as u64));
         group.bench_with_input(
             BenchmarkId::new("select_batch", batch_size),
             &chunk_ids,
-            |b, ids| {
-                b.iter(|| {
-                    path_selector.select_batch(black_box(ids), black_box(&cost_matrix))
-                })
-            },
+            |b, ids| b.iter(|| path_selector.select_batch(black_box(ids), black_box(&cost_matrix))),
         );
     }
 
@@ -135,9 +125,8 @@ fn bench_scheduler_tick(c: &mut Criterion) {
             .collect();
 
         let request = ScheduleRequest::new(
-            chunks,
-            128,  // priority
-            3,    // replica_target
+            chunks, 128, // priority
+            3,   // replica_target
         );
         let _ = scheduler.schedule(request);
 

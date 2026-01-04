@@ -70,7 +70,12 @@ impl FenceResult {
     }
 
     /// Create a failed result
-    pub fn failure(node_id: NodeId, action: FenceAction, error: String, duration: Duration) -> Self {
+    pub fn failure(
+        node_id: NodeId,
+        action: FenceAction,
+        error: String,
+        duration: Duration,
+    ) -> Self {
         Self {
             node_id,
             action,
@@ -148,10 +153,7 @@ impl FencingConfig {
         Self {
             aggressive: true,
             default_action: FenceAction::Shutdown,
-            action_chain: vec![
-                FenceAction::Shutdown,
-                FenceAction::PowerOff,
-            ],
+            action_chain: vec![FenceAction::Shutdown, FenceAction::PowerOff],
             ..Default::default()
         }
     }
@@ -325,7 +327,8 @@ impl FencingManager {
         let mut results = Vec::new();
 
         // Collect pending fences
-        let pending: Vec<(NodeId, FenceAction)> = self.pending_fences
+        let pending: Vec<(NodeId, FenceAction)> = self
+            .pending_fences
             .iter()
             .map(|r| (*r.key(), *r.value()))
             .collect();
@@ -381,22 +384,13 @@ impl FencingManager {
 
         for current_action in actions {
             for attempt in 0..self.config.max_retries {
-                info!(
-                    node_id,
-                    ?current_action,
-                    attempt,
-                    "Executing fence action"
-                );
+                info!(node_id, ?current_action, attempt, "Executing fence action");
 
                 // Try each registered agent
                 for agent in self.agents.iter() {
                     match agent.fence(node_id, current_action) {
                         Ok(()) => {
-                            info!(
-                                node_id,
-                                agent = agent.name(),
-                                "Fence succeeded"
-                            );
+                            info!(node_id, agent = agent.name(), "Fence succeeded");
                             return FenceResult::success(node_id, current_action, start.elapsed());
                         }
                         Err(e) => {
@@ -460,7 +454,10 @@ impl FencingManager {
 
     /// Get all fenced nodes
     pub fn fenced_nodes(&self) -> Vec<FencedNode> {
-        self.fenced_nodes.iter().map(|r| r.value().clone()).collect()
+        self.fenced_nodes
+            .iter()
+            .map(|r| r.value().clone())
+            .collect()
     }
 
     /// Get fence history

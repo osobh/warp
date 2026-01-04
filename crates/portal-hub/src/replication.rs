@@ -16,8 +16,8 @@ use portal_core::ContentId;
 use tokio::sync::RwLock;
 use tracing::{debug, info, warn};
 
-use crate::storage::HubStorage;
 use crate::Result;
+use crate::storage::HubStorage;
 
 /// Replication configuration
 #[derive(Debug, Clone)]
@@ -119,6 +119,18 @@ pub struct ReplicationRequest {
 }
 
 /// Manages chunk replication across the mesh
+///
+/// # Concurrency Model
+///
+/// Uses a mix of DashMap (lock-free sharded hash map) and RwLock:
+/// - `peers` and `locations` use DashMap for concurrent read/write access
+/// - `pending` uses RwLock for ordered batch processing
+///
+/// Operations may see eventual consistency:
+/// - Peer health and chunk location updates propagate asynchronously
+/// - Replication decisions are based on point-in-time snapshots
+/// - The anti-entropy repair process handles temporary inconsistencies
+/// - Over-replication is preferred over under-replication for durability
 pub struct ReplicationManager {
     /// Configuration
     config: ReplicationConfig,
@@ -468,13 +480,21 @@ mod tests {
 
         manager.record_local_chunk(content_id);
         assert_eq!(
-            manager.locations.get(&content_id).unwrap().replication_count(),
+            manager
+                .locations
+                .get(&content_id)
+                .unwrap()
+                .replication_count(),
             1
         );
 
         manager.record_chunk_location(content_id, "peer1".to_string());
         assert_eq!(
-            manager.locations.get(&content_id).unwrap().replication_count(),
+            manager
+                .locations
+                .get(&content_id)
+                .unwrap()
+                .replication_count(),
             2
         );
     }

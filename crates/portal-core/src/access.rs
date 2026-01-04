@@ -139,9 +139,9 @@ impl AccessConditions {
     fn network_matches(addr: &str, cidr: &str) -> bool {
         // Simplified implementation - in production use ipnetwork crate
         // For testing, we'll do simple prefix matching
-        cidr.split('/').next().is_some_and(|prefix| {
-            addr.starts_with(prefix.trim_end_matches(".0"))
-        })
+        cidr.split('/')
+            .next()
+            .is_some_and(|prefix| addr.starts_with(prefix.trim_end_matches(".0")))
     }
 }
 
@@ -208,9 +208,9 @@ impl AccessGrant {
         match self {
             Self::Identity { conditions, .. }
             | Self::Link { conditions, .. }
-            | Self::Email { conditions, .. } => {
-                conditions.as_ref().is_none_or(|c| c.is_satisfied(now, network, password))
-            }
+            | Self::Email { conditions, .. } => conditions
+                .as_ref()
+                .is_none_or(|c| c.is_satisfied(now, network, password)),
         }
     }
 }
@@ -225,7 +225,7 @@ pub enum Accessor {
         /// Secret from URL
         secret: String,
         /// Optional password
-        password: Option<String>
+        password: Option<String>,
     },
     /// Access via email
     Email(String),
@@ -276,8 +276,7 @@ impl AccessControlList {
         let initial_len = self.grants.len();
         self.grants.retain(|grant| match grant {
             AccessGrant::Email {
-                email: grant_email,
-                ..
+                email: grant_email, ..
             } => grant_email != email,
             _ => true,
         });
@@ -334,9 +333,12 @@ impl AccessControlList {
                     }
                     true
                 }
-                (Accessor::Email(email), AccessGrant::Email { email: grant_email, .. }) => {
-                    email == grant_email
-                }
+                (
+                    Accessor::Email(email),
+                    AccessGrant::Email {
+                        email: grant_email, ..
+                    },
+                ) => email == grant_email,
                 _ => false,
             };
 
@@ -382,9 +384,12 @@ impl AccessControlList {
                     let provided_hash = warp_hash::hash(secret.as_bytes());
                     provided_hash == *secret_hash
                 }
-                (Accessor::Email(email), AccessGrant::Email { email: grant_email, .. }) => {
-                    email == grant_email
-                }
+                (
+                    Accessor::Email(email),
+                    AccessGrant::Email {
+                        email: grant_email, ..
+                    },
+                ) => email == grant_email,
                 _ => false,
             };
 
@@ -564,7 +569,13 @@ mod tests {
         let accessor = Accessor::Identity(key);
         assert!(acl.check_access(&accessor, AccessLevel::Read, now, None, None));
         assert!(!acl.check_access(&accessor, AccessLevel::Read, future, None, None));
-        assert!(!acl.check_access(&accessor, AccessLevel::Read, future + Duration::seconds(1), None, None));
+        assert!(!acl.check_access(
+            &accessor,
+            AccessLevel::Read,
+            future + Duration::seconds(1),
+            None,
+            None
+        ));
     }
 
     #[test]
@@ -619,7 +630,13 @@ mod tests {
 
         let accessor = Accessor::Identity(key);
         let now = Utc::now();
-        assert!(acl.check_access(&accessor, AccessLevel::Read, now, Some("192.168.1.100"), None));
+        assert!(acl.check_access(
+            &accessor,
+            AccessLevel::Read,
+            now,
+            Some("192.168.1.100"),
+            None
+        ));
         assert!(!acl.check_access(&accessor, AccessLevel::Read, now, Some("10.0.0.1"), None));
         assert!(!acl.check_access(&accessor, AccessLevel::Read, now, None, None));
     }
@@ -629,12 +646,23 @@ mod tests {
         let mut acl = AccessControlList::new();
         let (_, key) = create_test_key(1);
 
-        acl.grant(AccessGrant::Identity { key, level: AccessLevel::Read, conditions: None });
-        acl.grant(AccessGrant::Identity { key, level: AccessLevel::Write, conditions: None });
+        acl.grant(AccessGrant::Identity {
+            key,
+            level: AccessLevel::Read,
+            conditions: None,
+        });
+        acl.grant(AccessGrant::Identity {
+            key,
+            level: AccessLevel::Write,
+            conditions: None,
+        });
 
         let accessor = Accessor::Identity(key);
         let now = Utc::now();
-        assert_eq!(acl.get_access_level(&accessor, now, None, None), Some(AccessLevel::Write));
+        assert_eq!(
+            acl.get_access_level(&accessor, now, None, None),
+            Some(AccessLevel::Write)
+        );
         assert!(acl.check_access(&accessor, AccessLevel::Write, now, None, None));
     }
 
@@ -652,10 +680,17 @@ mod tests {
     fn test_link_secret_hashing() {
         let secret = "my-secret-link";
         let secret_hash = warp_hash::hash(secret.as_bytes());
-        let grant = AccessGrant::Link { secret_hash, level: AccessLevel::Read, conditions: None };
+        let grant = AccessGrant::Link {
+            secret_hash,
+            level: AccessLevel::Read,
+            conditions: None,
+        };
 
         match grant {
-            AccessGrant::Link { secret_hash: stored_hash, .. } => {
+            AccessGrant::Link {
+                secret_hash: stored_hash,
+                ..
+            } => {
                 assert_eq!(stored_hash, warp_hash::hash(secret.as_bytes()));
                 assert_eq!(stored_hash.len(), 32);
                 assert!(stored_hash != secret.as_bytes());
@@ -677,9 +712,18 @@ mod tests {
         });
 
         let now = Utc::now();
-        let ok = Accessor::Link { secret: secret.to_string(), password: Some("link-password".to_string()) };
-        let wrong = Accessor::Link { secret: secret.to_string(), password: Some("wrong".to_string()) };
-        let none = Accessor::Link { secret: secret.to_string(), password: None };
+        let ok = Accessor::Link {
+            secret: secret.to_string(),
+            password: Some("link-password".to_string()),
+        };
+        let wrong = Accessor::Link {
+            secret: secret.to_string(),
+            password: Some("wrong".to_string()),
+        };
+        let none = Accessor::Link {
+            secret: secret.to_string(),
+            password: None,
+        };
 
         assert!(acl.check_access(&ok, AccessLevel::Read, now, None, None));
         assert!(!acl.check_access(&wrong, AccessLevel::Read, now, None, None));
@@ -750,17 +794,25 @@ mod tests {
         acl.grant(AccessGrant::Identity {
             key,
             level: AccessLevel::Read,
-            conditions: Some(AccessConditions::new()
-                .with_expiration(future)
-                .with_max_uses(3)
-                .with_password("secret")),
+            conditions: Some(
+                AccessConditions::new()
+                    .with_expiration(future)
+                    .with_max_uses(3)
+                    .with_password("secret"),
+            ),
         });
 
         let accessor = Accessor::Identity(key);
         assert!(acl.check_access(&accessor, AccessLevel::Read, now, None, Some("secret")));
         assert!(!acl.check_access(&accessor, AccessLevel::Read, now, None, None));
         assert!(!acl.check_access(&accessor, AccessLevel::Read, now, None, Some("wrong")));
-        assert!(!acl.check_access(&accessor, AccessLevel::Read, future + Duration::seconds(1), None, Some("secret")));
+        assert!(!acl.check_access(
+            &accessor,
+            AccessLevel::Read,
+            future + Duration::seconds(1),
+            None,
+            Some("secret")
+        ));
     }
 
     #[test]
@@ -795,7 +847,11 @@ mod tests {
         let now = Utc::now();
         let future = now + Duration::hours(1);
 
-        acl.grant(AccessGrant::Identity { key, level: AccessLevel::Read, conditions: None });
+        acl.grant(AccessGrant::Identity {
+            key,
+            level: AccessLevel::Read,
+            conditions: None,
+        });
         acl.grant(AccessGrant::Identity {
             key,
             level: AccessLevel::Write,
@@ -803,16 +859,34 @@ mod tests {
         });
 
         let accessor = Accessor::Identity(key);
-        assert_eq!(acl.get_access_level(&accessor, now, None, None), Some(AccessLevel::Write));
-        assert_eq!(acl.get_access_level(&accessor, future + Duration::seconds(1), None, None), Some(AccessLevel::Read));
+        assert_eq!(
+            acl.get_access_level(&accessor, now, None, None),
+            Some(AccessLevel::Write)
+        );
+        assert_eq!(
+            acl.get_access_level(&accessor, future + Duration::seconds(1), None, None),
+            Some(AccessLevel::Read)
+        );
     }
 
     #[test]
     fn test_grant_level_method() {
         let (_, key) = create_test_key(1);
-        let id = AccessGrant::Identity { key, level: AccessLevel::Admin, conditions: None };
-        let link = AccessGrant::Link { secret_hash: [0u8; 32], level: AccessLevel::Write, conditions: None };
-        let email = AccessGrant::Email { email: "test@example.com".to_string(), level: AccessLevel::Owner, conditions: None };
+        let id = AccessGrant::Identity {
+            key,
+            level: AccessLevel::Admin,
+            conditions: None,
+        };
+        let link = AccessGrant::Link {
+            secret_hash: [0u8; 32],
+            level: AccessLevel::Write,
+            conditions: None,
+        };
+        let email = AccessGrant::Email {
+            email: "test@example.com".to_string(),
+            level: AccessLevel::Owner,
+            conditions: None,
+        };
 
         assert_eq!(id.level(), AccessLevel::Admin);
         assert_eq!(link.level(), AccessLevel::Write);
@@ -827,11 +901,17 @@ mod tests {
         acl.grant(AccessGrant::Identity {
             key,
             level: AccessLevel::Write,
-            conditions: Some(AccessConditions::new().with_expiration(Utc::now()).with_max_uses(10).with_password("test")),
+            conditions: Some(
+                AccessConditions::new()
+                    .with_expiration(Utc::now())
+                    .with_max_uses(10)
+                    .with_password("test"),
+            ),
         });
 
         let serialized = rmp_serde::to_vec(&acl).expect("serialization failed");
-        let deserialized: AccessControlList = rmp_serde::from_slice(&serialized).expect("deserialization failed");
+        let deserialized: AccessControlList =
+            rmp_serde::from_slice(&serialized).expect("deserialization failed");
         assert_eq!(deserialized.grants().len(), acl.grants().len());
     }
 }

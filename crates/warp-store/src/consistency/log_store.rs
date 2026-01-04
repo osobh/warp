@@ -129,11 +129,7 @@ impl RaftLogStorage<TypeConfig> for RwLock<MemLogStore> {
     async fn truncate(&mut self, log_id: LogId<NodeId>) -> Result<(), StorageError<NodeId>> {
         let mut store = self.write().await;
 
-        let keys_to_remove: Vec<_> = store
-            .log
-            .range(log_id.index..)
-            .map(|(k, _)| *k)
-            .collect();
+        let keys_to_remove: Vec<_> = store.log.range(log_id.index..).map(|(k, _)| *k).collect();
 
         for key in keys_to_remove {
             store.log.remove(&key);
@@ -145,11 +141,7 @@ impl RaftLogStorage<TypeConfig> for RwLock<MemLogStore> {
     async fn purge(&mut self, log_id: LogId<NodeId>) -> Result<(), StorageError<NodeId>> {
         let mut store = self.write().await;
 
-        let keys_to_remove: Vec<_> = store
-            .log
-            .range(..=log_id.index)
-            .map(|(k, _)| *k)
-            .collect();
+        let keys_to_remove: Vec<_> = store.log.range(..=log_id.index).map(|(k, _)| *k).collect();
 
         for key in keys_to_remove {
             store.log.remove(&key);

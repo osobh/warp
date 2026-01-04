@@ -195,8 +195,10 @@ impl TriggerGenerator {
         expected_speed_bps: u64,
         expected_completion_ms: u64,
     ) {
-        self.transfer_expectations.insert(transfer_id, expected_speed_bps);
-        self.drift_detector.set_baseline(transfer_id, expected_speed_bps, expected_completion_ms);
+        self.transfer_expectations
+            .insert(transfer_id, expected_speed_bps);
+        self.drift_detector
+            .set_baseline(transfer_id, expected_speed_bps, expected_completion_ms);
     }
 
     /// Process a progress update from the ProgressTracker
@@ -209,15 +211,14 @@ impl TriggerGenerator {
         let bytes = (update.current_speed_bps * duration_ms / 1000) as u64;
 
         // Record sample in drift detector
-        self.drift_detector.record_sample(
-            update.transfer_id,
-            edge_idx,
-            bytes,
-            duration_ms,
-        );
+        self.drift_detector
+            .record_sample(update.transfer_id, edge_idx, bytes, duration_ms);
 
         // Check for drift
-        if self.drift_detector.is_drifting(update.transfer_id, self.config.drift_threshold) {
+        if self
+            .drift_detector
+            .is_drifting(update.transfer_id, self.config.drift_threshold)
+        {
             let metrics = self.drift_detector.calculate_drift(update.transfer_id);
             self.pending_triggers.push(ReoptTrigger::DriftExceeded {
                 drift_ratio: metrics.drift_ratio,
@@ -239,16 +240,23 @@ impl TriggerGenerator {
 
             if now_degraded && !old_degraded {
                 // Newly degraded
-                (Some(ReoptTrigger::EdgeDegraded {
-                    edge_idx,
-                    health_score: new_health,
-                }), true)
-            } else if old_degraded && now_recovered && new_health >= self.config.recovery_threshold {
+                (
+                    Some(ReoptTrigger::EdgeDegraded {
+                        edge_idx,
+                        health_score: new_health,
+                    }),
+                    true,
+                )
+            } else if old_degraded && now_recovered && new_health >= self.config.recovery_threshold
+            {
                 // Recovered
-                (Some(ReoptTrigger::EdgeRecovered {
-                    edge_idx,
-                    health_score: new_health,
-                }), false)
+                (
+                    Some(ReoptTrigger::EdgeRecovered {
+                        edge_idx,
+                        health_score: new_health,
+                    }),
+                    false,
+                )
             } else {
                 (None, now_degraded)
             }
@@ -256,21 +264,27 @@ impl TriggerGenerator {
             // First health report
             let now_degraded = new_health < self.config.health_threshold;
             if now_degraded {
-                (Some(ReoptTrigger::EdgeDegraded {
-                    edge_idx,
-                    health_score: new_health,
-                }), true)
+                (
+                    Some(ReoptTrigger::EdgeDegraded {
+                        edge_idx,
+                        health_score: new_health,
+                    }),
+                    true,
+                )
             } else {
                 (None, false)
             }
         };
 
         // Update state
-        self.health_states.insert(edge_idx, EdgeHealthState {
-            current_health: new_health,
-            was_degraded,
-            last_update: now,
-        });
+        self.health_states.insert(
+            edge_idx,
+            EdgeHealthState {
+                current_health: new_health,
+                was_degraded,
+                last_update: now,
+            },
+        );
 
         // Add trigger if generated
         if let Some(t) = trigger {
@@ -288,12 +302,15 @@ impl TriggerGenerator {
             0.0
         };
 
-        self.load_states.insert(edge_idx, EdgeLoadState {
-            load_ratio,
-            active_transfers: active,
-            max_transfers: max,
-            last_update: Instant::now(),
-        });
+        self.load_states.insert(
+            edge_idx,
+            EdgeLoadState {
+                load_ratio,
+                active_transfers: active,
+                max_transfers: max,
+                last_update: Instant::now(),
+            },
+        );
     }
 
     /// Check for load imbalances and generate triggers
@@ -304,7 +321,8 @@ impl TriggerGenerator {
         for (edge_idx, state) in &self.load_states {
             if state.load_ratio >= self.config.overload_threshold {
                 overloaded.push(*edge_idx);
-            } else if state.load_ratio <= self.config.underload_threshold && state.max_transfers > 0 {
+            } else if state.load_ratio <= self.config.underload_threshold && state.max_transfers > 0
+            {
                 underloaded.push(*edge_idx);
             }
         }
@@ -442,8 +460,7 @@ mod tests {
         let valid = TriggerConfig::default();
         assert!(valid.validate().is_ok());
 
-        let invalid = TriggerConfig::default()
-            .with_health_threshold(1.5);
+        let invalid = TriggerConfig::default().with_health_threshold(1.5);
         assert!(invalid.validate().is_err());
 
         let invalid_recovery = TriggerConfig::default()
@@ -477,7 +494,10 @@ mod tests {
         let triggers = tg.collect_triggers();
         assert_eq!(triggers.len(), 1);
         match &triggers[0] {
-            ReoptTrigger::EdgeDegraded { edge_idx, health_score } => {
+            ReoptTrigger::EdgeDegraded {
+                edge_idx,
+                health_score,
+            } => {
                 assert_eq!(*edge_idx, EdgeIdx(0));
                 assert!(*health_score < 0.5);
             }
@@ -498,7 +518,10 @@ mod tests {
         let triggers = tg.collect_triggers();
         assert_eq!(triggers.len(), 1);
         match &triggers[0] {
-            ReoptTrigger::EdgeRecovered { edge_idx, health_score } => {
+            ReoptTrigger::EdgeRecovered {
+                edge_idx,
+                health_score,
+            } => {
                 assert_eq!(*edge_idx, EdgeIdx(0));
                 assert!(*health_score >= 0.7);
             }
@@ -518,7 +541,11 @@ mod tests {
         tg.on_health_change(EdgeIdx(0), 0.6);
         let triggers = tg.collect_triggers();
         // No recovery trigger yet (still in degraded state)
-        assert!(triggers.iter().all(|t| !matches!(t, ReoptTrigger::EdgeRecovered { .. })));
+        assert!(
+            triggers
+                .iter()
+                .all(|t| !matches!(t, ReoptTrigger::EdgeRecovered { .. }))
+        );
     }
 
     #[test]
@@ -533,44 +560,57 @@ mod tests {
         tg.on_load_update(EdgeIdx(2), 1, 10);
 
         let triggers = tg.collect_triggers();
-        assert!(triggers.iter().any(|t| matches!(t, ReoptTrigger::LoadImbalance { .. })));
+        assert!(
+            triggers
+                .iter()
+                .any(|t| matches!(t, ReoptTrigger::LoadImbalance { .. }))
+        );
     }
 
     #[test]
     fn test_no_load_imbalance_with_few_edges() {
-        let config = TriggerConfig::default()
-            .with_min_imbalance_edges(3);
+        let config = TriggerConfig::default().with_min_imbalance_edges(3);
         let mut tg = TriggerGenerator::new(config, DriftConfig::default());
 
         // Only one overloaded edge - not enough
         tg.on_load_update(EdgeIdx(0), 9, 10);
 
         let triggers = tg.collect_triggers();
-        assert!(!triggers.iter().any(|t| matches!(t, ReoptTrigger::LoadImbalance { .. })));
+        assert!(
+            !triggers
+                .iter()
+                .any(|t| matches!(t, ReoptTrigger::LoadImbalance { .. }))
+        );
     }
 
     #[test]
     fn test_schedule_staleness() {
-        let config = TriggerConfig::default()
-            .with_max_schedule_age_ms(100); // Very short for testing
+        let config = TriggerConfig::default().with_max_schedule_age_ms(100); // Very short for testing
         let mut tg = TriggerGenerator::new(config, DriftConfig::default());
 
         tg.set_schedule_created(Instant::now() - std::time::Duration::from_millis(200));
 
         let triggers = tg.collect_triggers();
-        assert!(triggers.iter().any(|t| matches!(t, ReoptTrigger::ScheduleStale { .. })));
+        assert!(
+            triggers
+                .iter()
+                .any(|t| matches!(t, ReoptTrigger::ScheduleStale { .. }))
+        );
     }
 
     #[test]
     fn test_schedule_not_stale() {
-        let config = TriggerConfig::default()
-            .with_max_schedule_age_ms(60000);
+        let config = TriggerConfig::default().with_max_schedule_age_ms(60000);
         let mut tg = TriggerGenerator::new(config, DriftConfig::default());
 
         tg.refresh_schedule();
 
         let triggers = tg.collect_triggers();
-        assert!(!triggers.iter().any(|t| matches!(t, ReoptTrigger::ScheduleStale { .. })));
+        assert!(
+            !triggers
+                .iter()
+                .any(|t| matches!(t, ReoptTrigger::ScheduleStale { .. }))
+        );
     }
 
     #[test]
@@ -696,8 +736,7 @@ mod tests {
 
     #[test]
     fn test_multiple_triggers_collected() {
-        let config = TriggerConfig::default()
-            .with_max_schedule_age_ms(10);
+        let config = TriggerConfig::default().with_max_schedule_age_ms(10);
         let mut tg = TriggerGenerator::new(config, DriftConfig::default());
 
         // Create multiple trigger conditions

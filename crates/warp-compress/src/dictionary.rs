@@ -242,7 +242,10 @@ impl Compressor for DictZstdCompressor {
 // immutable owned data. The compress() and decompress() methods take
 // &self and create new Encoder/Decoder instances per call, so there
 // is no shared mutable state between concurrent calls.
+// SAFETY: DictZstdCompressor only contains owned, immutable data (EncoderDictionary,
+// DecoderDictionary, compression level). No interior mutability exists.
 unsafe impl Send for DictZstdCompressor {}
+// SAFETY: Same as Send - all methods use &self and create new Encoder/Decoder per call.
 unsafe impl Sync for DictZstdCompressor {}
 
 #[cfg(test)]

@@ -324,7 +324,11 @@ impl StorageTransport {
             .entry(route_key)
             .and_modify(|route| {
                 // Add location if not already present
-                if !route.locations.iter().any(|l| l.peer_id == location.peer_id) {
+                if !route
+                    .locations
+                    .iter()
+                    .any(|l| l.peer_id == location.peer_id)
+                {
                     route.locations.push(location.clone());
                 }
                 route.last_access = std::time::Instant::now();
@@ -379,10 +383,7 @@ impl StorageTransport {
 
     /// Get statistics for a tier
     pub fn tier_stats(&self, tier: Tier) -> TierStats {
-        self.stats
-            .get(&tier)
-            .map(|s| s.clone())
-            .unwrap_or_default()
+        self.stats.get(&tier).map(|s| s.clone()).unwrap_or_default()
     }
 
     /// Get all tier statistics
@@ -416,8 +417,8 @@ impl StorageTransport {
                 s.messages_recv += 1;
                 s.bytes_recv += bytes as u64;
                 // Rolling average
-                s.avg_latency_us = (s.avg_latency_us * (s.messages_recv - 1) + latency_us)
-                    / s.messages_recv;
+                s.avg_latency_us =
+                    (s.avg_latency_us * (s.messages_recv - 1) + latency_us) / s.messages_recv;
             })
             .or_insert_with(|| TierStats {
                 messages_recv: 1,
@@ -446,9 +447,8 @@ impl StorageTransport {
     /// Prune stale routes (not accessed within timeout)
     pub fn prune_stale_routes(&self, max_age: Duration) {
         let now = std::time::Instant::now();
-        self.routes.retain(|_, route| {
-            now.duration_since(route.last_access) < max_age
-        });
+        self.routes
+            .retain(|_, route| now.duration_since(route.last_access) < max_age);
     }
 }
 

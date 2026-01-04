@@ -261,7 +261,8 @@ impl VersionTimeline {
 
         // Sort by timestamp (newest first), then by version ID (newest first) for tie-breaking
         versions.sort_by(|a, b| {
-            b.timestamp.cmp(&a.timestamp)
+            b.timestamp
+                .cmp(&a.timestamp)
                 .then_with(|| b.id.0.cmp(&a.id.0))
         });
 
@@ -285,9 +286,7 @@ impl VersionTimeline {
         // Clean up delta cache for pruned versions
         {
             let mut deltas = self.deltas.write();
-            deltas.retain(|(from, to), _| {
-                !pruned.contains(from) && !pruned.contains(to)
-            });
+            deltas.retain(|(from, to), _| !pruned.contains(from) && !pruned.contains(to));
         }
 
         Ok(pruned)
@@ -355,11 +354,7 @@ impl TimelineBuilder {
     }
 
     /// Build the timeline with given registry and store
-    pub fn build(
-        self,
-        registry: Arc<ChunkRegistry>,
-        store: Arc<dyn TreeStore>,
-    ) -> VersionTimeline {
+    pub fn build(self, registry: Arc<ChunkRegistry>, store: Arc<dyn TreeStore>) -> VersionTimeline {
         VersionTimeline::new(self.config, registry, store)
     }
 }
@@ -496,8 +491,12 @@ mod tests {
         let timeline = create_timeline();
 
         // Similar data should share chunks
-        let v1 = timeline.commit(b"this is the same prefix with different ending one", None).unwrap();
-        let v2 = timeline.commit(b"this is the same prefix with different ending two", None).unwrap();
+        let v1 = timeline
+            .commit(b"this is the same prefix with different ending one", None)
+            .unwrap();
+        let v2 = timeline
+            .commit(b"this is the same prefix with different ending two", None)
+            .unwrap();
 
         let shared = timeline.shared_chunks(v1, v2).unwrap();
         // May or may not share chunks depending on chunk boundaries

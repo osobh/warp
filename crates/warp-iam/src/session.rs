@@ -153,10 +153,13 @@ impl SessionManager {
         };
 
         // Store session
-        self.sessions.insert(token.clone(), SessionData {
-            session: session.clone(),
-            invalidated: false,
-        });
+        self.sessions.insert(
+            token.clone(),
+            SessionData {
+                session: session.clone(),
+                invalidated: false,
+            },
+        );
         self.id_to_token.insert(session_id, token);
 
         Ok(session)
@@ -164,11 +167,15 @@ impl SessionManager {
 
     /// Get a session by token
     pub fn get_session(&self, token: &str) -> Result<Session> {
-        let data = self.sessions.get(token)
+        let data = self
+            .sessions
+            .get(token)
             .ok_or_else(|| Error::SessionNotFound("Session not found".to_string()))?;
 
         if data.invalidated {
-            return Err(Error::SessionNotFound("Session has been invalidated".to_string()));
+            return Err(Error::SessionNotFound(
+                "Session has been invalidated".to_string(),
+            ));
         }
 
         if data.session.is_expired() {
@@ -193,7 +200,9 @@ impl SessionManager {
 
     /// Invalidate a session by ID
     pub fn invalidate(&self, session_id: &str) -> Result<()> {
-        let token = self.id_to_token.get(session_id)
+        let token = self
+            .id_to_token
+            .get(session_id)
             .ok_or_else(|| Error::SessionNotFound("Session not found".to_string()))?;
 
         if let Some(mut data) = self.sessions.get_mut(token.value()) {
@@ -215,11 +224,15 @@ impl SessionManager {
 
     /// Extend a session's expiry time
     pub fn extend_session(&self, token: &str) -> Result<Session> {
-        let mut data = self.sessions.get_mut(token)
+        let mut data = self
+            .sessions
+            .get_mut(token)
             .ok_or_else(|| Error::SessionNotFound("Session not found".to_string()))?;
 
         if data.invalidated {
-            return Err(Error::SessionNotFound("Session has been invalidated".to_string()));
+            return Err(Error::SessionNotFound(
+                "Session has been invalidated".to_string(),
+            ));
         }
 
         let now = Utc::now();
@@ -243,16 +256,16 @@ impl SessionManager {
         });
 
         // Also clean up id_to_token mapping
-        self.id_to_token.retain(|_, token| {
-            self.sessions.contains_key(token)
-        });
+        self.id_to_token
+            .retain(|_, token| self.sessions.contains_key(token));
 
         removed
     }
 
     /// Get the number of active sessions
     pub fn active_session_count(&self) -> usize {
-        self.sessions.iter()
+        self.sessions
+            .iter()
             .filter(|entry| !entry.invalidated && !entry.session.is_expired())
             .count()
     }
@@ -287,7 +300,8 @@ impl SessionManager {
         let signature = ed25519_dalek::Signature::from_slice(&sig_bytes)
             .map_err(|_| Error::InvalidToken("Invalid signature".to_string()))?;
 
-        self.verifying_key.verify(&payload_bytes, &signature)
+        self.verifying_key
+            .verify(&payload_bytes, &signature)
             .map_err(|_| Error::InvalidToken("Signature verification failed".to_string()))?;
 
         let payload: TokenPayload = serde_json::from_slice(&payload_bytes)
@@ -316,7 +330,10 @@ fn base64_encode(data: &[u8]) -> String {
     use std::io::Write;
     let mut buf = Vec::new();
     {
-        let mut encoder = base64::write::EncoderWriter::new(&mut buf, &base64::engine::general_purpose::URL_SAFE_NO_PAD);
+        let mut encoder = base64::write::EncoderWriter::new(
+            &mut buf,
+            &base64::engine::general_purpose::URL_SAFE_NO_PAD,
+        );
         encoder.write_all(data).unwrap();
     }
     String::from_utf8(buf).unwrap()

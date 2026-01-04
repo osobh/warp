@@ -6,14 +6,13 @@
 //! - Transport tier selection
 //! - Parcode field access (when feature enabled)
 
-use criterion::{black_box, criterion_group, criterion_main, Criterion, BenchmarkId, Throughput};
+use criterion::{BenchmarkId, Criterion, Throughput, black_box, criterion_group, criterion_main};
 use std::time::Duration;
 use tempfile::TempDir;
 
 use warp_store::{
-    Store, StoreConfig, ObjectKey, ObjectData,
-    EphemeralToken, AccessScope, Permissions,
-    transport::{StorageTransport, TransportConfig, PeerLocation},
+    AccessScope, EphemeralToken, ObjectData, ObjectKey, Permissions, Store, StoreConfig,
+    transport::{PeerLocation, StorageTransport, TransportConfig},
 };
 
 /// Setup a temporary store for benchmarks
@@ -24,7 +23,10 @@ async fn setup_store() -> (Store<warp_store::backend::LocalBackend>, TempDir) {
         ..Default::default()
     };
     let store = Store::new(config).await.unwrap();
-    store.create_bucket("bench", Default::default()).await.unwrap();
+    store
+        .create_bucket("bench", Default::default())
+        .await
+        .unwrap();
     (store, temp_dir)
 }
 
@@ -55,7 +57,10 @@ fn bench_put_get(c: &mut Criterion) {
         // Setup for get benchmark
         let key = ObjectKey::new("bench", &format!("get-object-{}", size)).unwrap();
         rt.block_on(async {
-            store.put(&key, ObjectData::from(data.clone())).await.unwrap();
+            store
+                .put(&key, ObjectData::from(data.clone()))
+                .await
+                .unwrap();
         });
 
         group.bench_with_input(BenchmarkId::new("get", size), &key, |b, key| {
@@ -79,25 +84,35 @@ fn bench_ephemeral_token(c: &mut Criterion) {
     // Token generation
     group.bench_function("generate", |b| {
         b.iter(|| {
-            black_box(store.create_ephemeral_url(&key, Duration::from_secs(3600)).unwrap());
+            black_box(
+                store
+                    .create_ephemeral_url(&key, Duration::from_secs(3600))
+                    .unwrap(),
+            );
         });
     });
 
     // Token with full options
     group.bench_function("generate_full", |b| {
         b.iter(|| {
-            black_box(store.create_ephemeral_url_with_options(
-                AccessScope::Object(key.clone()),
-                Permissions::READ_WRITE,
-                Duration::from_secs(3600),
-                Some(vec!["10.0.0.0/8".parse().unwrap()]),
-                None,
-            ).unwrap());
+            black_box(
+                store
+                    .create_ephemeral_url_with_options(
+                        AccessScope::Object(key.clone()),
+                        Permissions::READ_WRITE,
+                        Duration::from_secs(3600),
+                        Some(vec!["10.0.0.0/8".parse().unwrap()]),
+                        None,
+                    )
+                    .unwrap(),
+            );
         });
     });
 
     // Token verification
-    let token = store.create_ephemeral_url(&key, Duration::from_secs(3600)).unwrap();
+    let token = store
+        .create_ephemeral_url(&key, Duration::from_secs(3600))
+        .unwrap();
     group.bench_function("verify", |b| {
         b.iter(|| {
             black_box(store.verify_token(&token, None).unwrap());
@@ -214,7 +229,7 @@ fn bench_object_key(c: &mut Criterion) {
 }
 
 fn bench_collective_context(c: &mut Criterion) {
-    use warp_store::collective::{Rank, CollectiveContext};
+    use warp_store::collective::{CollectiveContext, Rank};
 
     let mut group = c.benchmark_group("collective");
 
@@ -254,9 +269,8 @@ fn bench_erasure(c: &mut Criterion) {
     // RS(10,4) - 10 data shards, 4 parity shards
     let config = StoreErasureConfig::new(10, 4).unwrap();
 
-    let backend = rt.block_on(async {
-        ErasureBackend::new(temp_dir.path(), config).await.unwrap()
-    });
+    let backend =
+        rt.block_on(async { ErasureBackend::new(temp_dir.path(), config).await.unwrap() });
 
     let mut group = c.benchmark_group("erasure");
 
@@ -276,12 +290,18 @@ fn bench_erasure(c: &mut Criterion) {
         let (shards, meta) = backend.encode_to_shards(&data, None).unwrap();
         let shard_opts: Vec<Option<Vec<u8>>> = shards.into_iter().map(Some).collect();
 
-        group.bench_with_input(BenchmarkId::new("decode", size), &shard_opts, |b, shards| {
-            b.iter(|| {
-                let decoded = backend.decode_from_shards(shards, meta.original_size).unwrap();
-                black_box(decoded);
-            });
-        });
+        group.bench_with_input(
+            BenchmarkId::new("decode", size),
+            &shard_opts,
+            |b, shards| {
+                b.iter(|| {
+                    let decoded = backend
+                        .decode_from_shards(shards, meta.original_size)
+                        .unwrap();
+                    black_box(decoded);
+                });
+            },
+        );
 
         // Decode with missing parity shards (still recoverable)
         let mut sparse_shards = shard_opts.clone();
@@ -290,12 +310,18 @@ fn bench_erasure(c: &mut Criterion) {
             sparse_shards[i] = None;
         }
 
-        group.bench_with_input(BenchmarkId::new("decode_recovery", size), &sparse_shards, |b, shards| {
-            b.iter(|| {
-                let decoded = backend.decode_from_shards(shards, meta.original_size).unwrap();
-                black_box(decoded);
-            });
-        });
+        group.bench_with_input(
+            BenchmarkId::new("decode_recovery", size),
+            &sparse_shards,
+            |b, shards| {
+                b.iter(|| {
+                    let decoded = backend
+                        .decode_from_shards(shards, meta.original_size)
+                        .unwrap();
+                    black_box(decoded);
+                });
+            },
+        );
     }
 
     group.finish();
@@ -303,7 +329,7 @@ fn bench_erasure(c: &mut Criterion) {
 
 #[cfg(feature = "erasure")]
 fn bench_erasure_put_get(c: &mut Criterion) {
-    use warp_store::backend::{ErasureBackend, StoreErasureConfig, StorageBackend};
+    use warp_store::backend::{ErasureBackend, StorageBackend, StoreErasureConfig};
     use warp_store::object::PutOptions;
 
     let rt = tokio::runtime::Runtime::new().unwrap();
@@ -329,14 +355,22 @@ fn bench_erasure_put_get(c: &mut Criterion) {
             b.to_async(&rt).iter(|| async {
                 let key = key.clone();
                 let data = ObjectData::from(data.clone());
-                black_box(backend.put(&key, data, PutOptions::default()).await.unwrap());
+                black_box(
+                    backend
+                        .put(&key, data, PutOptions::default())
+                        .await
+                        .unwrap(),
+                );
             });
         });
 
         // Setup for get benchmark
         let key = ObjectKey::new("bench", &format!("get-{}", size)).unwrap();
         rt.block_on(async {
-            backend.put(&key, ObjectData::from(data.clone()), PutOptions::default()).await.unwrap();
+            backend
+                .put(&key, ObjectData::from(data.clone()), PutOptions::default())
+                .await
+                .unwrap();
         });
 
         group.bench_with_input(BenchmarkId::new("get", size), &key, |b, key| {
@@ -360,7 +394,9 @@ fn bench_distributed(c: &mut Criterion) {
     let config = DistributedConfig::default();
 
     let backend = rt.block_on(async {
-        let b = DistributedBackend::new(temp_dir.path(), config).await.unwrap();
+        let b = DistributedBackend::new(temp_dir.path(), config)
+            .await
+            .unwrap();
         b.create_bucket("bench").await.unwrap();
         b
     });
@@ -377,14 +413,22 @@ fn bench_distributed(c: &mut Criterion) {
             b.to_async(&rt).iter(|| async {
                 let key = key.clone();
                 let data = ObjectData::from(data.clone());
-                black_box(backend.put(&key, data, PutOptions::default()).await.unwrap());
+                black_box(
+                    backend
+                        .put(&key, data, PutOptions::default())
+                        .await
+                        .unwrap(),
+                );
             });
         });
 
         // Setup for get benchmark
         let key = ObjectKey::new("bench", &format!("dist-get-{}", size)).unwrap();
         rt.block_on(async {
-            backend.put(&key, ObjectData::from(data.clone()), PutOptions::default()).await.unwrap();
+            backend
+                .put(&key, ObjectData::from(data.clone()), PutOptions::default())
+                .await
+                .unwrap();
         });
 
         group.bench_with_input(BenchmarkId::new("get", size), &key, |b, key| {
@@ -406,7 +450,7 @@ fn bench_distributed(c: &mut Criterion) {
 
 #[cfg(feature = "erasure")]
 fn bench_shard_operations(c: &mut Criterion) {
-    use warp_store::backend::{ErasureBackend, StoreErasureConfig, StorageBackend};
+    use warp_store::backend::{ErasureBackend, StorageBackend, StoreErasureConfig};
     use warp_store::object::PutOptions;
 
     let rt = tokio::runtime::Runtime::new().unwrap();
@@ -425,7 +469,10 @@ fn bench_shard_operations(c: &mut Criterion) {
     let key = ObjectKey::new("bench", "shard-test").unwrap();
     let data = generate_data(1048576); // 1MB
     rt.block_on(async {
-        backend.put(&key, ObjectData::from(data), PutOptions::default()).await.unwrap();
+        backend
+            .put(&key, ObjectData::from(data), PutOptions::default())
+            .await
+            .unwrap();
     });
 
     let mut group = c.benchmark_group("shard_ops");

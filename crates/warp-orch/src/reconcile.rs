@@ -398,9 +398,15 @@ pub enum ReoptTrigger {
     /// Drift exceeded acceptable threshold
     DriftExceeded { drift_ratio: f64, threshold: f64 },
     /// Edge health degraded
-    EdgeDegraded { edge_idx: EdgeIdx, health_score: f64 },
+    EdgeDegraded {
+        edge_idx: EdgeIdx,
+        health_score: f64,
+    },
     /// Edge health recovered
-    EdgeRecovered { edge_idx: EdgeIdx, health_score: f64 },
+    EdgeRecovered {
+        edge_idx: EdgeIdx,
+        health_score: f64,
+    },
     /// Load imbalance detected
     LoadImbalance {
         overloaded: Vec<EdgeIdx>,
@@ -508,7 +514,10 @@ impl ReoptEvaluator {
 
         if drift_magnitude >= self.config.min_drift_for_full {
             return ReoptDecision::FullReopt {
-                reason: format!("Drift ratio {:.2} exceeds full threshold", drift.drift_ratio),
+                reason: format!(
+                    "Drift ratio {:.2} exceeds full threshold",
+                    drift.drift_ratio
+                ),
             };
         }
 
@@ -562,7 +571,10 @@ impl ReoptEvaluator {
 
         for trigger in triggers {
             match trigger {
-                ReoptTrigger::DriftExceeded { drift_ratio, threshold } => {
+                ReoptTrigger::DriftExceeded {
+                    drift_ratio,
+                    threshold,
+                } => {
                     let magnitude = (drift_ratio - 1.0).abs();
                     if magnitude >= self.config.min_drift_for_full {
                         full_reopt_reasons.push(format!(
@@ -576,7 +588,10 @@ impl ReoptEvaluator {
                         ));
                     }
                 }
-                ReoptTrigger::EdgeDegraded { edge_idx, health_score } => {
+                ReoptTrigger::EdgeDegraded {
+                    edge_idx,
+                    health_score,
+                } => {
                     if *health_score < self.config.health_threshold {
                         affected_edges.push(*edge_idx);
                     }
@@ -586,7 +601,10 @@ impl ReoptEvaluator {
                         affected_edges.push(*edge_idx);
                     }
                 }
-                ReoptTrigger::LoadImbalance { overloaded, underloaded } => {
+                ReoptTrigger::LoadImbalance {
+                    overloaded,
+                    underloaded,
+                } => {
                     for edge in overloaded {
                         if !affected_edges.contains(edge) {
                             affected_edges.push(*edge);
@@ -661,8 +679,22 @@ mod tests {
             .with_ema_alpha(0.5);
         assert_eq!(config.sample_window_ms, 10000);
 
-        assert!(DriftConfig { sample_window_ms: 0, ..DriftConfig::new() }.validate().is_err());
-        assert!(DriftConfig { drift_threshold: 1.5, ..DriftConfig::new() }.validate().is_err());
+        assert!(
+            DriftConfig {
+                sample_window_ms: 0,
+                ..DriftConfig::new()
+            }
+            .validate()
+            .is_err()
+        );
+        assert!(
+            DriftConfig {
+                drift_threshold: 1.5,
+                ..DriftConfig::new()
+            }
+            .validate()
+            .is_err()
+        );
     }
 
     #[test]
@@ -704,13 +736,23 @@ mod tests {
         for _ in 0..3 {
             detector.record_sample(TransferId::new(1), EdgeIdx::new(0), 100, 10);
         }
-        assert_eq!(detector.calculate_drift(TransferId::new(1)).actual_speed_bps, 0);
+        assert_eq!(
+            detector
+                .calculate_drift(TransferId::new(1))
+                .actual_speed_bps,
+            0
+        );
 
         detector.set_baseline(TransferId::new(2), 80_000, 1000);
         for _ in 0..5 {
             detector.record_sample(TransferId::new(2), EdgeIdx::new(0), 1000, 100);
         }
-        assert!(detector.calculate_drift(TransferId::new(2)).actual_speed_bps > 0);
+        assert!(
+            detector
+                .calculate_drift(TransferId::new(2))
+                .actual_speed_bps
+                > 0
+        );
     }
 
     #[test]
@@ -752,10 +794,21 @@ mod tests {
 
     #[test]
     fn test_reopt_triggers_and_decisions() {
-        assert!(matches!(ReoptTrigger::DriftExceeded { drift_ratio: 1.5, threshold: 0.3 }, ReoptTrigger::DriftExceeded { .. }));
+        assert!(matches!(
+            ReoptTrigger::DriftExceeded {
+                drift_ratio: 1.5,
+                threshold: 0.3
+            },
+            ReoptTrigger::DriftExceeded { .. }
+        ));
         assert!(matches!(ReoptTrigger::Manual, ReoptTrigger::Manual));
         assert!(matches!(ReoptDecision::NoAction, ReoptDecision::NoAction));
-        assert!(matches!(ReoptDecision::FullReopt { reason: "test".to_string() }, ReoptDecision::FullReopt { .. }));
+        assert!(matches!(
+            ReoptDecision::FullReopt {
+                reason: "test".to_string()
+            },
+            ReoptDecision::FullReopt { .. }
+        ));
     }
 
     #[test]
@@ -765,18 +818,45 @@ mod tests {
         assert_eq!(config.min_drift_for_full, 0.5);
         assert!(config.validate().is_ok());
 
-        assert!(ReoptConfig { min_drift_for_partial: -0.1, ..ReoptConfig::new() }.validate().is_err());
-        assert!(ReoptConfig { min_drift_for_full: 0.2, min_drift_for_partial: 0.3, ..ReoptConfig::new() }.validate().is_err());
+        assert!(
+            ReoptConfig {
+                min_drift_for_partial: -0.1,
+                ..ReoptConfig::new()
+            }
+            .validate()
+            .is_err()
+        );
+        assert!(
+            ReoptConfig {
+                min_drift_for_full: 0.2,
+                min_drift_for_partial: 0.3,
+                ..ReoptConfig::new()
+            }
+            .validate()
+            .is_err()
+        );
     }
 
     #[test]
     fn test_reopt_evaluator_evaluate() {
         let evaluator = ReoptEvaluator::new(ReoptConfig::new());
 
-        let decision = evaluator.evaluate(&DriftMetrics { drift_ratio: 1.1, ..DriftMetrics::new() }, &HashMap::new());
+        let decision = evaluator.evaluate(
+            &DriftMetrics {
+                drift_ratio: 1.1,
+                ..DriftMetrics::new()
+            },
+            &HashMap::new(),
+        );
         assert!(matches!(decision, ReoptDecision::NoAction));
 
-        let decision = evaluator.evaluate(&DriftMetrics { drift_ratio: 1.35, ..DriftMetrics::new() }, &HashMap::new());
+        let decision = evaluator.evaluate(
+            &DriftMetrics {
+                drift_ratio: 1.35,
+                ..DriftMetrics::new()
+            },
+            &HashMap::new(),
+        );
         assert!(matches!(decision, ReoptDecision::PartialReopt { .. }));
 
         let mut edge_health = HashMap::new();
@@ -786,7 +866,13 @@ mod tests {
             assert!(affected_edges.contains(&EdgeIdx::new(0)));
         }
 
-        let decision = evaluator.evaluate(&DriftMetrics { drift_ratio: 1.6, ..DriftMetrics::new() }, &HashMap::new());
+        let decision = evaluator.evaluate(
+            &DriftMetrics {
+                drift_ratio: 1.6,
+                ..DriftMetrics::new()
+            },
+            &HashMap::new(),
+        );
         assert!(matches!(decision, ReoptDecision::FullReopt { .. }));
     }
 
@@ -798,7 +884,13 @@ mod tests {
         evaluator.record_reopt();
         assert!(evaluator.cooldown_remaining().is_some());
 
-        let decision = evaluator.evaluate(&DriftMetrics { drift_ratio: 1.6, ..DriftMetrics::new() }, &HashMap::new());
+        let decision = evaluator.evaluate(
+            &DriftMetrics {
+                drift_ratio: 1.6,
+                ..DriftMetrics::new()
+            },
+            &HashMap::new(),
+        );
         assert!(matches!(decision, ReoptDecision::Pause { .. }));
     }
 
@@ -806,27 +898,44 @@ mod tests {
     fn test_reopt_evaluator_should_reoptimize() {
         let evaluator = ReoptEvaluator::new(ReoptConfig::new());
 
-        assert!(matches!(evaluator.should_reoptimize(&[]), ReoptDecision::NoAction));
-        assert!(matches!(evaluator.should_reoptimize(&[ReoptTrigger::Manual]), ReoptDecision::FullReopt { .. }));
         assert!(matches!(
-            evaluator.should_reoptimize(&[ReoptTrigger::DriftExceeded { drift_ratio: 1.6, threshold: 0.3 }]),
+            evaluator.should_reoptimize(&[]),
+            ReoptDecision::NoAction
+        ));
+        assert!(matches!(
+            evaluator.should_reoptimize(&[ReoptTrigger::Manual]),
             ReoptDecision::FullReopt { .. }
         ));
         assert!(matches!(
-            evaluator.should_reoptimize(&[ReoptTrigger::ScheduleStale { age_ms: 70000, max_age_ms: 60000 }]),
+            evaluator.should_reoptimize(&[ReoptTrigger::DriftExceeded {
+                drift_ratio: 1.6,
+                threshold: 0.3
+            }]),
+            ReoptDecision::FullReopt { .. }
+        ));
+        assert!(matches!(
+            evaluator.should_reoptimize(&[ReoptTrigger::ScheduleStale {
+                age_ms: 70000,
+                max_age_ms: 60000
+            }]),
             ReoptDecision::FullReopt { .. }
         ));
 
         if let ReoptDecision::PartialReopt { affected_edges, .. } =
-            evaluator.should_reoptimize(&[ReoptTrigger::EdgeDegraded { edge_idx: EdgeIdx::new(0), health_score: 0.3 }])
+            evaluator.should_reoptimize(&[ReoptTrigger::EdgeDegraded {
+                edge_idx: EdgeIdx::new(0),
+                health_score: 0.3,
+            }])
         {
             assert!(affected_edges.contains(&EdgeIdx::new(0)));
         }
 
-        if let ReoptDecision::PartialReopt { affected_edges, .. } = evaluator.should_reoptimize(&[ReoptTrigger::LoadImbalance {
-            overloaded: vec![EdgeIdx::new(0)],
-            underloaded: vec![EdgeIdx::new(1)],
-        }]) {
+        if let ReoptDecision::PartialReopt { affected_edges, .. } =
+            evaluator.should_reoptimize(&[ReoptTrigger::LoadImbalance {
+                overloaded: vec![EdgeIdx::new(0)],
+                underloaded: vec![EdgeIdx::new(1)],
+            }])
+        {
             assert_eq!(affected_edges.len(), 2);
         }
     }
@@ -841,9 +950,15 @@ mod tests {
         }
 
         let metrics = detector.calculate_drift(TransferId::new(1));
-        let trigger = ReoptTrigger::DriftExceeded { drift_ratio: metrics.drift_ratio, threshold: 0.3 };
+        let trigger = ReoptTrigger::DriftExceeded {
+            drift_ratio: metrics.drift_ratio,
+            threshold: 0.3,
+        };
         let decision = ReoptEvaluator::new(ReoptConfig::new()).should_reoptimize(&[trigger]);
-        assert!(matches!(decision, ReoptDecision::FullReopt { .. } | ReoptDecision::PartialReopt { .. }));
+        assert!(matches!(
+            decision,
+            ReoptDecision::FullReopt { .. } | ReoptDecision::PartialReopt { .. }
+        ));
     }
 
     #[test]
@@ -854,12 +969,34 @@ mod tests {
             detector.record_sample(TransferId::new(1), EdgeIdx::new(0), 1000, 100);
             detector.record_sample(TransferId::new(1), EdgeIdx::new(1), 2000, 100);
         }
-        assert_eq!(detector.calculate_drift(TransferId::new(1)).edge_drift.len(), 2);
+        assert_eq!(
+            detector
+                .calculate_drift(TransferId::new(1))
+                .edge_drift
+                .len(),
+            2
+        );
 
         let mut perf = EdgePerformance::new();
-        perf.add_sample(TransferSample { edge_idx: EdgeIdx::new(0), bytes: 1000, duration_ms: 100, timestamp: Instant::now() }, 0.3);
+        perf.add_sample(
+            TransferSample {
+                edge_idx: EdgeIdx::new(0),
+                bytes: 1000,
+                duration_ms: 100,
+                timestamp: Instant::now(),
+            },
+            0.3,
+        );
         assert_eq!(perf.ema_speed_bps, 80_000.0);
-        perf.add_sample(TransferSample { edge_idx: EdgeIdx::new(0), bytes: 2000, duration_ms: 100, timestamp: Instant::now() }, 0.3);
+        perf.add_sample(
+            TransferSample {
+                edge_idx: EdgeIdx::new(0),
+                bytes: 2000,
+                duration_ms: 100,
+                timestamp: Instant::now(),
+            },
+            0.3,
+        );
         assert_eq!(perf.ema_speed_bps, 0.3 * 160_000.0 + 0.7 * 80_000.0);
     }
 
@@ -869,7 +1006,9 @@ mod tests {
         drift.edge_drift.insert(EdgeIdx::new(0), 0.5);
         drift.edge_drift.insert(EdgeIdx::new(1), 1.5);
 
-        if let ReoptDecision::PartialReopt { affected_edges, .. } = ReoptEvaluator::new(ReoptConfig::new()).evaluate(&drift, &HashMap::new()) {
+        if let ReoptDecision::PartialReopt { affected_edges, .. } =
+            ReoptEvaluator::new(ReoptConfig::new()).evaluate(&drift, &HashMap::new())
+        {
             assert!(affected_edges.contains(&EdgeIdx::new(0)));
             assert!(affected_edges.contains(&EdgeIdx::new(1)));
         }
@@ -884,10 +1023,22 @@ mod tests {
         let deser: DriftMetrics = serde_json::from_str(&json).unwrap();
         assert_eq!(deser.expected_speed_bps, 100_000);
 
-        let trigger = ReoptTrigger::EdgeDegraded { edge_idx: EdgeIdx::new(5), health_score: 0.3 };
-        assert_eq!(trigger, serde_json::from_str(&serde_json::to_string(&trigger).unwrap()).unwrap());
+        let trigger = ReoptTrigger::EdgeDegraded {
+            edge_idx: EdgeIdx::new(5),
+            health_score: 0.3,
+        };
+        assert_eq!(
+            trigger,
+            serde_json::from_str(&serde_json::to_string(&trigger).unwrap()).unwrap()
+        );
 
-        let decision = ReoptDecision::PartialReopt { affected_chunks: vec![ChunkId::new(1)], affected_edges: vec![EdgeIdx::new(0)] };
-        assert_eq!(decision, serde_json::from_str(&serde_json::to_string(&decision).unwrap()).unwrap());
+        let decision = ReoptDecision::PartialReopt {
+            affected_chunks: vec![ChunkId::new(1)],
+            affected_edges: vec![EdgeIdx::new(0)],
+        };
+        assert_eq!(
+            decision,
+            serde_json::from_str(&serde_json::to_string(&decision).unwrap()).unwrap()
+        );
     }
 }

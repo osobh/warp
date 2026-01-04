@@ -49,13 +49,17 @@ impl LogLevel {
 
 impl fmt::Display for LogLevel {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", match self {
-            LogLevel::Trace => "trace",
-            LogLevel::Debug => "debug",
-            LogLevel::Info => "info",
-            LogLevel::Warn => "warn",
-            LogLevel::Error => "error",
-        })
+        write!(
+            f,
+            "{}",
+            match self {
+                LogLevel::Trace => "trace",
+                LogLevel::Debug => "debug",
+                LogLevel::Info => "info",
+                LogLevel::Warn => "warn",
+                LogLevel::Error => "error",
+            }
+        )
     }
 }
 
@@ -209,24 +213,39 @@ impl StructuredLogger {
 fn log_with_context(level: LogLevel, msg: &str, ctx: &LogContext) {
     match level {
         LogLevel::Trace => tracing::trace!(
-            component = ctx.component, transfer_id = ctx.transfer_id.as_deref(),
-            edge_id = ctx.edge_id.as_deref(), "{}", msg
+            component = ctx.component,
+            transfer_id = ctx.transfer_id.as_deref(),
+            edge_id = ctx.edge_id.as_deref(),
+            "{}",
+            msg
         ),
         LogLevel::Debug => tracing::debug!(
-            component = ctx.component, transfer_id = ctx.transfer_id.as_deref(),
-            edge_id = ctx.edge_id.as_deref(), "{}", msg
+            component = ctx.component,
+            transfer_id = ctx.transfer_id.as_deref(),
+            edge_id = ctx.edge_id.as_deref(),
+            "{}",
+            msg
         ),
         LogLevel::Info => tracing::info!(
-            component = ctx.component, transfer_id = ctx.transfer_id.as_deref(),
-            edge_id = ctx.edge_id.as_deref(), "{}", msg
+            component = ctx.component,
+            transfer_id = ctx.transfer_id.as_deref(),
+            edge_id = ctx.edge_id.as_deref(),
+            "{}",
+            msg
         ),
         LogLevel::Warn => tracing::warn!(
-            component = ctx.component, transfer_id = ctx.transfer_id.as_deref(),
-            edge_id = ctx.edge_id.as_deref(), "{}", msg
+            component = ctx.component,
+            transfer_id = ctx.transfer_id.as_deref(),
+            edge_id = ctx.edge_id.as_deref(),
+            "{}",
+            msg
         ),
         LogLevel::Error => tracing::error!(
-            component = ctx.component, transfer_id = ctx.transfer_id.as_deref(),
-            edge_id = ctx.edge_id.as_deref(), "{}", msg
+            component = ctx.component,
+            transfer_id = ctx.transfer_id.as_deref(),
+            edge_id = ctx.edge_id.as_deref(),
+            "{}",
+            msg
         ),
     }
 }
@@ -315,14 +334,22 @@ impl LogBuilder {
             log_event_with_context(
                 self.level,
                 &msg,
-                &self.fields.iter().map(|(k, v)| (k.as_str(), v.as_str())).collect::<Vec<_>>(),
+                &self
+                    .fields
+                    .iter()
+                    .map(|(k, v)| (k.as_str(), v.as_str()))
+                    .collect::<Vec<_>>(),
                 ctx,
             );
         } else {
             log_event_plain(
                 self.level,
                 &msg,
-                &self.fields.iter().map(|(k, v)| (k.as_str(), v.as_str())).collect::<Vec<_>>(),
+                &self
+                    .fields
+                    .iter()
+                    .map(|(k, v)| (k.as_str(), v.as_str()))
+                    .collect::<Vec<_>>(),
             );
         }
     }
@@ -415,14 +442,20 @@ pub fn init_logging(config: &LogConfig) -> Result<()> {
             if let Some(parent) = path.parent() {
                 std::fs::create_dir_all(parent)?;
             }
-            let file = std::fs::OpenOptions::new().create(true).append(true).open(path)?;
+            let file = std::fs::OpenOptions::new()
+                .create(true)
+                .append(true)
+                .open(path)?;
             apply_fmt(config, move || file.try_clone().unwrap(), filter)?;
         }
         LogOutput::Both { stdout, file } => {
             if let Some(parent) = file.parent() {
                 std::fs::create_dir_all(parent)?;
             }
-            let file_handle = std::fs::OpenOptions::new().create(true).append(true).open(file)?;
+            let file_handle = std::fs::OpenOptions::new()
+                .create(true)
+                .append(true)
+                .open(file)?;
             if *stdout {
                 let combined = CombinedWriter {
                     stdout: Arc::new(Mutex::new(std::io::stdout())),
@@ -499,7 +532,6 @@ where
     };
     init_result.map_err(|e| TelemetryError::Init(format!("Failed to init subscriber: {}", e)))
 }
-
 
 #[cfg(test)]
 mod tests;

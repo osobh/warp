@@ -642,7 +642,12 @@ mod tests {
 
         // Wrong leaf should fail
         let wrong_leaf = [3u8; 32];
-        assert!(!MerkleTree::verify_proof(&wrong_leaf, &proof, &tree.root(), 0));
+        assert!(!MerkleTree::verify_proof(
+            &wrong_leaf,
+            &proof,
+            &tree.root(),
+            0
+        ));
 
         // Wrong root should fail
         let wrong_root = [0u8; 32];

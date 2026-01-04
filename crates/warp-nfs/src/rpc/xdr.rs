@@ -180,9 +180,7 @@ impl<'a> XdrDecoder<'a> {
     /// Decode a string
     pub fn decode_string(&mut self) -> io::Result<String> {
         let bytes = self.decode_opaque()?;
-        String::from_utf8(bytes).map_err(|e| {
-            io::Error::new(io::ErrorKind::InvalidData, e)
-        })
+        String::from_utf8(bytes).map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))
     }
 
     /// Skip bytes

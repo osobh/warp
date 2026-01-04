@@ -159,7 +159,10 @@ impl FormatReader for WarpNativeReader {
         let mut meta = TensorMeta::new(entry.name.clone(), entry.shape.clone(), entry.dtype);
         meta.checksum = Some(entry.checksum.clone());
 
-        Ok(TensorData::new(meta, Bytes::copy_from_slice(&data[start..end])))
+        Ok(TensorData::new(
+            meta,
+            Bytes::copy_from_slice(&data[start..end]),
+        ))
     }
 
     fn read_all(&self, data: &[u8]) -> TensorResult<Vec<TensorData>> {
@@ -179,7 +182,10 @@ impl FormatReader for WarpNativeReader {
             let mut meta = TensorMeta::new(entry.name, entry.shape, entry.dtype);
             meta.checksum = Some(entry.checksum);
 
-            tensors.push(TensorData::new(meta, Bytes::copy_from_slice(&data[start..end])));
+            tensors.push(TensorData::new(
+                meta,
+                Bytes::copy_from_slice(&data[start..end]),
+            ));
         }
 
         Ok(tensors)
@@ -228,8 +234,8 @@ impl FormatWriter for WarpNativeWriter {
             tensors: entries,
         };
 
-        let header_bytes = rmp_serde::to_vec(&header)
-            .map_err(|e| TensorError::Serialization(e.to_string()))?;
+        let header_bytes =
+            rmp_serde::to_vec(&header).map_err(|e| TensorError::Serialization(e.to_string()))?;
 
         // Create final buffer
         let mut buffer = Vec::with_capacity(header_bytes.len() + offset as usize);

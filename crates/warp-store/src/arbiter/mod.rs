@@ -44,11 +44,11 @@ mod recovery;
 mod vote;
 mod witness;
 
-pub use detector::{SplitBrainDetector, PartitionState, PartitionInfo};
-pub use fencing::{FencingManager, FencingConfig, FenceAction, FenceResult};
-pub use recovery::{RecoveryCoordinator, RecoveryState, RecoveryPlan};
-pub use vote::{VoteTracker, Vote, VoteResult, QuorumStatus};
-pub use witness::{WitnessNode, WitnessConfig, WitnessState, WitnessHeartbeat};
+pub use detector::{PartitionInfo, PartitionState, SplitBrainDetector};
+pub use fencing::{FenceAction, FenceResult, FencingConfig, FencingManager};
+pub use recovery::{RecoveryCoordinator, RecoveryPlan, RecoveryState};
+pub use vote::{QuorumStatus, Vote, VoteResult, VoteTracker};
+pub use witness::{WitnessConfig, WitnessHeartbeat, WitnessNode, WitnessState};
 
 use std::time::Duration;
 

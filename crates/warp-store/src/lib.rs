@@ -60,57 +60,61 @@ pub mod snapshot;
 pub mod transport;
 pub mod version;
 
-pub use backend::{StorageBackend, HpcStorageBackend};
-pub use bucket::{Bucket, BucketConfig, BucketPolicy};
-pub use collective::{Rank, CollectiveContext, StorageCollectiveOps, CollectiveAdapter};
-pub use replication::{
-    ReplicationPolicy, ErasurePolicy, PlacementConstraints, ReadPreference, ShardDistribution,
-    Domain, DomainId, DomainRegistry, DomainHealth, NodeInfo, NodeStatus,
-    WireGuardTunnelManager, WireGuardTunnel, WireGuardConfig, WireGuardKeyPair, TunnelStatus, TunnelStats,
-    DistributedShardManager, ShardKey, ShardLocation, ShardHealth, ShardIndex, ShardDistributionInfo, ShardManagerStats,
-    GeoRouter, LatencyStats, ShardReadPlan, GeoRouterStats,
-};
-#[cfg(feature = "raft")]
-pub use consistency::{RaftStore, RaftStoreConfig, RaftMetrics, NodeId, ObjectMetadataEntry};
-pub use ephemeral::{EphemeralToken, AccessScope, Permissions, RateLimit};
-pub use error::{Error, Result};
-pub use key::ObjectKey;
-pub use metrics::{MetricsCollector, MetricsSnapshot, LatencyTimer};
-pub use object::{ObjectData, ObjectMeta, PutOptions, ListOptions, ObjectList, ObjectSummary, FieldData, FieldValue};
-pub use version::{Version, VersionId, VersioningMode};
-pub use lifecycle::{LifecycleExecutor, LifecycleConfig, LifecycleStats, LifecycleRuleBuilder};
-pub use events::{EventEmitter, EventConfig, S3Event, EventType, NotificationConfiguration};
-pub use object_lock::{
-    ObjectLockConfig, ObjectLockManager, ObjectLockStatus, ObjectRetention,
-    RetentionMode, LegalHoldStatus, DefaultRetention,
-};
-pub use healer::{HealerDaemon, HealerConfig, HealerMetrics, HealerStats, RepairQueue, RepairJob, RepairPriority, RepairWorker, RepairResult};
-pub use scrub::{ScrubDaemon, ScrubConfig, ScrubMetrics, ScrubStats, ScrubScheduler, ScrubJob, ScrubResult};
-pub use quota::{QuotaManager, QuotaConfig, QuotaPolicy, QuotaUsage, QuotaAlert, QuotaEnforcement};
 pub use arbiter::{
-    ArbiterConfig, ArbiterStatus, NodeRole,
-    SplitBrainDetector, PartitionState, PartitionInfo,
-    FencingManager, FencingConfig, FenceAction, FenceResult,
-    RecoveryCoordinator, RecoveryState, RecoveryPlan,
-    VoteTracker, Vote, VoteResult, QuorumStatus,
-    WitnessNode, WitnessConfig, WitnessState, WitnessHeartbeat,
+    ArbiterConfig, ArbiterStatus, FenceAction, FenceResult, FencingConfig, FencingManager,
+    NodeRole, PartitionInfo, PartitionState, QuorumStatus, RecoveryCoordinator, RecoveryPlan,
+    RecoveryState, SplitBrainDetector, Vote, VoteResult, VoteTracker, WitnessConfig,
+    WitnessHeartbeat, WitnessNode, WitnessState,
 };
-pub use snapshot::{
-    SnapshotManager, SnapshotConfig, Snapshot, SnapshotId, SnapshotState,
-    SnapshotPolicy, SnapshotSchedule, SnapshotStats,
-    CloneManager, CloneInfo, CloneConfig, CloneState, CloneHandle,
-    CowBlock, CowManager, CowConfig, BlockRef, BlockState,
-    SnapshotSystemConfig, SnapshotGranularity, RestoreOptions, SnapshotDiff,
+pub use backend::{HpcStorageBackend, StorageBackend};
+pub use bucket::{Bucket, BucketConfig, BucketPolicy};
+pub use collective::{CollectiveAdapter, CollectiveContext, Rank, StorageCollectiveOps};
+#[cfg(feature = "raft")]
+pub use consistency::{NodeId, ObjectMetadataEntry, RaftMetrics, RaftStore, RaftStoreConfig};
+pub use ephemeral::{AccessScope, EphemeralToken, Permissions, RateLimit};
+pub use error::{Error, Result};
+pub use events::{EventConfig, EventEmitter, EventType, NotificationConfiguration, S3Event};
+pub use healer::{
+    HealerConfig, HealerDaemon, HealerMetrics, HealerStats, RepairJob, RepairPriority, RepairQueue,
+    RepairResult, RepairWorker,
+};
+pub use key::ObjectKey;
+pub use lifecycle::{LifecycleConfig, LifecycleExecutor, LifecycleRuleBuilder, LifecycleStats};
+pub use metrics::{LatencyTimer, MetricsCollector, MetricsSnapshot};
+pub use object::{
+    FieldData, FieldValue, ListOptions, ObjectData, ObjectList, ObjectMeta, ObjectSummary,
+    PutOptions,
+};
+pub use object_lock::{
+    DefaultRetention, LegalHoldStatus, ObjectLockConfig, ObjectLockManager, ObjectLockStatus,
+    ObjectRetention, RetentionMode,
+};
+pub use quota::{QuotaAlert, QuotaConfig, QuotaEnforcement, QuotaManager, QuotaPolicy, QuotaUsage};
+pub use replication::{
+    DistributedShardManager, Domain, DomainHealth, DomainId, DomainRegistry, ErasurePolicy,
+    GeoRouter, GeoRouterStats, LatencyStats, NodeInfo, NodeStatus, PlacementConstraints,
+    ReadPreference, ReplicationPolicy, ShardDistribution, ShardDistributionInfo, ShardHealth,
+    ShardIndex, ShardKey, ShardLocation, ShardManagerStats, ShardReadPlan, TunnelStats,
+    TunnelStatus, WireGuardConfig, WireGuardKeyPair, WireGuardTunnel, WireGuardTunnelManager,
+};
+pub use scrub::{
+    ScrubConfig, ScrubDaemon, ScrubJob, ScrubMetrics, ScrubResult, ScrubScheduler, ScrubStats,
 };
 pub use slai::{
-    PlacementEngine, PlacementDecision, PlacementHint,
-    WorkloadPredictor, WorkloadType, PredictionResult,
-    AccessTracker, AccessPattern, AccessStats,
+    AccessPattern, AccessStats, AccessTracker, PlacementDecision, PlacementEngine, PlacementHint,
+    PredictionResult, WorkloadPredictor, WorkloadType,
 };
+pub use snapshot::{
+    BlockRef, BlockState, CloneConfig, CloneHandle, CloneInfo, CloneManager, CloneState, CowBlock,
+    CowConfig, CowManager, RestoreOptions, Snapshot, SnapshotConfig, SnapshotDiff,
+    SnapshotGranularity, SnapshotId, SnapshotManager, SnapshotPolicy, SnapshotSchedule,
+    SnapshotState, SnapshotStats, SnapshotSystemConfig,
+};
+pub use version::{Version, VersionId, VersioningMode};
 
-use std::sync::Arc;
 use dashmap::DashMap;
-use tracing::{info, debug};
+use std::sync::Arc;
+use tracing::{debug, info};
 
 /// Main store configuration
 #[derive(Debug, Clone)]
@@ -238,16 +242,14 @@ impl<B: StorageBackend> Store<B> {
                 "Initializing distributed mode with Raft"
             );
 
-            let raft = RaftStore::with_config(
-                dist_config.node_id,
-                dist_config.raft_config.clone(),
-            )
-            .await?;
+            let raft = RaftStore::with_config(dist_config.node_id, dist_config.raft_config.clone())
+                .await?;
 
             if dist_config.init_cluster {
                 raft.init_cluster().await?;
                 // Wait for leader election
-                raft.wait_for_leader(std::time::Duration::from_secs(5)).await?;
+                raft.wait_for_leader(std::time::Duration::from_secs(5))
+                    .await?;
             }
 
             Some(Arc::new(raft))
@@ -378,7 +380,8 @@ impl<B: StorageBackend> Store<B> {
 
     /// Put an object
     pub async fn put(&self, key: &ObjectKey, data: ObjectData) -> Result<ObjectMeta> {
-        self.put_with_options(key, data, PutOptions::default()).await
+        self.put_with_options(key, data, PutOptions::default())
+            .await
     }
 
     /// Put an object with options
@@ -454,7 +457,8 @@ impl<B: StorageBackend> Store<B> {
 
     /// List objects with prefix
     pub async fn list(&self, bucket: &str, prefix: &str) -> Result<ObjectList> {
-        self.list_with_options(bucket, prefix, ListOptions::default()).await
+        self.list_with_options(bucket, prefix, ListOptions::default())
+            .await
     }
 
     /// List objects with options
@@ -601,7 +605,10 @@ mod tests {
         let store = Store::new(config).await.unwrap();
 
         // Create bucket
-        store.create_bucket("test-bucket", BucketConfig::default()).await.unwrap();
+        store
+            .create_bucket("test-bucket", BucketConfig::default())
+            .await
+            .unwrap();
 
         // Put object
         let key = ObjectKey::new("test-bucket", "hello.txt").unwrap();
@@ -631,7 +638,9 @@ mod tests {
         let key = ObjectKey::new("test-bucket", "secret.bin").unwrap();
 
         // Generate token
-        let token = store.create_ephemeral_url(&key, std::time::Duration::from_secs(3600)).unwrap();
+        let token = store
+            .create_ephemeral_url(&key, std::time::Duration::from_secs(3600))
+            .unwrap();
 
         // Verify token
         assert!(store.verify_token(&token, None).is_ok());
@@ -662,7 +671,10 @@ mod tests {
         assert_eq!(store.current_leader(), Some(1));
 
         // Create bucket via Raft
-        store.create_bucket("raft-bucket", BucketConfig::default()).await.unwrap();
+        store
+            .create_bucket("raft-bucket", BucketConfig::default())
+            .await
+            .unwrap();
 
         // List buckets
         let buckets = store.list_buckets().await;

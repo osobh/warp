@@ -11,22 +11,34 @@ use std::collections::HashMap;
 /// Time-based scheduling window with hour range, day filter, and timezone offset
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct TimeWindow {
-    pub start_hour: u8,  // 0-23
-    pub end_hour: u8,    // 0-23
+    pub start_hour: u8, // 0-23
+    pub end_hour: u8,   // 0-23
     pub days: Vec<Weekday>,
-    pub timezone_offset_hours: i8,  // -12 to +14
+    pub timezone_offset_hours: i8, // -12 to +14
 }
 
 impl TimeWindow {
     /// Create a new time window with validation
-    pub fn new(start_hour: u8, end_hour: u8, days: Vec<Weekday>, timezone_offset_hours: i8) -> Result<Self, SchedError> {
+    pub fn new(
+        start_hour: u8,
+        end_hour: u8,
+        days: Vec<Weekday>,
+        timezone_offset_hours: i8,
+    ) -> Result<Self, SchedError> {
         if start_hour > 23 || end_hour > 23 {
             return Err(SchedError::InvalidConfig("hour must be 0-23".to_string()));
         }
         if timezone_offset_hours < -12 || timezone_offset_hours > 14 {
-            return Err(SchedError::InvalidConfig("timezone_offset must be -12 to +14".to_string()));
+            return Err(SchedError::InvalidConfig(
+                "timezone_offset must be -12 to +14".to_string(),
+            ));
         }
-        Ok(Self { start_hour, end_hour, days, timezone_offset_hours })
+        Ok(Self {
+            start_hour,
+            end_hour,
+            days,
+            timezone_offset_hours,
+        })
     }
 
     /// Check if the given time falls within this window
@@ -51,7 +63,12 @@ impl TimeWindow {
 
     /// Create a 24/7 always-active window
     pub fn always() -> Self {
-        Self { start_hour: 0, end_hour: 23, days: vec![], timezone_offset_hours: 0 }
+        Self {
+            start_hour: 0,
+            end_hour: 23,
+            days: vec![],
+            timezone_offset_hours: 0,
+        }
     }
 }
 
@@ -192,7 +209,12 @@ pub enum PowerConstraint {
 
 impl PowerConstraint {
     /// Check if constraint allows transfers
-    pub fn is_allowed(&self, battery_level: Option<u8>, is_charging: bool, now: DateTime<Utc>) -> bool {
+    pub fn is_allowed(
+        &self,
+        battery_level: Option<u8>,
+        is_charging: bool,
+        now: DateTime<Utc>,
+    ) -> bool {
         match self {
             PowerConstraint::Unlimited => true,
             PowerConstraint::PluggedInOnly => is_charging,
@@ -209,7 +231,12 @@ impl PowerConstraint {
     }
 
     /// Get cost multiplier
-    pub fn cost_multiplier(&self, battery_level: Option<u8>, is_charging: bool, now: DateTime<Utc>) -> f64 {
+    pub fn cost_multiplier(
+        &self,
+        battery_level: Option<u8>,
+        is_charging: bool,
+        now: DateTime<Utc>,
+    ) -> f64 {
         match self {
             PowerConstraint::Unlimited => 1.0,
             PowerConstraint::PluggedInOnly => {
@@ -281,11 +308,26 @@ impl EdgeConstraints {
         }
     }
 
-    pub fn with_time(mut self, time: TimeConstraint) -> Self { self.time = time; self }
-    pub fn with_cost(mut self, cost: CostConstraint) -> Self { self.cost = cost; self }
-    pub fn with_power(mut self, power: PowerConstraint) -> Self { self.power = power; self }
-    pub fn with_max_transfers(mut self, max: usize) -> Self { self.max_concurrent_transfers = Some(max); self }
-    pub fn with_bandwidth_limit(mut self, bps: u64) -> Self { self.bandwidth_limit_bps = Some(bps); self }
+    pub fn with_time(mut self, time: TimeConstraint) -> Self {
+        self.time = time;
+        self
+    }
+    pub fn with_cost(mut self, cost: CostConstraint) -> Self {
+        self.cost = cost;
+        self
+    }
+    pub fn with_power(mut self, power: PowerConstraint) -> Self {
+        self.power = power;
+        self
+    }
+    pub fn with_max_transfers(mut self, max: usize) -> Self {
+        self.max_concurrent_transfers = Some(max);
+        self
+    }
+    pub fn with_bandwidth_limit(mut self, bps: u64) -> Self {
+        self.bandwidth_limit_bps = Some(bps);
+        self
+    }
 }
 
 /// Severity of constraint violation (Soft = warning, Hard = blocking)
@@ -305,8 +347,18 @@ pub struct ConstraintViolation {
 }
 
 impl ConstraintViolation {
-    pub fn new(edge_idx: EdgeIdx, constraint_type: impl Into<String>, severity: ViolationSeverity, message: impl Into<String>) -> Self {
-        Self { edge_idx, constraint_type: constraint_type.into(), severity, message: message.into() }
+    pub fn new(
+        edge_idx: EdgeIdx,
+        constraint_type: impl Into<String>,
+        severity: ViolationSeverity,
+        message: impl Into<String>,
+    ) -> Self {
+        Self {
+            edge_idx,
+            constraint_type: constraint_type.into(),
+            severity,
+            message: message.into(),
+        }
     }
 }
 
@@ -319,7 +371,11 @@ pub struct ConstraintEvaluator {
 
 impl ConstraintEvaluator {
     pub fn new() -> Self {
-        Self { constraints: HashMap::new(), battery_levels: HashMap::new(), charging_states: HashMap::new() }
+        Self {
+            constraints: HashMap::new(),
+            battery_levels: HashMap::new(),
+            charging_states: HashMap::new(),
+        }
     }
 
     pub fn add_constraint(&mut self, edge_idx: EdgeIdx, constraints: EdgeConstraints) {
@@ -341,10 +397,13 @@ impl ConstraintEvaluator {
     pub fn is_available(&self, edge_idx: EdgeIdx, now: DateTime<Utc>) -> bool {
         if let Some(constraints) = self.constraints.get(&edge_idx) {
             let battery = self.battery_levels.get(&edge_idx).copied();
-            let charging = self.charging_states.get(&edge_idx).copied().unwrap_or(false);
+            let charging = self
+                .charging_states
+                .get(&edge_idx)
+                .copied()
+                .unwrap_or(false);
 
-            constraints.time.is_allowed(now)
-                && constraints.power.is_allowed(battery, charging, now)
+            constraints.time.is_allowed(now) && constraints.power.is_allowed(battery, charging, now)
         } else {
             true // No constraints means available
         }
@@ -354,7 +413,11 @@ impl ConstraintEvaluator {
     pub fn cost_multiplier(&self, edge_idx: EdgeIdx, now: DateTime<Utc>, bytes: u64) -> f64 {
         if let Some(constraints) = self.constraints.get(&edge_idx) {
             let battery = self.battery_levels.get(&edge_idx).copied();
-            let charging = self.charging_states.get(&edge_idx).copied().unwrap_or(false);
+            let charging = self
+                .charging_states
+                .get(&edge_idx)
+                .copied()
+                .unwrap_or(false);
 
             let time_mult = constraints.time.cost_multiplier(now);
             let cost_mult = constraints.cost.cost_multiplier(bytes);
@@ -398,7 +461,9 @@ impl ConstraintEvaluator {
                 let multiplier = self.cost_multiplier(edge, now, 1_000_000);
 
                 // Get current cost if valid
-                if let Some(current_cost) = costs.get_cost(crate::ChunkId::new(chunk_idx as u64), edge) {
+                if let Some(current_cost) =
+                    costs.get_cost(crate::ChunkId::new(chunk_idx as u64), edge)
+                {
                     if multiplier.is_infinite() {
                         // Infinite multiplier means blocked
                         costs.invalidate(chunk_idx, edge_idx);
@@ -484,9 +549,15 @@ pub struct PolicyEngine {
 }
 
 impl PolicyEngine {
-    pub fn new(policy: SchedulePolicy) -> Self { Self { policy } }
-    pub fn set_policy(&mut self, policy: SchedulePolicy) { self.policy = policy; }
-    pub fn policy(&self) -> &SchedulePolicy { &self.policy }
+    pub fn new(policy: SchedulePolicy) -> Self {
+        Self { policy }
+    }
+    pub fn set_policy(&mut self, policy: SchedulePolicy) {
+        self.policy = policy;
+    }
+    pub fn policy(&self) -> &SchedulePolicy {
+        &self.policy
+    }
 
     /// Adjust costs based on policy
     pub fn adjust_costs(
@@ -635,7 +706,9 @@ mod tests {
         assert_eq!(avoid.cost_multiplier(time_12), 5.0);
 
         // Off-peak
-        let off_peak = TimeConstraint::OffPeak { peak_hours: vec![10, 11, 17, 18] };
+        let off_peak = TimeConstraint::OffPeak {
+            peak_hours: vec![10, 11, 17, 18],
+        };
         let time_10 = DateTime::from_timestamp(1704189600, 0).unwrap();
         let time_14 = DateTime::from_timestamp(1704204000, 0).unwrap();
         assert!(!off_peak.is_allowed(time_10));
@@ -646,23 +719,36 @@ mod tests {
     fn test_cost_constraints() {
         // Unlimited
         assert!(CostConstraint::Unlimited.is_allowed(1_000_000_000));
-        assert_eq!(CostConstraint::Unlimited.cost_multiplier(1_000_000_000), 1.0);
+        assert_eq!(
+            CostConstraint::Unlimited.cost_multiplier(1_000_000_000),
+            1.0
+        );
 
         // Metered limit
-        let metered = CostConstraint::MeteredLimit { bytes_remaining: 1_000_000_000 };
+        let metered = CostConstraint::MeteredLimit {
+            bytes_remaining: 1_000_000_000,
+        };
         assert!(metered.is_allowed(500_000_000));
         assert!(metered.cost_multiplier(500_000_000) > 1.0);
-        let exceeded = CostConstraint::MeteredLimit { bytes_remaining: 100_000_000 };
+        let exceeded = CostConstraint::MeteredLimit {
+            bytes_remaining: 100_000_000,
+        };
         assert!(!exceeded.is_allowed(200_000_000));
 
         // Monthly budget
-        let budget = CostConstraint::MonthlyBudget { used: 500_000_000, limit: 1_000_000_000 };
+        let budget = CostConstraint::MonthlyBudget {
+            used: 500_000_000,
+            limit: 1_000_000_000,
+        };
         assert!(budget.is_allowed(300_000_000));
         assert!(!budget.is_allowed(600_000_000));
 
         // Prefer unmetered
         assert!(CostConstraint::PreferUnmetered.is_allowed(1_000_000_000));
-        assert_eq!(CostConstraint::PreferUnmetered.cost_multiplier(1_000_000_000), 1.5);
+        assert_eq!(
+            CostConstraint::PreferUnmetered.cost_multiplier(1_000_000_000),
+            1.5
+        );
 
         // Unmetered only
         assert!(!CostConstraint::UnmeteredOnly.is_allowed(1_000_000_000));
@@ -726,7 +812,8 @@ mod tests {
         assert!(ViolationSeverity::Soft < ViolationSeverity::Hard);
 
         // Violation creation
-        let violation = ConstraintViolation::new(EdgeIdx::new(0), "time", ViolationSeverity::Hard, "Test");
+        let violation =
+            ConstraintViolation::new(EdgeIdx::new(0), "time", ViolationSeverity::Hard, "Test");
         assert_eq!(violation.edge_idx, EdgeIdx::new(0));
         assert_eq!(violation.severity, ViolationSeverity::Hard);
     }
@@ -754,8 +841,8 @@ mod tests {
 
         // Time constraints
         let window = TimeWindow::new(10, 14, vec![], 0).unwrap();
-        let time_con = EdgeConstraints::new(EdgeIdx::new(0))
-            .with_time(TimeConstraint::RequiredWindow(window));
+        let time_con =
+            EdgeConstraints::new(EdgeIdx::new(0)).with_time(TimeConstraint::RequiredWindow(window));
         evaluator.add_constraint(EdgeIdx::new(0), time_con);
         assert!(evaluator.is_available(EdgeIdx::new(0), time_12));
         assert!(!evaluator.is_available(EdgeIdx::new(0), time_08));
@@ -771,10 +858,13 @@ mod tests {
 
         // Cost multiplier
         let win2 = TimeWindow::new(10, 14, vec![], 0).unwrap();
-        let cost_con = EdgeConstraints::new(EdgeIdx::new(2))
-            .with_time(TimeConstraint::PreferredWindow(win2));
+        let cost_con =
+            EdgeConstraints::new(EdgeIdx::new(2)).with_time(TimeConstraint::PreferredWindow(win2));
         evaluator.add_constraint(EdgeIdx::new(2), cost_con);
-        assert_eq!(evaluator.cost_multiplier(EdgeIdx::new(2), time_12, 1_000_000), 0.8);
+        assert_eq!(
+            evaluator.cost_multiplier(EdgeIdx::new(2), time_12, 1_000_000),
+            0.8
+        );
     }
 
     #[test]
@@ -784,8 +874,8 @@ mod tests {
 
         let constraints0 = EdgeConstraints::new(EdgeIdx::new(0))
             .with_time(TimeConstraint::RequiredWindow(window.clone()));
-        let constraints1 = EdgeConstraints::new(EdgeIdx::new(1))
-            .with_time(TimeConstraint::RequiredWindow(window));
+        let constraints1 =
+            EdgeConstraints::new(EdgeIdx::new(1)).with_time(TimeConstraint::RequiredWindow(window));
 
         evaluator.add_constraint(EdgeIdx::new(0), constraints0);
         evaluator.add_constraint(EdgeIdx::new(1), constraints1);
@@ -820,7 +910,11 @@ mod tests {
         assert_eq!(SchedulePolicy::CostConscious.cost_weight(), 0.6);
 
         // Custom
-        let custom = SchedulePolicy::Custom { time_weight: 0.5, cost_weight: 0.3, power_weight: 0.2 };
+        let custom = SchedulePolicy::Custom {
+            time_weight: 0.5,
+            cost_weight: 0.3,
+            power_weight: 0.2,
+        };
         assert_eq!(custom.time_weight(), 0.5);
     }
 
@@ -839,8 +933,8 @@ mod tests {
         let mut evaluator = ConstraintEvaluator::new();
 
         let window = TimeWindow::new(10, 14, vec![], 0).unwrap();
-        let constraints = EdgeConstraints::new(EdgeIdx::new(0))
-            .with_time(TimeConstraint::RequiredWindow(window));
+        let constraints =
+            EdgeConstraints::new(EdgeIdx::new(0)).with_time(TimeConstraint::RequiredWindow(window));
 
         evaluator.add_constraint(EdgeIdx::new(0), constraints);
 
@@ -863,9 +957,18 @@ mod tests {
         assert!(!engine.should_pause_transfers(&ConstraintEvaluator::new(), time_12));
 
         // Transfer priorities
-        assert_eq!(PolicyEngine::new(SchedulePolicy::Performance).get_transfer_priority(), 255);
-        assert_eq!(PolicyEngine::new(SchedulePolicy::Balanced).get_transfer_priority(), 128);
-        assert_eq!(PolicyEngine::new(SchedulePolicy::EcoFriendly).get_transfer_priority(), 64);
+        assert_eq!(
+            PolicyEngine::new(SchedulePolicy::Performance).get_transfer_priority(),
+            255
+        );
+        assert_eq!(
+            PolicyEngine::new(SchedulePolicy::Balanced).get_transfer_priority(),
+            128
+        );
+        assert_eq!(
+            PolicyEngine::new(SchedulePolicy::EcoFriendly).get_transfer_priority(),
+            64
+        );
     }
 
     #[test]
@@ -874,7 +977,19 @@ mod tests {
         let mut evaluator = ConstraintEvaluator::new();
 
         // Edge 0: Work hours only, low battery
-        let work_hours = TimeWindow::new(9, 17, vec![Weekday::Mon, Weekday::Tue, Weekday::Wed, Weekday::Thu, Weekday::Fri], 0).unwrap();
+        let work_hours = TimeWindow::new(
+            9,
+            17,
+            vec![
+                Weekday::Mon,
+                Weekday::Tue,
+                Weekday::Wed,
+                Weekday::Thu,
+                Weekday::Fri,
+            ],
+            0,
+        )
+        .unwrap();
         let edge0 = EdgeConstraints::new(EdgeIdx::new(0))
             .with_time(TimeConstraint::RequiredWindow(work_hours))
             .with_power(PowerConstraint::MinBattery { percent: 20 });
@@ -882,8 +997,9 @@ mod tests {
         evaluator.update_battery(EdgeIdx::new(0), 15, false);
 
         // Edge 1: Metered connection
-        let edge1 = EdgeConstraints::new(EdgeIdx::new(1))
-            .with_cost(CostConstraint::MeteredLimit { bytes_remaining: 100_000_000 });
+        let edge1 = EdgeConstraints::new(EdgeIdx::new(1)).with_cost(CostConstraint::MeteredLimit {
+            bytes_remaining: 100_000_000,
+        });
         evaluator.add_constraint(EdgeIdx::new(1), edge1);
 
         // Edge 2: No constraints

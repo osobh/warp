@@ -131,9 +131,7 @@ impl QuarantinedBlock {
 
     /// Get age of quarantine
     pub fn age(&self) -> Duration {
-        self.quarantined_at
-            .elapsed()
-            .unwrap_or(Duration::ZERO)
+        self.quarantined_at.elapsed().unwrap_or(Duration::ZERO)
     }
 }
 
@@ -348,7 +346,10 @@ mod tests {
 
         // Recoverable
         let key1 = ShardKey::new("bucket", "key1", 0);
-        manager.quarantine(QuarantinedBlock::new(key1, QuarantineReason::ChecksumMismatch));
+        manager.quarantine(QuarantinedBlock::new(
+            key1,
+            QuarantineReason::ChecksumMismatch,
+        ));
 
         // Not recoverable
         let key2 = ShardKey::new("bucket", "key2", 0);

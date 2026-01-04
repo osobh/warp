@@ -76,8 +76,8 @@ pub struct SessionConfig {
 impl Default for SessionConfig {
     fn default() -> Self {
         Self {
-            idle_timeout: Duration::from_secs(300),      // 5 minutes
-            max_lifetime: Duration::from_secs(86400),    // 24 hours
+            idle_timeout: Duration::from_secs(300),   // 5 minutes
+            max_lifetime: Duration::from_secs(86400), // 24 hours
             max_open_files: 1024,
             max_locks: 4096,
         }
@@ -291,7 +291,10 @@ impl SessionManager {
     }
 
     /// Get a session by ID
-    pub fn get_session(&self, session_id: SessionId) -> Option<dashmap::mapref::one::Ref<'_, SessionId, ClientSession>> {
+    pub fn get_session(
+        &self,
+        session_id: SessionId,
+    ) -> Option<dashmap::mapref::one::Ref<'_, SessionId, ClientSession>> {
         let session = self.sessions.get(&session_id)?;
         if session.is_expired() {
             drop(session);
@@ -302,7 +305,10 @@ impl SessionManager {
     }
 
     /// Get session by client ID
-    pub fn get_session_by_client(&self, client_id: ClientId) -> Option<dashmap::mapref::one::Ref<'_, SessionId, ClientSession>> {
+    pub fn get_session_by_client(
+        &self,
+        client_id: ClientId,
+    ) -> Option<dashmap::mapref::one::Ref<'_, SessionId, ClientSession>> {
         let session_id = *self.client_to_session.get(&client_id)?;
         self.get_session(session_id)
     }

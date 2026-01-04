@@ -277,10 +277,7 @@ impl LockManager for InMemoryLockManager {
 
         // Update indices
         self.token_index.insert(token, file_id);
-        self.owner_index
-            .entry(owner)
-            .or_default()
-            .push(token);
+        self.owner_index.entry(owner).or_default().push(token);
 
         Ok(token)
     }

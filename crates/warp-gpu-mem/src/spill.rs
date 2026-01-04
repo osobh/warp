@@ -1,7 +1,7 @@
 //! Spill manager - handles tensor spilling to storage
 
-use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Instant;
 
 use dashmap::DashMap;
@@ -87,11 +87,7 @@ impl SpillManager {
     /// Generate storage key for a tensor
     pub fn generate_storage_key(&self, tensor: &TensorHandle) -> String {
         let counter = self.spill_counter.fetch_add(1, Ordering::SeqCst);
-        format!(
-            "__gpu_spill__/{}/{:016x}",
-            tensor.id(),
-            counter
-        )
+        format!("__gpu_spill__/{}/{:016x}", tensor.id(), counter)
     }
 
     /// Generate chunk keys for large tensor

@@ -131,11 +131,7 @@ impl ShardedTensor {
         if !self.is_complete() {
             return Err(TensorError::ShardNotFound {
                 tensor_name: self.meta.meta.name.clone(),
-                shard_id: self
-                    .missing_shards()
-                    .first()
-                    .copied()
-                    .unwrap_or(0),
+                shard_id: self.missing_shards().first().copied().unwrap_or(0),
             });
         }
 

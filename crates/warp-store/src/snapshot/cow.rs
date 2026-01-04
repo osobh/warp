@@ -1,8 +1,8 @@
 //! Copy-on-Write block management for efficient snapshots
 
 use std::collections::HashMap;
-use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Duration, Instant, SystemTime};
 
 use dashmap::DashMap;
@@ -243,11 +243,7 @@ impl CowManager {
     }
 
     /// Allocate a new block or return existing deduplicated block
-    pub fn allocate_block(
-        &self,
-        data: &[u8],
-        checksum: [u8; 32],
-    ) -> BlockRef {
+    pub fn allocate_block(&self, data: &[u8], checksum: [u8; 32]) -> BlockRef {
         // Check for dedup hit
         if self.config.dedup_enabled {
             if let Some(existing_id) = self.checksum_index.get(&checksum) {
@@ -263,10 +259,7 @@ impl CowManager {
                         stats.dedup_bytes_saved += data.len() as u64;
                     }
 
-                    debug!(
-                        block_id = *existing_id,
-                        "Dedup hit, reusing existing block"
-                    );
+                    debug!(block_id = *existing_id, "Dedup hit, reusing existing block");
 
                     return BlockRef::full_block(*existing_id, data.len() as u64);
                 }
@@ -284,8 +277,12 @@ impl CowManager {
             block
         } else {
             // Store externally
-            let storage_path = format!("blocks/{:016x}", checksum[0..8].iter()
-                .fold(0u64, |acc, &b| (acc << 8) | b as u64));
+            let storage_path = format!(
+                "blocks/{:016x}",
+                checksum[0..8]
+                    .iter()
+                    .fold(0u64, |acc, &b| (acc << 8) | b as u64)
+            );
             CowBlock::new(data.len() as u64, checksum, storage_path)
         };
 
@@ -355,7 +352,8 @@ impl CowManager {
 
     /// Get block data (for inline blocks)
     pub fn get_block_data(&self, block_id: BlockId) -> Option<Vec<u8>> {
-        self.blocks.get(&block_id)
+        self.blocks
+            .get(&block_id)
             .and_then(|b| b.inline_data.clone())
     }
 
@@ -596,7 +594,9 @@ mod tests {
 
         // Copy on write
         let new_data = b"Modified data";
-        let new_ref = manager.copy_on_write(original_id, new_data, test_checksum(8)).unwrap();
+        let new_ref = manager
+            .copy_on_write(original_id, new_data, test_checksum(8))
+            .unwrap();
 
         // New block should be different
         assert_ne!(new_ref.block_id, original_id);

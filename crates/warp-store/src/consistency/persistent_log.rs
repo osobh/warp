@@ -80,15 +80,11 @@ impl SledLogStore {
 
     /// Get the last log ID in the store
     fn last_log_id(&self) -> Option<LogId<NodeId>> {
-        self.log_tree
-            .last()
-            .ok()
-            .flatten()
-            .and_then(|(_, value)| {
-                rmp_serde::from_slice::<Entry<TypeConfig>>(&value)
-                    .ok()
-                    .map(|e| e.log_id)
-            })
+        self.log_tree.last().ok().flatten().and_then(|(_, value)| {
+            rmp_serde::from_slice::<Entry<TypeConfig>>(&value)
+                .ok()
+                .map(|e| e.log_id)
+        })
     }
 
     /// Get the last purged log ID
@@ -129,13 +125,21 @@ impl RaftLogReader<TypeConfig> for RwLock<SledLogStore> {
 
         // Convert range to key range
         let start = match range.start_bound() {
-            std::ops::Bound::Included(&i) => std::ops::Bound::Included(SledLogStore::index_to_key(i)),
-            std::ops::Bound::Excluded(&i) => std::ops::Bound::Excluded(SledLogStore::index_to_key(i)),
+            std::ops::Bound::Included(&i) => {
+                std::ops::Bound::Included(SledLogStore::index_to_key(i))
+            }
+            std::ops::Bound::Excluded(&i) => {
+                std::ops::Bound::Excluded(SledLogStore::index_to_key(i))
+            }
             std::ops::Bound::Unbounded => std::ops::Bound::Unbounded,
         };
         let end = match range.end_bound() {
-            std::ops::Bound::Included(&i) => std::ops::Bound::Included(SledLogStore::index_to_key(i)),
-            std::ops::Bound::Excluded(&i) => std::ops::Bound::Excluded(SledLogStore::index_to_key(i)),
+            std::ops::Bound::Included(&i) => {
+                std::ops::Bound::Included(SledLogStore::index_to_key(i))
+            }
+            std::ops::Bound::Excluded(&i) => {
+                std::ops::Bound::Excluded(SledLogStore::index_to_key(i))
+            }
             std::ops::Bound::Unbounded => std::ops::Bound::Unbounded,
         };
 
@@ -143,9 +147,9 @@ impl RaftLogReader<TypeConfig> for RwLock<SledLogStore> {
             .log_tree
             .range((start, end))
             .filter_map(|result| {
-                result.ok().and_then(|(_, value)| {
-                    rmp_serde::from_slice(&value).ok()
-                })
+                result
+                    .ok()
+                    .and_then(|(_, value)| rmp_serde::from_slice(&value).ok())
             })
             .collect();
 
@@ -294,7 +298,9 @@ impl RaftLogStorage<TypeConfig> for RwLock<SledLogStore> {
         }
 
         // Update last purged
-        store.set_last_purged(log_id).map_err(|e| StorageIOError::write_logs(&e))?;
+        store
+            .set_last_purged(log_id)
+            .map_err(|e| StorageIOError::write_logs(&e))?;
 
         if count > 0 {
             store
@@ -379,7 +385,8 @@ impl SledLogStore {
             .map(|l| l.index);
 
         // Estimate size by summing entry sizes
-        let log_size_bytes: u64 = self.log_tree
+        let log_size_bytes: u64 = self
+            .log_tree
             .iter()
             .filter_map(|r| r.ok().map(|(k, v)| (k.len() + v.len()) as u64))
             .sum();

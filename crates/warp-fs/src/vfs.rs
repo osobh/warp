@@ -2,20 +2,20 @@
 //!
 //! Provides the bridge between FUSE operations and warp-store.
 
+use crate::FsStats;
 use crate::cache::{CacheManager, CombinedCacheStats};
 use crate::error::{Error, Result};
-use crate::inode::{Inode, InodeAllocator, Ino, ROOT_INO};
+use crate::inode::{Ino, Inode, InodeAllocator, ROOT_INO};
 use crate::metadata::{
     DataExtent, DirectoryContents, DirectoryEntry, FileType, InodeMetadata, Superblock,
 };
-use crate::FsStats;
 
 use bytes::Bytes;
 use dashmap::DashMap;
 use parking_lot::RwLock;
 use std::ffi::OsStr;
-use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Duration;
 use tracing::{debug, info, warn};
 use warp_store::{ObjectData, ObjectKey, Store};
@@ -93,7 +93,9 @@ impl VirtualFilesystem {
         let superblock = Self::load_or_create_superblock(&store, &bucket).await?;
         let next_ino = superblock.next_ino;
 
+        // SAFETY: libc::getuid() is always safe - returns process's real UID with no side effects.
         let uid = unsafe { libc::getuid() };
+        // SAFETY: libc::getgid() is always safe - returns process's real GID with no side effects.
         let gid = unsafe { libc::getgid() };
 
         let vfs = Self {
@@ -170,7 +172,11 @@ impl VirtualFilesystem {
 
         // Load from storage
         let key = ObjectKey::new(&self.bucket, &format!("{}/inodes/{}", META_PREFIX, ino))?;
-        let data = self.store.get(&key).await.map_err(|_| Error::InodeNotFound(ino))?;
+        let data = self
+            .store
+            .get(&key)
+            .await
+            .map_err(|_| Error::InodeNotFound(ino))?;
 
         let meta = InodeMetadata::from_bytes(data.as_ref())?;
         let inode = Inode::new(meta);
@@ -180,7 +186,10 @@ impl VirtualFilesystem {
 
     /// Save an inode to storage
     pub async fn save_inode(&self, meta: &InodeMetadata) -> Result<()> {
-        let key = ObjectKey::new(&self.bucket, &format!("{}/inodes/{}", META_PREFIX, meta.ino))?;
+        let key = ObjectKey::new(
+            &self.bucket,
+            &format!("{}/inodes/{}", META_PREFIX, meta.ino),
+        )?;
         let data = ObjectData::from(meta.to_bytes()?);
         self.store.put(&key, data).await?;
         Ok(())
@@ -242,7 +251,9 @@ impl VirtualFilesystem {
 
     /// Look up a name in a directory
     pub async fn lookup(&self, parent_ino: Ino, name: &OsStr) -> Result<Arc<RwLock<Inode>>> {
-        let name = name.to_str().ok_or_else(|| Error::InvalidFileName(format!("{:?}", name)))?;
+        let name = name
+            .to_str()
+            .ok_or_else(|| Error::InvalidFileName(format!("{:?}", name)))?;
 
         // Check dentry cache
         if let Some(entry) = self.cache.dentries.get(parent_ino, name) {
@@ -255,7 +266,9 @@ impl VirtualFilesystem {
         // Find entry
         if let Some(entry) = dir.get(name) {
             // Cache it
-            self.cache.dentries.insert(parent_ino, name, entry.ino, entry.file_type);
+            self.cache
+                .dentries
+                .insert(parent_ino, name, entry.ino, entry.file_type);
             self.load_inode(entry.ino).await
         } else {
             // Negative cache
@@ -277,7 +290,9 @@ impl VirtualFilesystem {
         uid: u32,
         gid: u32,
     ) -> Result<Arc<RwLock<Inode>>> {
-        let name = name.to_str().ok_or_else(|| Error::InvalidFileName(format!("{:?}", name)))?;
+        let name = name
+            .to_str()
+            .ok_or_else(|| Error::InvalidFileName(format!("{:?}", name)))?;
 
         // Check if already exists
         let mut dir = self.load_directory(parent_ino).await?;
@@ -293,7 +308,11 @@ impl VirtualFilesystem {
         self.save_inode(&meta).await?;
 
         // Add to directory
-        dir.add(DirectoryEntry::new(name.to_string(), ino, FileType::RegularFile));
+        dir.add(DirectoryEntry::new(
+            name.to_string(),
+            ino,
+            FileType::RegularFile,
+        ));
         self.save_directory(&dir).await?;
 
         // Update parent mtime
@@ -322,7 +341,9 @@ impl VirtualFilesystem {
         uid: u32,
         gid: u32,
     ) -> Result<Arc<RwLock<Inode>>> {
-        let name = name.to_str().ok_or_else(|| Error::InvalidFileName(format!("{:?}", name)))?;
+        let name = name
+            .to_str()
+            .ok_or_else(|| Error::InvalidFileName(format!("{:?}", name)))?;
 
         // Check if already exists
         let mut parent_dir = self.load_directory(parent_ino).await?;
@@ -342,7 +363,11 @@ impl VirtualFilesystem {
         self.save_directory(&contents).await?;
 
         // Add to parent directory
-        parent_dir.add(DirectoryEntry::new(name.to_string(), ino, FileType::Directory));
+        parent_dir.add(DirectoryEntry::new(
+            name.to_string(),
+            ino,
+            FileType::Directory,
+        ));
         self.save_directory(&parent_dir).await?;
 
         // Update parent nlink and mtime
@@ -360,13 +385,17 @@ impl VirtualFilesystem {
 
     /// Unlink a file (remove directory entry)
     pub async fn unlink(&self, parent_ino: Ino, name: &OsStr) -> Result<()> {
-        let name = name.to_str().ok_or_else(|| Error::InvalidFileName(format!("{:?}", name)))?;
+        let name = name
+            .to_str()
+            .ok_or_else(|| Error::InvalidFileName(format!("{:?}", name)))?;
 
         // Load directory
         let mut dir = self.load_directory(parent_ino).await?;
 
         // Find and remove entry
-        let entry = dir.remove(name).ok_or_else(|| Error::FileNotFound(name.to_string()))?;
+        let entry = dir
+            .remove(name)
+            .ok_or_else(|| Error::FileNotFound(name.to_string()))?;
 
         // Can't unlink directories with unlink
         if entry.file_type == FileType::Directory {
@@ -417,7 +446,9 @@ impl VirtualFilesystem {
 
     /// Remove a directory
     pub async fn rmdir(&self, parent_ino: Ino, name: &OsStr) -> Result<()> {
-        let name = name.to_str().ok_or_else(|| Error::InvalidFileName(format!("{:?}", name)))?;
+        let name = name
+            .to_str()
+            .ok_or_else(|| Error::InvalidFileName(format!("{:?}", name)))?;
 
         // Load parent directory
         let mut parent_dir = self.load_directory(parent_ino).await?;
@@ -543,7 +574,9 @@ impl VirtualFilesystem {
         let key = ObjectKey::new(&self.bucket, &object_key)?;
 
         // Write to storage
-        self.store.put(&key, ObjectData::from(data.to_vec())).await?;
+        self.store
+            .put(&key, ObjectData::from(data.to_vec()))
+            .await?;
 
         // Update inode metadata
         {
@@ -554,7 +587,8 @@ impl VirtualFilesystem {
             let extent = DataExtent::new(offset, data.len() as u64, object_key, 0);
 
             // Simple strategy: replace overlapping extents
-            meta.data_extents.retain(|e| !e.overlaps(offset, data.len() as u64));
+            meta.data_extents
+                .retain(|e| !e.overlaps(offset, data.len() as u64));
             meta.data_extents.push(extent);
 
             // Update size if needed

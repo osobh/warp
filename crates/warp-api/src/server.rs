@@ -1,9 +1,9 @@
 //! API server implementation with OpenAPI documentation
 
 use crate::{
-    create_router, ApiError, ApiState, ChunkInfo, EdgeInfo, EdgeListResponse, ErrorResponse,
-    HealthStatus, MetricsResponse, Result, SystemInfo, TransferListResponse, TransferRequest,
-    TransferResponse, TransferStatus,
+    ApiError, ApiState, ChunkInfo, EdgeInfo, EdgeListResponse, ErrorResponse, HealthStatus,
+    MetricsResponse, Result, SystemInfo, TransferListResponse, TransferRequest, TransferResponse,
+    TransferStatus, create_router,
 };
 use axum::Router;
 use std::net::SocketAddr;
@@ -161,7 +161,8 @@ impl ApiServer {
 
         // Add Swagger UI if enabled
         if self.config.enable_swagger {
-            router = router.merge(SwaggerUi::new("/swagger-ui").url("/openapi.json", ApiDoc::openapi()));
+            router =
+                router.merge(SwaggerUi::new("/swagger-ui").url("/openapi.json", ApiDoc::openapi()));
         }
 
         // Add CORS if enabled
@@ -186,12 +187,10 @@ impl ApiServer {
         let addr = self.config.socket_addr()?;
         let router = self.build_router();
 
-        let listener = TcpListener::bind(addr)
-            .await
-            .map_err(|e| ApiError::Bind {
-                address: addr.to_string(),
-                source: e,
-            })?;
+        let listener = TcpListener::bind(addr).await.map_err(|e| ApiError::Bind {
+            address: addr.to_string(),
+            source: e,
+        })?;
 
         tracing::info!("API server listening on {}", addr);
 

@@ -103,7 +103,12 @@ pub struct ActiveChunkDownload {
 }
 
 impl ActiveChunkDownload {
-    pub fn new(chunk_id: ChunkId, chunk_hash: [u8; 32], chunk_size: u32, sources: Vec<EdgeIdx>) -> Self {
+    pub fn new(
+        chunk_id: ChunkId,
+        chunk_hash: [u8; 32],
+        chunk_size: u32,
+        sources: Vec<EdgeIdx>,
+    ) -> Self {
         Self {
             chunk_id,
             chunk_hash,
@@ -184,7 +189,8 @@ impl DownloadSession {
     }
 
     pub fn progress_ratio(&self) -> f64 {
-        let total = self.completed_chunks.len() + self.active_chunks.len() + self.pending_chunks.len();
+        let total =
+            self.completed_chunks.len() + self.active_chunks.len() + self.pending_chunks.len();
         if total == 0 {
             return 1.0;
         }
@@ -239,12 +245,17 @@ impl SwarmDownloader {
 
         let state = TransferState::new(transfer_id, request.direction, chunk_states, created_at_ms);
 
-        let chunk_order: Vec<ChunkId> = request.chunks.iter().map(|h| ChunkId::from_hash(h)).collect();
+        let chunk_order: Vec<ChunkId> = request
+            .chunks
+            .iter()
+            .map(|h| ChunkId::from_hash(h))
+            .collect();
 
         let total_chunks = request.chunks.len();
         let total_bytes = request.total_bytes();
 
-        self.progress.register(transfer_id, total_chunks, total_bytes);
+        self.progress
+            .register(transfer_id, total_chunks, total_bytes);
         self.progress.start(transfer_id);
 
         let mut session = DownloadSession::new(transfer_id, state, chunk_order);
@@ -263,7 +274,11 @@ impl SwarmDownloader {
         Ok(completed)
     }
 
-    async fn process_active_chunks(&self, session: &mut DownloadSession, completed: &mut Vec<ChunkId>) {
+    async fn process_active_chunks(
+        &self,
+        session: &mut DownloadSession,
+        completed: &mut Vec<ChunkId>,
+    ) {
         let active_count = session.active_chunks.len();
         // Pre-allocate with estimated rates: ~25% complete, ~10% retry, ~5% fail per tick
         let mut to_retry = Vec::with_capacity(active_count / 10 + 1);
@@ -310,7 +325,8 @@ impl SwarmDownloader {
             if let Some(active) = session.active_chunks.remove(&chunk_id) {
                 session.completed_chunks.insert(chunk_id);
                 completed.push(chunk_id);
-                self.progress.record_chunk_complete(session.transfer_id, active.chunk_size as u64);
+                self.progress
+                    .record_chunk_complete(session.transfer_id, active.chunk_size as u64);
             }
         }
 
@@ -373,22 +389,29 @@ impl SwarmDownloader {
         }
     }
 
-    async fn download_chunk_data(&self, source: EdgeIdx, active: &ActiveChunkDownload) -> Result<u64> {
-        let conn = self.pool.acquire(source).await.map_err(|e| {
-            OrchError::Network(format!("Failed to acquire connection: {}", e))
-        })?;
+    async fn download_chunk_data(
+        &self,
+        source: EdgeIdx,
+        active: &ActiveChunkDownload,
+    ) -> Result<u64> {
+        let conn = self
+            .pool
+            .acquire(source)
+            .await
+            .map_err(|e| OrchError::Network(format!("Failed to acquire connection: {}", e)))?;
 
         // Request the chunk using WANT frame protocol
         // ChunkId is u64, Frame uses u32, safe truncation for chunk indices
         let chunk_id_u32 = active.chunk_id.get() as u32;
-        conn.request_chunks(vec![chunk_id_u32]).await.map_err(|e| {
-            OrchError::Network(format!("Failed to send WANT request: {}", e))
-        })?;
+        conn.request_chunks(vec![chunk_id_u32])
+            .await
+            .map_err(|e| OrchError::Network(format!("Failed to send WANT request: {}", e)))?;
 
         // Receive the chunk data via CHUNK frame
-        let (received_id, data) = conn.recv_chunk().await.map_err(|e| {
-            OrchError::Network(format!("Failed to receive chunk: {}", e))
-        })?;
+        let (received_id, data) = conn
+            .recv_chunk()
+            .await
+            .map_err(|e| OrchError::Network(format!("Failed to receive chunk: {}", e)))?;
 
         // Verify we got the right chunk
         if received_id != chunk_id_u32 {
@@ -421,7 +444,13 @@ impl SwarmDownloader {
     /// Get download result when complete
     pub fn finalize(&self, session: DownloadSession) -> TransferResult {
         let timestamp_ms = current_time_ms();
-        if session.is_complete() && session.state.chunk_states.iter().all(|c| c.status == TransferStatus::Completed) {
+        if session.is_complete()
+            && session
+                .state
+                .chunk_states
+                .iter()
+                .all(|c| c.status == TransferStatus::Completed)
+        {
             self.progress.complete(session.transfer_id);
         }
         TransferResult::from_state(&session.state, timestamp_ms)
@@ -520,12 +549,8 @@ mod tests {
 
     #[test]
     fn test_active_chunk_download_completion_and_timeout() {
-        let mut active = ActiveChunkDownload::new(
-            ChunkId::new(1),
-            [1u8; 32],
-            1000,
-            vec![EdgeIdx::new(0)],
-        );
+        let mut active =
+            ActiveChunkDownload::new(ChunkId::new(1), [1u8; 32], 1000, vec![EdgeIdx::new(0)]);
 
         assert!(!active.is_complete());
         active.bytes_received = 500;
@@ -535,12 +560,8 @@ mod tests {
         active.bytes_received = 1500;
         assert!(active.is_complete());
 
-        let mut active2 = ActiveChunkDownload::new(
-            ChunkId::new(1),
-            [1u8; 32],
-            1024,
-            vec![EdgeIdx::new(0)],
-        );
+        let mut active2 =
+            ActiveChunkDownload::new(ChunkId::new(1), [1u8; 32], 1024, vec![EdgeIdx::new(0)]);
         assert!(!active2.is_timed_out(1000));
         active2.started_at_ms = current_time_ms() - 2000;
         assert!(active2.is_timed_out(1000));
@@ -549,12 +570,8 @@ mod tests {
     #[test]
     fn test_active_chunk_download_select_next_source() {
         let sources = vec![EdgeIdx::new(0), EdgeIdx::new(1), EdgeIdx::new(2)];
-        let mut active = ActiveChunkDownload::new(
-            ChunkId::new(1),
-            [1u8; 32],
-            1024,
-            sources.clone(),
-        );
+        let mut active =
+            ActiveChunkDownload::new(ChunkId::new(1), [1u8; 32], 1024, sources.clone());
 
         let first = active.select_next_source();
         assert_eq!(first, Some(EdgeIdx::new(0)));
@@ -573,12 +590,8 @@ mod tests {
 
     #[test]
     fn test_active_chunk_download_mark_failed() {
-        let mut active = ActiveChunkDownload::new(
-            ChunkId::new(1),
-            [1u8; 32],
-            1024,
-            vec![EdgeIdx::new(0)],
-        );
+        let mut active =
+            ActiveChunkDownload::new(ChunkId::new(1), [1u8; 32], 1024, vec![EdgeIdx::new(0)]);
 
         active.select_next_source();
         assert_eq!(active.retries, 0);
@@ -592,7 +605,12 @@ mod tests {
     #[test]
     fn test_download_session() {
         let transfer_id = TransferId::new(1);
-        let state = TransferState::new(transfer_id, TransferDirection::Download, vec![], current_time_ms());
+        let state = TransferState::new(
+            transfer_id,
+            TransferDirection::Download,
+            vec![],
+            current_time_ms(),
+        );
         let chunks = vec![ChunkId::new(1), ChunkId::new(2)];
         let session = DownloadSession::new(transfer_id, state, chunks.clone());
         assert_eq!(session.transfer_id, transfer_id);
@@ -600,13 +618,21 @@ mod tests {
         assert!(session.active_chunks.is_empty());
         assert!(session.completed_chunks.is_empty());
 
-        let state2 = TransferState::new(transfer_id, TransferDirection::Download, vec![], current_time_ms());
+        let state2 = TransferState::new(
+            transfer_id,
+            TransferDirection::Download,
+            vec![],
+            current_time_ms(),
+        );
         let mut session2 = DownloadSession::new(transfer_id, state2, vec![]);
         assert!(session2.is_complete());
         session2.pending_chunks.push_back(ChunkId::new(1));
         assert!(!session2.is_complete());
         session2.pending_chunks.clear();
-        session2.active_chunks.insert(ChunkId::new(1), ActiveChunkDownload::new(ChunkId::new(1), [1u8; 32], 1024, vec![]));
+        session2.active_chunks.insert(
+            ChunkId::new(1),
+            ActiveChunkDownload::new(ChunkId::new(1), [1u8; 32], 1024, vec![]),
+        );
         assert!(!session2.is_complete());
         session2.active_chunks.clear();
         assert!(session2.is_complete());
@@ -622,7 +648,12 @@ mod tests {
             current_time_ms(),
         );
 
-        let chunks = vec![ChunkId::new(1), ChunkId::new(2), ChunkId::new(3), ChunkId::new(4)];
+        let chunks = vec![
+            ChunkId::new(1),
+            ChunkId::new(2),
+            ChunkId::new(3),
+            ChunkId::new(4),
+        ];
         let mut session = DownloadSession::new(transfer_id, state, chunks);
 
         assert_eq!(session.progress_ratio(), 0.0);
@@ -642,7 +673,10 @@ mod tests {
         let pool = ConnectionPool::new(PoolConfig::default()).unwrap();
         let progress = ProgressTracker::new();
         let downloader = SwarmDownloader::new(config.clone(), pool, progress);
-        assert_eq!(downloader.config.max_concurrent_chunks, config.max_concurrent_chunks);
+        assert_eq!(
+            downloader.config.max_concurrent_chunks,
+            config.max_concurrent_chunks
+        );
 
         let request = TransferRequest::new(vec![], vec![], TransferDirection::Download);
         let result = downloader.start(request, HashMap::new()).await;
@@ -806,14 +840,24 @@ mod tests {
         let downloader = SwarmDownloader::new(config, pool, progress);
 
         let transfer_id = TransferId::new(1);
-        let mut state = TransferState::new(transfer_id, TransferDirection::Download, vec![], current_time_ms());
+        let mut state = TransferState::new(
+            transfer_id,
+            TransferDirection::Download,
+            vec![],
+            current_time_ms(),
+        );
         state.status = TransferStatus::Completed;
         let session = DownloadSession::new(transfer_id, state, vec![]);
         let result = downloader.finalize(session);
         assert_eq!(result.id, transfer_id);
 
         let transfer_id2 = TransferId::new(2);
-        let state2 = TransferState::new(transfer_id2, TransferDirection::Download, vec![], current_time_ms());
+        let state2 = TransferState::new(
+            transfer_id2,
+            TransferDirection::Download,
+            vec![],
+            current_time_ms(),
+        );
         let session2 = DownloadSession::new(transfer_id2, state2, vec![ChunkId::new(1)]);
         let result2 = downloader.finalize(session2);
         assert_eq!(result2.id, transfer_id2);
@@ -822,7 +866,8 @@ mod tests {
     #[tokio::test]
     async fn test_source_selection_and_limits() {
         let sources = vec![EdgeIdx::new(0), EdgeIdx::new(1), EdgeIdx::new(2)];
-        let mut active = ActiveChunkDownload::new(ChunkId::new(1), [1u8; 32], 1024, sources.clone());
+        let mut active =
+            ActiveChunkDownload::new(ChunkId::new(1), [1u8; 32], 1024, sources.clone());
         let first = active.select_next_source();
         assert!(first.is_some());
         let second = active.select_next_source();

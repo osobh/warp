@@ -208,8 +208,8 @@ mod tests {
 
     #[test]
     fn test_export_client_allowed() {
-        let export = NfsExport::new("test-bucket")
-            .with_allowed_clients(vec!["10.0.0.0/8".parse().unwrap()]);
+        let export =
+            NfsExport::new("test-bucket").with_allowed_clients(vec!["10.0.0.0/8".parse().unwrap()]);
 
         assert!(export.is_client_allowed(&"10.1.2.3".parse().unwrap()));
         assert!(!export.is_client_allowed(&"192.168.1.1".parse().unwrap()));

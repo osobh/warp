@@ -360,7 +360,12 @@ mod tests {
 
     #[test]
     fn test_edge_type_serialize() {
-        for edge_type in [EdgeType::Server, EdgeType::Desktop, EdgeType::Mobile, EdgeType::IoT] {
+        for edge_type in [
+            EdgeType::Server,
+            EdgeType::Desktop,
+            EdgeType::Mobile,
+            EdgeType::IoT,
+        ] {
             let json = serde_json::to_string(&edge_type).unwrap();
             assert_eq!(edge_type, serde_json::from_str(&json).unwrap());
             let msgpack = rmp_serde::to_vec(&edge_type).unwrap();
@@ -381,7 +386,12 @@ mod tests {
 
     #[test]
     fn test_edge_status_serialize() {
-        for status in [EdgeStatus::Online, EdgeStatus::Offline, EdgeStatus::Degraded, EdgeStatus::Throttled] {
+        for status in [
+            EdgeStatus::Online,
+            EdgeStatus::Offline,
+            EdgeStatus::Degraded,
+            EdgeStatus::Throttled,
+        ] {
             let json = serde_json::to_string(&status).unwrap();
             assert_eq!(status, serde_json::from_str(&json).unwrap());
             let msgpack = rmp_serde::to_vec(&status).unwrap();

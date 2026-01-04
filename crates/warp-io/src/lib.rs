@@ -47,14 +47,14 @@
 
 #![warn(missing_docs)]
 
+pub mod async_chunker;
+pub mod async_walker;
 pub mod chunker;
 pub mod fixed_chunker;
-pub mod async_chunker;
-pub mod walker;
-pub mod async_walker;
 pub mod mmap;
 pub mod pool;
 pub mod simd;
+pub mod walker;
 
 // SeqCDC (new, high-performance)
 pub use chunker::{SeqCdcChunker, SeqCdcConfig, SeqMode};
@@ -65,10 +65,10 @@ pub use chunker::{BuzhashChunker, ChunkerConfig};
 // Default Chunker alias (points to SeqCDC)
 pub use chunker::Chunker;
 
-pub use fixed_chunker::FixedChunker;
-pub use walker::{walk_directory, FileEntry};
 pub use async_chunker::{chunk_file_async, chunk_file_stream};
 pub use async_walker::{walk_directory_async, walk_directory_stream};
+pub use fixed_chunker::FixedChunker;
+pub use walker::{FileEntry, walk_directory};
 
 /// I/O error types
 #[derive(Debug, thiserror::Error)]
@@ -76,7 +76,7 @@ pub enum Error {
     /// I/O error
     #[error("I/O error: {0}")]
     Io(#[from] std::io::Error),
-    
+
     /// Walk error
     #[error("Walk error: {0}")]
     Walk(#[from] walkdir::Error),

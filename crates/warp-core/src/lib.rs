@@ -16,19 +16,20 @@ pub mod pipeline;
 pub mod scheduler;
 pub mod session;
 
-pub use analyzer::{analyze_payload, CompressionHint, PayloadAnalysis};
-pub use engine::{ProgressCallback, TransferConfig, TransferEngine, TransferProgress, VerificationMode};
+pub use analyzer::{CompressionHint, PayloadAnalysis, analyze_payload};
+pub use engine::{
+    ProgressCallback, TransferConfig, TransferEngine, TransferProgress, VerificationMode,
+};
 // Re-export ErasureConfig for convenience
-pub use warp_ec::ErasureConfig;
+#[cfg(feature = "hpc-channels")]
+pub use channels::{
+    DownloadStartEvent, SharedStorageChannelBridge, StorageChannelBridge, TransferProgressEvent,
+    TransferStatus, TransferStatusEvent, UploadStartEvent, shared_channel_bridge,
+};
 pub use pipeline::TransferPipeline;
 pub use scheduler::ChunkScheduler;
 pub use session::{ErasureState, Session, SessionState};
-#[cfg(feature = "hpc-channels")]
-pub use channels::{
-    StorageChannelBridge, SharedStorageChannelBridge,
-    UploadStartEvent, DownloadStartEvent, TransferProgressEvent,
-    TransferStatusEvent, TransferStatus, shared_channel_bridge,
-};
+pub use warp_ec::ErasureConfig;
 
 /// Core error types
 #[derive(Debug, thiserror::Error)]

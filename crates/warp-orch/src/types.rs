@@ -315,7 +315,11 @@ impl TransferState {
     }
 
     /// Get or create edge state.
-    pub fn get_or_create_edge_state(&mut self, edge_idx: EdgeIdx, timestamp_ms: u64) -> &mut EdgeTransfer {
+    pub fn get_or_create_edge_state(
+        &mut self,
+        edge_idx: EdgeIdx,
+        timestamp_ms: u64,
+    ) -> &mut EdgeTransfer {
         self.edge_states
             .entry(edge_idx)
             .or_insert_with(|| EdgeTransfer::new(edge_idx, timestamp_ms))
@@ -341,11 +345,7 @@ pub struct TransferRequest {
 
 impl TransferRequest {
     /// Create a new TransferRequest with defaults.
-    pub fn new(
-        chunks: Vec<[u8; 32]>,
-        chunk_sizes: Vec<u32>,
-        direction: TransferDirection,
-    ) -> Self {
+    pub fn new(chunks: Vec<[u8; 32]>, chunk_sizes: Vec<u32>, direction: TransferDirection) -> Self {
         Self {
             chunks,
             chunk_sizes,
@@ -492,7 +492,12 @@ mod tests {
         assert!(!TransferStatus::Active.is_terminal());
         assert!(!TransferStatus::Paused.is_terminal());
         assert!(TransferStatus::Completed.is_terminal());
-        assert!(TransferStatus::Failed { reason: "error".to_string() }.is_terminal());
+        assert!(
+            TransferStatus::Failed {
+                reason: "error".to_string()
+            }
+            .is_terminal()
+        );
         assert!(TransferStatus::Cancelled.is_terminal());
     }
 
@@ -689,7 +694,12 @@ mod tests {
 
     #[test]
     fn test_transfer_state_terminal_states() {
-        let mut state = TransferState::new(TransferId::new(1), TransferDirection::Download, vec![], 1000);
+        let mut state = TransferState::new(
+            TransferId::new(1),
+            TransferDirection::Download,
+            vec![],
+            1000,
+        );
 
         // Test complete
         state.complete(3000);
@@ -697,13 +707,23 @@ mod tests {
         assert_eq!(state.completed_at_ms, Some(3000));
 
         // Test fail
-        let mut state = TransferState::new(TransferId::new(1), TransferDirection::Download, vec![], 1000);
+        let mut state = TransferState::new(
+            TransferId::new(1),
+            TransferDirection::Download,
+            vec![],
+            1000,
+        );
         state.fail("Connection lost".to_string(), 3000);
         assert!(matches!(state.status, TransferStatus::Failed { .. }));
         assert_eq!(state.completed_at_ms, Some(3000));
 
         // Test cancel
-        let mut state = TransferState::new(TransferId::new(1), TransferDirection::Download, vec![], 1000);
+        let mut state = TransferState::new(
+            TransferId::new(1),
+            TransferDirection::Download,
+            vec![],
+            1000,
+        );
         state.cancel(3000);
         assert_eq!(state.status, TransferStatus::Cancelled);
         assert_eq!(state.completed_at_ms, Some(3000));
@@ -711,7 +731,12 @@ mod tests {
 
     #[test]
     fn test_transfer_state_duration_and_edges() {
-        let mut state = TransferState::new(TransferId::new(1), TransferDirection::Download, vec![], 1000);
+        let mut state = TransferState::new(
+            TransferId::new(1),
+            TransferDirection::Download,
+            vec![],
+            1000,
+        );
         assert_eq!(state.duration_ms(), None);
 
         state.start(2000);
@@ -719,7 +744,12 @@ mod tests {
         assert_eq!(state.duration_ms(), Some(3000));
 
         // Test edge state management
-        let mut state = TransferState::new(TransferId::new(1), TransferDirection::Download, vec![], 1000);
+        let mut state = TransferState::new(
+            TransferId::new(1),
+            TransferDirection::Download,
+            vec![],
+            1000,
+        );
         let edge_state = state.get_or_create_edge_state(EdgeIdx(0), 2000);
         assert_eq!(edge_state.edge_idx, EdgeIdx(0));
         assert_eq!(state.edge_states.len(), 1);
@@ -744,11 +774,8 @@ mod tests {
 
     #[test]
     fn test_transfer_request_validate() {
-        let valid_req = TransferRequest::new(
-            vec![[1u8; 32]],
-            vec![1000],
-            TransferDirection::Download,
-        );
+        let valid_req =
+            TransferRequest::new(vec![[1u8; 32]], vec![1000], TransferDirection::Download);
         assert!(valid_req.validate().is_ok());
 
         let empty_req = TransferRequest::new(vec![], vec![], TransferDirection::Download);
@@ -761,25 +788,18 @@ mod tests {
         );
         assert!(mismatched_req.validate().is_err());
 
-        let zero_edges_req = TransferRequest::new(
-            vec![[1u8; 32]],
-            vec![1000],
-            TransferDirection::Download,
-        )
-        .with_max_concurrent_edges(0);
+        let zero_edges_req =
+            TransferRequest::new(vec![[1u8; 32]], vec![1000], TransferDirection::Download)
+                .with_max_concurrent_edges(0);
         assert!(zero_edges_req.validate().is_err());
     }
 
     #[test]
     fn test_transfer_request_builders() {
-        let req = TransferRequest::new(
-            vec![[1u8; 32]],
-            vec![1000],
-            TransferDirection::Download,
-        )
-        .with_priority(10)
-        .with_max_concurrent_edges(3)
-        .with_max_retries(5);
+        let req = TransferRequest::new(vec![[1u8; 32]], vec![1000], TransferDirection::Download)
+            .with_priority(10)
+            .with_max_concurrent_edges(3)
+            .with_max_retries(5);
 
         assert_eq!(req.priority, 10);
         assert_eq!(req.max_concurrent_edges, 3);
@@ -848,7 +868,9 @@ mod tests {
         let _: TransferDirection = serde_json::from_str(&json).unwrap();
 
         // Test TransferStatus
-        let status = TransferStatus::Failed { reason: "test".to_string() };
+        let status = TransferStatus::Failed {
+            reason: "test".to_string(),
+        };
         let json = serde_json::to_string(&status).unwrap();
         let _: TransferStatus = serde_json::from_str(&json).unwrap();
 

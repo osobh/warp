@@ -7,9 +7,9 @@ use serde::Deserialize;
 use std::collections::HashMap;
 use tokio::sync::RwLock;
 
+use crate::Credentials;
 use crate::error::{Error, Result};
 use crate::identity::{Group, Identity, IdentityProvider, Principal};
-use crate::Credentials;
 
 /// OIDC provider configuration
 #[derive(Debug, Clone)]
@@ -254,7 +254,10 @@ impl OidcProvider {
 
         if !response.status().is_success() {
             let error_text = response.text().await.unwrap_or_default();
-            return Err(Error::Oidc(format!("Token exchange failed: {}", error_text)));
+            return Err(Error::Oidc(format!(
+                "Token exchange failed: {}",
+                error_text
+            )));
         }
 
         response

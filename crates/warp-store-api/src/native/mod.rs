@@ -12,11 +12,11 @@ pub mod gpu_ops;
 pub mod zk_ops;
 
 use axum::{
+    Json, Router,
     extract::{Path, Query, State},
-    http::{header, StatusCode},
+    http::{StatusCode, header},
     response::{IntoResponse, Response},
     routing::{get, post},
-    Json, Router,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -25,15 +25,18 @@ use std::time::Duration;
 use warp_store::backend::StorageBackend;
 use warp_store::{AccessScope, FieldData, FieldValue, ObjectKey, Permissions};
 
-use crate::error::{ApiError, ApiResult};
 use crate::AppState;
+use crate::error::{ApiError, ApiResult};
 
 /// Create native HPC API routes
 pub fn routes<B: StorageBackend>(state: AppState<B>) -> Router {
     Router::new()
         // Ephemeral URL generation
         .route("/api/v1/ephemeral", post(create_ephemeral_url::<B>))
-        .route("/api/v1/ephemeral/verify", post(verify_ephemeral_token::<B>))
+        .route(
+            "/api/v1/ephemeral/verify",
+            post(verify_ephemeral_token::<B>),
+        )
         // Access via ephemeral token
         .route("/api/v1/access/{token}/{*key}", get(access_with_token::<B>))
         // Lazy field access (Parcode integration)
@@ -43,7 +46,10 @@ pub fn routes<B: StorageBackend>(state: AppState<B>) -> Router {
         // GPU-accelerated operations
         .route("/api/v1/gpu/hash", post(gpu_ops::gpu_hash::<B>))
         .route("/api/v1/gpu/encrypt", post(gpu_ops::gpu_encrypt::<B>))
-        .route("/api/v1/gpu/capabilities", get(gpu_ops::gpu_capabilities::<B>))
+        .route(
+            "/api/v1/gpu/capabilities",
+            get(gpu_ops::gpu_capabilities::<B>),
+        )
         .route("/api/v1/gpu/stats", get(gpu_ops::gpu_stats::<B>))
         // Zero-knowledge proofs
         .route("/api/v1/zk/prove", post(zk_ops::zk_prove::<B>))
@@ -133,21 +139,14 @@ async fn create_ephemeral_url<B: StorageBackend>(
 
     let ttl = Duration::from_secs(req.ttl_seconds);
 
-    let token = state.store.create_ephemeral_url_with_options(
-        scope,
-        permissions,
-        ttl,
-        None,
-        None,
-    )?;
+    let token =
+        state
+            .store
+            .create_ephemeral_url_with_options(scope, permissions, ttl, None, None)?;
 
     let encoded = token.encode();
     let expires_at = token.expires_at().format("%Y-%m-%dT%H:%M:%SZ").to_string();
-    let url = format!(
-        "/api/v1/access/{}/{}",
-        encoded,
-        req.key
-    );
+    let url = format!("/api/v1/access/{}/{}", encoded, req.key);
 
     Ok(Json(EphemeralResponse {
         token: encoded,
@@ -238,9 +237,7 @@ async fn access_with_token<B: StorageBackend>(
 
     // Extract bucket from scope
     let (bucket, key) = match token.scope() {
-        AccessScope::Object(obj_key) => {
-            (obj_key.bucket().to_string(), obj_key.key().to_string())
-        }
+        AccessScope::Object(obj_key) => (obj_key.bucket().to_string(), obj_key.key().to_string()),
         AccessScope::Prefix { bucket, prefix } => {
             // For prefix scope, the key_path is relative to the prefix
             let full_key = if prefix.is_empty() {
@@ -257,14 +254,18 @@ async fn access_with_token<B: StorageBackend>(
 
     // Check if key is allowed by scope
     if !token.allows(&object_key) {
-        return Err(ApiError::AccessDenied("Key not allowed by token scope".into()));
+        return Err(ApiError::AccessDenied(
+            "Key not allowed by token scope".into(),
+        ));
     }
 
     // Get object
     let data = state.store.get(&object_key).await?;
     let meta = state.store.head(&object_key).await?;
 
-    let content_type = meta.content_type.unwrap_or_else(|| "application/octet-stream".to_string());
+    let content_type = meta
+        .content_type
+        .unwrap_or_else(|| "application/octet-stream".to_string());
 
     Ok((
         StatusCode::OK,
@@ -274,7 +275,8 @@ async fn access_with_token<B: StorageBackend>(
             (header::CONTENT_TYPE, content_type),
         ],
         data.into_bytes(),
-    ).into_response())
+    )
+        .into_response())
 }
 
 /// Storage stats response
@@ -285,9 +287,7 @@ struct StatsResponse {
 }
 
 /// Get storage statistics
-async fn get_stats<B: StorageBackend>(
-    State(state): State<AppState<B>>,
-) -> Json<StatsResponse> {
+async fn get_stats<B: StorageBackend>(State(state): State<AppState<B>>) -> Json<StatsResponse> {
     let buckets = state.store.list_buckets().await.len();
     let metrics = state.metrics.as_ref().map(|m| m.snapshot());
 
@@ -375,7 +375,11 @@ async fn health_check_detailed<B: StorageBackend>(
 
     Json(HealthResponse {
         status,
-        uptime_secs: state.metrics.as_ref().map(|m| m.snapshot().uptime_secs).unwrap_or(0),
+        uptime_secs: state
+            .metrics
+            .as_ref()
+            .map(|m| m.snapshot().uptime_secs)
+            .unwrap_or(0),
         storage: StorageHealth {
             buckets,
             backend_ok,
@@ -385,9 +389,7 @@ async fn health_check_detailed<B: StorageBackend>(
 }
 
 /// Readiness check (for Kubernetes)
-async fn readiness_check<B: StorageBackend>(
-    State(state): State<AppState<B>>,
-) -> impl IntoResponse {
+async fn readiness_check<B: StorageBackend>(State(state): State<AppState<B>>) -> impl IntoResponse {
     // Check if we can list buckets (validates backend connectivity)
     let _buckets = state.store.list_buckets().await;
     (StatusCode::OK, "Ready")
@@ -615,7 +617,8 @@ async fn collective_read<B: StorageBackend>(
     }
 
     // Initialize rank results
-    let mut rank_results: Vec<Vec<ObjectResult>> = (0..req.rank_count).map(|_| Vec::new()).collect();
+    let mut rank_results: Vec<Vec<ObjectResult>> =
+        (0..req.rank_count).map(|_| Vec::new()).collect();
     let mut total_bytes = 0u64;
 
     // Read objects and assign to ranks (round-robin for now)

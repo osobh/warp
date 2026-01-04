@@ -11,15 +11,15 @@
 //! - **PrepositionManager**: Coordinates planning and execution with rate limiting
 
 use crate::predict::{
-    AccessPattern, PatternConfig, PatternDetector, PrepositionPriority, PrepositionRequest,
-    Predictor, PredictorConfig,
+    AccessPattern, PatternConfig, PatternDetector, Predictor, PredictorConfig, PrepositionPriority,
+    PrepositionRequest,
 };
 use crate::types::{TransferDirection, TransferId};
 use parking_lot::RwLock;
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet, VecDeque};
-use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Instant;
 use warp_edge::BandwidthEstimator;
 use warp_sched::{ChunkId, EdgeIdx};
@@ -255,7 +255,13 @@ pub struct EdgeInfo {
 
 impl EdgeInfo {
     /// Create new edge info
-    pub fn new(edge_idx: EdgeIdx, bandwidth_bps: u64, rtt_ms: u64, health: f64, load_ratio: f64) -> Self {
+    pub fn new(
+        edge_idx: EdgeIdx,
+        bandwidth_bps: u64,
+        rtt_ms: u64,
+        health: f64,
+        load_ratio: f64,
+    ) -> Self {
         Self {
             edge_idx,
             bandwidth_bps,
@@ -438,15 +444,15 @@ impl PrepositionPlanner {
     fn select_best_source(&self, current_edges: &HashSet<EdgeIdx>) -> Option<EdgeIdx> {
         current_edges
             .iter()
-            .filter_map(|&edge| {
-                self.edge_info.get(&edge).map(|info| (edge, info))
-            })
+            .filter_map(|&edge| self.edge_info.get(&edge).map(|info| (edge, info)))
             .filter(|(_, info)| info.health >= 0.5 && info.load_ratio < 0.9)
             .max_by(|(_, a), (_, b)| {
                 // Prefer edges with higher bandwidth and lower load
                 let score_a = a.bandwidth_bps as f64 * (1.0 - a.load_ratio) * a.health;
                 let score_b = b.bandwidth_bps as f64 * (1.0 - b.load_ratio) * b.health;
-                score_a.partial_cmp(&score_b).unwrap_or(std::cmp::Ordering::Equal)
+                score_a
+                    .partial_cmp(&score_b)
+                    .unwrap_or(std::cmp::Ordering::Equal)
             })
             .map(|(edge, _)| edge)
     }
@@ -459,9 +465,13 @@ impl PrepositionPlanner {
             .filter(|(_, info)| info.health >= 0.5 && info.load_ratio < 0.8)
             .max_by(|(_, a), (_, b)| {
                 // Prefer edges with higher bandwidth, lower load, and lower RTT
-                let score_a = a.bandwidth_bps as f64 * (1.0 - a.load_ratio) * a.health / (a.rtt_ms as f64 + 1.0);
-                let score_b = b.bandwidth_bps as f64 * (1.0 - b.load_ratio) * b.health / (b.rtt_ms as f64 + 1.0);
-                score_a.partial_cmp(&score_b).unwrap_or(std::cmp::Ordering::Equal)
+                let score_a = a.bandwidth_bps as f64 * (1.0 - a.load_ratio) * a.health
+                    / (a.rtt_ms as f64 + 1.0);
+                let score_b = b.bandwidth_bps as f64 * (1.0 - b.load_ratio) * b.health
+                    / (b.rtt_ms as f64 + 1.0);
+                score_a
+                    .partial_cmp(&score_b)
+                    .unwrap_or(std::cmp::Ordering::Equal)
             })
             .map(|(edge, _)| *edge)
     }
@@ -576,7 +586,8 @@ impl PrepositionExecutor {
 
             // Start the operation
             // Relaxed is sufficient for ID generation
-            let transfer_id = TransferId::new(self.next_transfer_id.fetch_add(1, Ordering::Relaxed));
+            let transfer_id =
+                TransferId::new(self.next_transfer_id.fetch_add(1, Ordering::Relaxed));
             let status = PrepositionStatus::InProgress {
                 transfer_id,
                 bytes_transferred: 0,
@@ -702,7 +713,9 @@ impl PrepositionManager {
     /// Run prediction and planning cycle
     pub fn plan_cycle(&mut self) -> Vec<PrepositionOp> {
         // Predict demand
-        let predicted_chunks = self.planner.predict_demand(self.config.prediction_horizon_ms);
+        let predicted_chunks = self
+            .planner
+            .predict_demand(self.config.prediction_horizon_ms);
 
         // Track predictions
         let now_ms = std::time::SystemTime::now()
@@ -749,7 +762,11 @@ impl PrepositionManager {
         let mut state = self.executor.state.write();
 
         for chunk_id in expired {
-            let was_accurate = self.access_tracking.get(&chunk_id).copied().unwrap_or(false);
+            let was_accurate = self
+                .access_tracking
+                .get(&chunk_id)
+                .copied()
+                .unwrap_or(false);
             state.metrics.record_prediction(was_accurate);
 
             self.prediction_times.remove(&chunk_id);
@@ -759,7 +776,8 @@ impl PrepositionManager {
 
     /// Complete an operation
     pub fn complete_operation(&self, op_id: u64, bytes_transferred: u64, duration_ms: u64) {
-        self.executor.complete_operation(op_id, bytes_transferred, duration_ms);
+        self.executor
+            .complete_operation(op_id, bytes_transferred, duration_ms);
     }
 
     /// Fail an operation
@@ -951,8 +969,26 @@ mod tests {
         let executor = PrepositionExecutor::new(PrepositionConfig::default());
 
         let ops = vec![
-            PrepositionOp::new(1, ChunkId::new(1), EdgeIdx(0), EdgeIdx(1), 1024, PrepositionPriority::High, 0.9, "Test".to_string()),
-            PrepositionOp::new(2, ChunkId::new(2), EdgeIdx(0), EdgeIdx(1), 1024, PrepositionPriority::Medium, 0.8, "Test".to_string()),
+            PrepositionOp::new(
+                1,
+                ChunkId::new(1),
+                EdgeIdx(0),
+                EdgeIdx(1),
+                1024,
+                PrepositionPriority::High,
+                0.9,
+                "Test".to_string(),
+            ),
+            PrepositionOp::new(
+                2,
+                ChunkId::new(2),
+                EdgeIdx(0),
+                EdgeIdx(1),
+                1024,
+                PrepositionPriority::Medium,
+                0.8,
+                "Test".to_string(),
+            ),
         ];
 
         executor.queue_operations(ops);
@@ -965,9 +1001,16 @@ mod tests {
         let config = PrepositionConfig::default();
         let executor = PrepositionExecutor::new(config);
 
-        let ops = vec![
-            PrepositionOp::new(1, ChunkId::new(1), EdgeIdx(0), EdgeIdx(1), 1024, PrepositionPriority::High, 0.9, "Test".to_string()),
-        ];
+        let ops = vec![PrepositionOp::new(
+            1,
+            ChunkId::new(1),
+            EdgeIdx(0),
+            EdgeIdx(1),
+            1024,
+            PrepositionPriority::High,
+            0.9,
+            "Test".to_string(),
+        )];
 
         executor.queue_operations(ops);
         let started = executor.tick();
@@ -982,9 +1025,16 @@ mod tests {
     fn test_executor_complete_operation() {
         let executor = PrepositionExecutor::new(PrepositionConfig::default());
 
-        let ops = vec![
-            PrepositionOp::new(1, ChunkId::new(1), EdgeIdx(0), EdgeIdx(1), 1024, PrepositionPriority::High, 0.9, "Test".to_string()),
-        ];
+        let ops = vec![PrepositionOp::new(
+            1,
+            ChunkId::new(1),
+            EdgeIdx(0),
+            EdgeIdx(1),
+            1024,
+            PrepositionPriority::High,
+            0.9,
+            "Test".to_string(),
+        )];
 
         executor.queue_operations(ops);
         executor.tick();
@@ -1000,9 +1050,16 @@ mod tests {
     fn test_executor_fail_operation() {
         let executor = PrepositionExecutor::new(PrepositionConfig::default());
 
-        let ops = vec![
-            PrepositionOp::new(1, ChunkId::new(1), EdgeIdx(0), EdgeIdx(1), 1024, PrepositionPriority::High, 0.9, "Test".to_string()),
-        ];
+        let ops = vec![PrepositionOp::new(
+            1,
+            ChunkId::new(1),
+            EdgeIdx(0),
+            EdgeIdx(1),
+            1024,
+            PrepositionPriority::High,
+            0.9,
+            "Test".to_string(),
+        )];
 
         executor.queue_operations(ops);
         executor.tick();
@@ -1020,9 +1077,36 @@ mod tests {
         let executor = PrepositionExecutor::new(config);
 
         let ops = vec![
-            PrepositionOp::new(1, ChunkId::new(1), EdgeIdx(0), EdgeIdx(1), 1024, PrepositionPriority::High, 0.9, "Test".to_string()),
-            PrepositionOp::new(2, ChunkId::new(2), EdgeIdx(0), EdgeIdx(1), 1024, PrepositionPriority::High, 0.9, "Test".to_string()),
-            PrepositionOp::new(3, ChunkId::new(3), EdgeIdx(0), EdgeIdx(1), 1024, PrepositionPriority::High, 0.9, "Test".to_string()),
+            PrepositionOp::new(
+                1,
+                ChunkId::new(1),
+                EdgeIdx(0),
+                EdgeIdx(1),
+                1024,
+                PrepositionPriority::High,
+                0.9,
+                "Test".to_string(),
+            ),
+            PrepositionOp::new(
+                2,
+                ChunkId::new(2),
+                EdgeIdx(0),
+                EdgeIdx(1),
+                1024,
+                PrepositionPriority::High,
+                0.9,
+                "Test".to_string(),
+            ),
+            PrepositionOp::new(
+                3,
+                ChunkId::new(3),
+                EdgeIdx(0),
+                EdgeIdx(1),
+                1024,
+                PrepositionPriority::High,
+                0.9,
+                "Test".to_string(),
+            ),
         ];
 
         executor.queue_operations(ops);
@@ -1056,7 +1140,12 @@ mod tests {
 
         manager.update_chunk_location(ChunkId::new(1), edges);
         // Verify via planner
-        assert!(manager.planner().chunk_locations.contains_key(&ChunkId::new(1)));
+        assert!(
+            manager
+                .planner()
+                .chunk_locations
+                .contains_key(&ChunkId::new(1))
+        );
     }
 
     #[test]
@@ -1147,9 +1236,16 @@ mod tests {
     fn test_executor_cancel_operation() {
         let executor = PrepositionExecutor::new(PrepositionConfig::default());
 
-        let ops = vec![
-            PrepositionOp::new(1, ChunkId::new(1), EdgeIdx(0), EdgeIdx(1), 1024, PrepositionPriority::High, 0.9, "Test".to_string()),
-        ];
+        let ops = vec![PrepositionOp::new(
+            1,
+            ChunkId::new(1),
+            EdgeIdx(0),
+            EdgeIdx(1),
+            1024,
+            PrepositionPriority::High,
+            0.9,
+            "Test".to_string(),
+        )];
 
         executor.queue_operations(ops);
         executor.tick();
@@ -1162,9 +1258,16 @@ mod tests {
     fn test_executor_active_operations() {
         let executor = PrepositionExecutor::new(PrepositionConfig::default());
 
-        let ops = vec![
-            PrepositionOp::new(1, ChunkId::new(1), EdgeIdx(0), EdgeIdx(1), 1024, PrepositionPriority::High, 0.9, "Test".to_string()),
-        ];
+        let ops = vec![PrepositionOp::new(
+            1,
+            ChunkId::new(1),
+            EdgeIdx(0),
+            EdgeIdx(1),
+            1024,
+            PrepositionPriority::High,
+            0.9,
+            "Test".to_string(),
+        )];
 
         executor.queue_operations(ops);
         executor.tick();

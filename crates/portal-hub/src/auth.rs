@@ -16,10 +16,10 @@
 //! - Signatures are verified using Ed25519
 //! - Each request must include fresh authentication
 
-use crate::{storage::HubStorage, Error, Result};
+use crate::{Error, Result, storage::HubStorage};
 use axum::{
     extract::{FromRef, FromRequestParts},
-    http::{request::Parts, StatusCode},
+    http::{StatusCode, request::Parts},
     response::{IntoResponse, Response},
 };
 use chrono::{DateTime, Duration, Utc};
@@ -123,7 +123,10 @@ impl AuthenticatedEdge {
     /// # Errors
     ///
     /// Returns `AuthError` if authentication fails
-    pub fn from_parts(parts: &Parts, storage: &Arc<HubStorage>) -> std::result::Result<Self, AuthError> {
+    pub fn from_parts(
+        parts: &Parts,
+        storage: &Arc<HubStorage>,
+    ) -> std::result::Result<Self, AuthError> {
         // Extract Authorization header
         let auth_header = parts
             .headers
@@ -240,8 +243,7 @@ fn base64_encode(data: &[u8]) -> String {
 ///
 /// Returns error if serialization fails
 pub fn serialize_auth_token(token: &AuthToken) -> Result<String> {
-    let token_json =
-        serde_json::to_vec(token).map_err(|e| Error::Serialization(e.to_string()))?;
+    let token_json = serde_json::to_vec(token).map_err(|e| Error::Serialization(e.to_string()))?;
     Ok(format!("Bearer {}", base64_encode(&token_json)))
 }
 

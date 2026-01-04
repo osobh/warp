@@ -129,9 +129,9 @@ impl PrincipalSpec {
                         PrincipalList::Single(p) => vec![p.as_str()],
                         PrincipalList::Multiple(ps) => ps.iter().map(|s| s.as_str()).collect(),
                     };
-                    expected.iter().any(|e| {
-                        e == provider || e == &format!("{}:{}", provider, subject)
-                    })
+                    expected
+                        .iter()
+                        .any(|e| e == provider || e == &format!("{}:{}", provider, subject))
                 } else {
                     false
                 }
@@ -346,7 +346,9 @@ impl PolicyDocument {
         }
 
         if self.statement.is_empty() {
-            return Err(Error::InvalidPolicy("Policy must have at least one statement".to_string()));
+            return Err(Error::InvalidPolicy(
+                "Policy must have at least one statement".to_string(),
+            ));
         }
 
         for (i, stmt) in self.statement.iter().enumerate() {
@@ -448,7 +450,9 @@ impl PolicyEngine {
         known_actions.insert("s3:*");
         known_actions.insert("*");
 
-        Self { _known_actions: known_actions }
+        Self {
+            _known_actions: known_actions,
+        }
     }
 
     /// Evaluate a policy for an identity, action, and resource
@@ -469,7 +473,9 @@ impl PolicyEngine {
                 match stmt.effect {
                     Effect::Deny => {
                         explicit_deny = true;
-                        deny_reason = stmt.sid.clone()
+                        deny_reason = stmt
+                            .sid
+                            .clone()
                             .unwrap_or_else(|| "Explicit deny".to_string());
                     }
                     Effect::Allow => {
@@ -481,7 +487,9 @@ impl PolicyEngine {
 
         // Deny takes precedence
         if explicit_deny {
-            return Ok(AuthorizationDecision::Deny { reason: deny_reason });
+            return Ok(AuthorizationDecision::Deny {
+                reason: deny_reason,
+            });
         }
 
         if explicit_allow {
@@ -506,9 +514,7 @@ fn action_matches(pattern: &str, action: &str) -> bool {
 
     if pattern.contains('*') {
         // Convert glob pattern to regex
-        let regex_pattern = pattern
-            .replace('.', "\\.")
-            .replace('*', ".*");
+        let regex_pattern = pattern.replace('.', "\\.").replace('*', ".*");
         if let Ok(re) = Regex::new(&format!("^{}$", regex_pattern)) {
             return re.is_match(action);
         }
@@ -577,9 +583,18 @@ mod tests {
     #[test]
     fn test_resource_matches() {
         assert!(resource_matches("*", "arn:aws:s3:::bucket/key"));
-        assert!(resource_matches("arn:aws:s3:::bucket/*", "arn:aws:s3:::bucket/key"));
-        assert!(resource_matches("arn:aws:s3:::bucket/prefix/*", "arn:aws:s3:::bucket/prefix/key"));
-        assert!(!resource_matches("arn:aws:s3:::other/*", "arn:aws:s3:::bucket/key"));
+        assert!(resource_matches(
+            "arn:aws:s3:::bucket/*",
+            "arn:aws:s3:::bucket/key"
+        ));
+        assert!(resource_matches(
+            "arn:aws:s3:::bucket/prefix/*",
+            "arn:aws:s3:::bucket/prefix/key"
+        ));
+        assert!(!resource_matches(
+            "arn:aws:s3:::other/*",
+            "arn:aws:s3:::bucket/key"
+        ));
     }
 
     #[test]
@@ -602,10 +617,11 @@ mod tests {
 
     #[test]
     fn test_statement_applies() {
-        let stmt = Statement::allow("s3:GetObject", "arn:aws:s3:::bucket/*")
-            .with_principal(PrincipalSpec::Aws {
+        let stmt = Statement::allow("s3:GetObject", "arn:aws:s3:::bucket/*").with_principal(
+            PrincipalSpec::Aws {
                 aws: PrincipalList::Single("user:alice".to_string()),
-            });
+            },
+        );
 
         let alice = Identity::user("alice", "Alice", "local");
         let bob = Identity::user("bob", "Bob", "local");
@@ -621,26 +637,42 @@ mod tests {
         let policy = PolicyDocument::new()
             .add_statement(
                 Statement::allow("s3:GetObject", "arn:aws:s3:::bucket/*")
-                    .with_principal(PrincipalSpec::Wildcard("*".to_string()))
+                    .with_principal(PrincipalSpec::Wildcard("*".to_string())),
             )
             .add_statement(
                 Statement::deny("s3:*", "arn:aws:s3:::bucket/secret/*")
-                    .with_principal(PrincipalSpec::Wildcard("*".to_string()))
+                    .with_principal(PrincipalSpec::Wildcard("*".to_string())),
             );
 
         let engine = PolicyEngine::new();
         let alice = Identity::user("alice", "Alice", "local");
 
         // Allowed: regular object
-        let decision = engine.evaluate(&policy, &alice, "s3:GetObject", "arn:aws:s3:::bucket/public/file").unwrap();
+        let decision = engine
+            .evaluate(
+                &policy,
+                &alice,
+                "s3:GetObject",
+                "arn:aws:s3:::bucket/public/file",
+            )
+            .unwrap();
         assert!(matches!(decision, AuthorizationDecision::Allow));
 
         // Denied: secret path
-        let decision = engine.evaluate(&policy, &alice, "s3:GetObject", "arn:aws:s3:::bucket/secret/file").unwrap();
+        let decision = engine
+            .evaluate(
+                &policy,
+                &alice,
+                "s3:GetObject",
+                "arn:aws:s3:::bucket/secret/file",
+            )
+            .unwrap();
         assert!(matches!(decision, AuthorizationDecision::Deny { .. }));
 
         // Not applicable: different action
-        let decision = engine.evaluate(&policy, &alice, "s3:PutObject", "arn:aws:s3:::bucket/file").unwrap();
+        let decision = engine
+            .evaluate(&policy, &alice, "s3:PutObject", "arn:aws:s3:::bucket/file")
+            .unwrap();
         assert!(matches!(decision, AuthorizationDecision::NotApplicable));
     }
 

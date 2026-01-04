@@ -1,15 +1,15 @@
 //! Transfer engine - orchestrates send/fetch operations
 
-use crate::analyzer::{analyze_payload, CompressionHint, PayloadAnalysis};
+use crate::analyzer::{CompressionHint, PayloadAnalysis, analyze_payload};
 use crate::session::{Session, SessionState};
 use crate::{Error, Result};
 use bytes::Bytes;
+use std::collections::HashMap;
 use std::path::Path;
 use std::sync::Arc;
 use std::time::Instant;
 use tokio::sync::Semaphore;
-use std::collections::HashMap;
-use warp_ec::{ErasureConfig, ErasureEncoder, ErasureDecoder};
+use warp_ec::{ErasureConfig, ErasureDecoder, ErasureEncoder};
 use warp_format::{Compression, SparseMerkleTree, WarpReader, WarpWriter, WarpWriterConfig};
 use warp_hash::Hasher;
 use warp_net::codec::WireMerkleProof;
@@ -277,9 +277,9 @@ impl TransferEngine {
         session.set_state(SessionState::Negotiating);
         tracing::info!("Connecting to {}", addr);
 
-        let socket_addr: std::net::SocketAddr = addr.parse().map_err(|e| {
-            Error::Session(format!("Invalid address: {}", e))
-        })?;
+        let socket_addr: std::net::SocketAddr = addr
+            .parse()
+            .map_err(|e| Error::Session(format!("Invalid address: {}", e)))?;
 
         let endpoint = WarpEndpoint::client().await?;
         let conn = endpoint.connect(socket_addr, "warp-transfer").await?;
@@ -340,11 +340,17 @@ impl TransferEngine {
         let start_time = Instant::now();
 
         // Create erasure encoder if configured
-        let encoder = self.config.erasure_config.as_ref()
+        let encoder = self
+            .config
+            .erasure_config
+            .as_ref()
             .map(|ec| ErasureEncoder::new(ec.clone()));
 
         // Build Merkle tree for per-chunk verification if needed
-        let merkle_tree: Option<SparseMerkleTree> = if matches!(self.config.verification_mode, VerificationMode::PerChunk | VerificationMode::Sampling { .. }) {
+        let merkle_tree: Option<SparseMerkleTree> = if matches!(
+            self.config.verification_mode,
+            VerificationMode::PerChunk | VerificationMode::Sampling { .. }
+        ) {
             // Collect all chunk hashes
             let chunk_hashes: Vec<[u8; 32]> = (0..temp_header.total_chunks as usize)
                 .map(|i| {
@@ -385,7 +391,8 @@ impl TransferEngine {
             // Send with erasure coding or plain chunk
             if let Some(ref enc) = encoder {
                 // Encode chunk into shards and send each
-                let shards = enc.encode(&chunk_data)
+                let shards = enc
+                    .encode(&chunk_data)
                     .map_err(|e| Error::Session(format!("Erasure encoding failed: {}", e)))?;
                 let total_shards = shards.len() as u16;
 
@@ -418,12 +425,13 @@ impl TransferEngine {
                     let proof = tree.generate_proof(chunk_idx);
 
                     // Pack direction bits into bytes
-                    let directions_packed: Vec<u8> = proof.directions
+                    let directions_packed: Vec<u8> = proof
+                        .directions
                         .chunks(8)
                         .map(|bits: &[bool]| {
-                            bits.iter().enumerate().fold(0u8, |acc, (i, &b)| {
-                                acc | ((b as u8) << i)
-                            })
+                            bits.iter()
+                                .enumerate()
+                                .fold(0u8, |acc, (i, &b)| acc | ((b as u8) << i))
                         })
                         .collect();
 
@@ -556,9 +564,9 @@ impl TransferEngine {
         session.set_state(SessionState::Negotiating);
         tracing::info!("Connecting to {}", addr);
 
-        let socket_addr: std::net::SocketAddr = addr.parse().map_err(|e| {
-            Error::Session(format!("Invalid address: {}", e))
-        })?;
+        let socket_addr: std::net::SocketAddr = addr
+            .parse()
+            .map_err(|e| Error::Session(format!("Invalid address: {}", e)))?;
 
         let endpoint = WarpEndpoint::client().await?;
         let conn = endpoint.connect(socket_addr, "warp-transfer").await?;
@@ -566,19 +574,19 @@ impl TransferEngine {
         let _params = conn.handshake().await?;
         tracing::info!("Handshake complete");
 
-        let _metadata = create_metadata(&remote_path, &PayloadAnalysis {
-            total_size: 0,
-            file_count: 0,
-            avg_entropy: 0.0,
-            compression_hint: CompressionHint::Unknown,
-            chunk_size_hint: 4 * 1024 * 1024,
-            file_types: std::collections::HashMap::new(),
-        });
+        let _metadata = create_metadata(
+            &remote_path,
+            &PayloadAnalysis {
+                total_size: 0,
+                file_count: 0,
+                avg_entropy: 0.0,
+                compression_hint: CompressionHint::Unknown,
+                chunk_size_hint: 4 * 1024 * 1024,
+                file_types: std::collections::HashMap::new(),
+            },
+        );
 
-        conn.send_frame(Frame::Want {
-            chunk_ids: vec![],
-        })
-        .await?;
+        conn.send_frame(Frame::Want { chunk_ids: vec![] }).await?;
 
         let plan_frame = conn.recv_frame().await?;
         let (total_size, num_chunks, chunk_size) = match plan_frame {
@@ -623,7 +631,10 @@ impl TransferEngine {
         let mut received_chunks = 0u32;
 
         // Erasure decoding state: chunk_id -> (total_shards, received shards)
-        let decoder = self.config.erasure_config.as_ref()
+        let decoder = self
+            .config
+            .erasure_config
+            .as_ref()
             .map(|ec| ErasureDecoder::new(ec.clone()));
         let mut shard_buffers: HashMap<u32, (u16, Vec<Option<Vec<u8>>>)> = HashMap::new();
         // Track recovered chunk data for writing
@@ -658,7 +669,12 @@ impl TransferEngine {
                         });
                     }
                 }
-                Frame::Shard { chunk_id, shard_idx, total_shards, data } => {
+                Frame::Shard {
+                    chunk_id,
+                    shard_idx,
+                    total_shards,
+                    data,
+                } => {
                     // Erasure-coded shard
                     let (_, shards) = shard_buffers
                         .entry(chunk_id)
@@ -674,7 +690,9 @@ impl TransferEngine {
                         let received_count = shards.iter().filter(|s| s.is_some()).count();
                         let data_shards = dec.config().data_shards();
 
-                        if received_count >= data_shards && !recovered_chunks.contains_key(&chunk_id) {
+                        if received_count >= data_shards
+                            && !recovered_chunks.contains_key(&chunk_id)
+                        {
                             // Try to decode
                             match dec.decode(shards) {
                                 Ok(recovered) => {
@@ -686,7 +704,8 @@ impl TransferEngine {
 
                                     tracing::trace!(
                                         "Recovered chunk {} from {} shards",
-                                        chunk_id, received_count
+                                        chunk_id,
+                                        received_count
                                     );
 
                                     if let Some(ref callback) = self.progress_callback {
@@ -710,14 +729,21 @@ impl TransferEngine {
                                 Err(e) => {
                                     tracing::warn!(
                                         "Failed to decode chunk {}: {} (have {}/{} shards)",
-                                        chunk_id, e, received_count, total_shards
+                                        chunk_id,
+                                        e,
+                                        received_count,
+                                        total_shards
                                     );
                                 }
                             }
                         }
                     }
                 }
-                Frame::ChunkVerify { chunk_id, chunk_hash, .. } => {
+                Frame::ChunkVerify {
+                    chunk_id,
+                    chunk_hash,
+                    ..
+                } => {
                     // Verify chunk hash if we have the chunk
                     if let Some(chunk_data) = recovered_chunks.get(&chunk_id) {
                         let mut hasher = Hasher::new();
@@ -727,7 +753,9 @@ impl TransferEngine {
                         if computed_hash != chunk_hash {
                             tracing::warn!(
                                 "Chunk {} hash mismatch! Expected {:?}, got {:?}",
-                                chunk_id, chunk_hash, computed_hash
+                                chunk_id,
+                                chunk_hash,
+                                computed_hash
                             );
                         } else {
                             tracing::trace!("Chunk {} verified", chunk_id);
@@ -773,9 +801,7 @@ impl TransferEngine {
     /// Resume a paused session
     pub async fn resume(&self, session: &mut Session) -> Result<()> {
         if !session.can_resume() {
-            return Err(Error::Session(
-                "Session cannot be resumed".to_string(),
-            ));
+            return Err(Error::Session("Session cannot be resumed".to_string()));
         }
 
         tracing::info!("Resuming session {}", session.id);
@@ -784,8 +810,7 @@ impl TransferEngine {
         let destination = session.destination.clone();
 
         if is_remote(&destination) {
-            self.send_remote(&source, &destination, session)
-                .await
+            self.send_remote(&source, &destination, session).await
         } else {
             let dest = Path::new(&destination);
             self.send_local(&source, dest, session).await
@@ -911,10 +936,7 @@ mod tests {
         writer.finish().unwrap();
 
         let engine = TransferEngine::new(TransferConfig::default());
-        let mut session = Session::new(
-            archive_path.clone(),
-            dest_dir.path().display().to_string(),
-        );
+        let mut session = Session::new(archive_path.clone(), dest_dir.path().display().to_string());
 
         engine
             .fetch_local(&archive_path, dest_dir.path(), &mut session)
@@ -940,25 +962,25 @@ mod tests {
         assert_eq!(shards.len(), 6); // 4 data + 2 parity
 
         // Test 1: Recover with all shards
-        let mut all_shards: Vec<Option<Vec<u8>>> = shards.iter()
-            .map(|s| Some(s.clone()))
-            .collect();
-        let recovered = decoder.decode(&mut all_shards).expect("decode with all shards failed");
+        let mut all_shards: Vec<Option<Vec<u8>>> = shards.iter().map(|s| Some(s.clone())).collect();
+        let recovered = decoder
+            .decode(&mut all_shards)
+            .expect("decode with all shards failed");
         assert_eq!(recovered, chunk_data);
 
         // Test 2: Recover with 2 shards missing (within tolerance)
-        let mut partial_shards: Vec<Option<Vec<u8>>> = shards.iter()
-            .map(|s| Some(s.clone()))
-            .collect();
+        let mut partial_shards: Vec<Option<Vec<u8>>> =
+            shards.iter().map(|s| Some(s.clone())).collect();
         partial_shards[0] = None; // Drop first data shard
         partial_shards[5] = None; // Drop last parity shard
-        let recovered = decoder.decode(&mut partial_shards).expect("decode with 2 missing failed");
+        let recovered = decoder
+            .decode(&mut partial_shards)
+            .expect("decode with 2 missing failed");
         assert_eq!(recovered, chunk_data);
 
         // Test 3: Try to recover with too many shards missing (should fail)
-        let mut too_few_shards: Vec<Option<Vec<u8>>> = shards.iter()
-            .map(|s| Some(s.clone()))
-            .collect();
+        let mut too_few_shards: Vec<Option<Vec<u8>>> =
+            shards.iter().map(|s| Some(s.clone())).collect();
         too_few_shards[0] = None;
         too_few_shards[1] = None;
         too_few_shards[2] = None; // 3 missing = only 3 remaining, need 4

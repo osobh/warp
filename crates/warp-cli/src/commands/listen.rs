@@ -149,10 +149,7 @@ async fn handle_connection(conn: WarpConnection, conn_id: u64) -> Result<()> {
     println!("[Connection {}] From {}", conn_id, remote_addr);
 
     // Perform handshake
-    let params = conn
-        .handshake_server()
-        .await
-        .context("Handshake failed")?;
+    let params = conn.handshake_server().await.context("Handshake failed")?;
 
     tracing::debug!(
         conn_id = conn_id,
@@ -181,8 +178,8 @@ async fn handle_connection(conn: WarpConnection, conn_id: u64) -> Result<()> {
     };
 
     // Decode metadata
-    let file_metadata: FileMetadata = rmp_serde::from_slice(&metadata_bytes)
-        .context("Failed to decode file metadata")?;
+    let file_metadata: FileMetadata =
+        rmp_serde::from_slice(&metadata_bytes).context("Failed to decode file metadata")?;
 
     tracing::info!(
         conn_id = conn_id,

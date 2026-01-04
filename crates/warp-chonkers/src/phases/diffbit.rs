@@ -7,9 +7,9 @@
 //! The diffbit technique ensures that chunk boundaries are placed at
 //! "interesting" positions where content differs significantly.
 
+use crate::Result;
 use crate::chunk::ChunkWeight;
 use crate::config::LayerConfig;
-use crate::Result;
 
 /// Diffbit phase processor
 pub struct DiffbitPhase;
@@ -18,11 +18,7 @@ impl DiffbitPhase {
     /// Process boundaries through the diffbit phase
     ///
     /// Uses XOR-based priorities to merge chunks until size constraints are met.
-    pub fn process(
-        data: &[u8],
-        boundaries: &[usize],
-        config: &LayerConfig,
-    ) -> Result<Vec<usize>> {
+    pub fn process(data: &[u8], boundaries: &[usize], config: &LayerConfig) -> Result<Vec<usize>> {
         if boundaries.len() < 2 {
             return Ok(boundaries.to_vec());
         }
@@ -139,7 +135,10 @@ impl DiffbitPhase {
 
         for i in 1..boundaries.len() - 1 {
             let left_size = boundaries[i] - boundaries[i - 1];
-            let right_size = boundaries.get(i + 1).map(|&b| b - boundaries[i]).unwrap_or(0);
+            let right_size = boundaries
+                .get(i + 1)
+                .map(|&b| b - boundaries[i])
+                .unwrap_or(0);
 
             // Consider merging if either adjacent chunk is undersized
             let undersized = left_size < config.min_size || right_size < config.min_size;
@@ -363,7 +362,12 @@ mod tests {
         // All chunks should be within bounds
         for window in result.windows(2) {
             let size = window[1] - window[0];
-            assert!(size <= config.max_size, "Chunk size {} > max {}", size, config.max_size);
+            assert!(
+                size <= config.max_size,
+                "Chunk size {} > max {}",
+                size,
+                config.max_size
+            );
         }
     }
 

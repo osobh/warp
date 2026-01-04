@@ -247,29 +247,26 @@ impl WorkloadPredictor {
         }
 
         // Check for preprocessing patterns
-        if keys.iter().any(|k| {
-            k.contains("preprocess")
-                || k.contains("transform")
-                || k.contains("augment")
-        }) {
+        if keys
+            .iter()
+            .any(|k| k.contains("preprocess") || k.contains("transform") || k.contains("augment"))
+        {
             return WorkloadType::Preprocessing;
         }
 
         // Check for evaluation patterns
-        if keys.iter().any(|k| {
-            k.contains("eval")
-                || k.contains("valid")
-                || k.contains("test")
-        }) {
+        if keys
+            .iter()
+            .any(|k| k.contains("eval") || k.contains("valid") || k.contains("test"))
+        {
             return WorkloadType::Evaluation;
         }
 
         // Default to inference if we see model files being read
-        if keys.iter().any(|k| {
-            k.contains("model")
-                || k.contains("weight")
-                || k.ends_with(".bin")
-        }) {
+        if keys
+            .iter()
+            .any(|k| k.contains("model") || k.contains("weight") || k.ends_with(".bin"))
+        {
             return WorkloadType::Inference;
         }
 
@@ -409,7 +406,8 @@ impl WorkloadPredictor {
             // If we see a model file, predict related weight files
             if key.contains("model") {
                 // Common patterns for model weight files
-                let base = key.trim_end_matches(".bin")
+                let base = key
+                    .trim_end_matches(".bin")
                     .trim_end_matches(".pt")
                     .trim_end_matches(".safetensors");
 
@@ -451,13 +449,20 @@ impl WorkloadPredictor {
             // Learn from the session pattern
             if ctx.recent_accesses.len() >= 5 {
                 let pattern_key = format!("{}:{:?}", session_id, ctx.current_workload);
-                self.patterns.insert(pattern_key, WorkloadPattern {
-                    access_sequence: ctx.recent_accesses.iter().map(|(k, _)| k.clone()).collect(),
-                    intervals: Vec::new(), // Could compute intervals
-                    workload_type: ctx.current_workload,
-                    count: 1,
-                    last_seen: Instant::now(),
-                });
+                self.patterns.insert(
+                    pattern_key,
+                    WorkloadPattern {
+                        access_sequence: ctx
+                            .recent_accesses
+                            .iter()
+                            .map(|(k, _)| k.clone())
+                            .collect(),
+                        intervals: Vec::new(), // Could compute intervals
+                        workload_type: ctx.current_workload,
+                        count: 1,
+                        last_seen: Instant::now(),
+                    },
+                );
             }
         }
 

@@ -533,7 +533,11 @@ mod tests {
         assert_eq!(registry.list_all().len(), 0);
 
         for i in 1..=5 {
-            assert!(registry.register(create_test_edge(i, 100 + i as u16)).is_ok());
+            assert!(
+                registry
+                    .register(create_test_edge(i, 100 + i as u16))
+                    .is_ok()
+            );
         }
 
         let all = registry.list_all();
@@ -546,7 +550,11 @@ mod tests {
 
         // Register 3 online edges
         for i in 1..=3 {
-            assert!(registry.register(create_test_edge(i, 100 + i as u16)).is_ok());
+            assert!(
+                registry
+                    .register(create_test_edge(i, 100 + i as u16))
+                    .is_ok()
+            );
         }
 
         // Register 2 offline edges
@@ -568,7 +576,11 @@ mod tests {
         let registry = EdgeRegistry::new();
 
         for i in 1..=3 {
-            assert!(registry.register(create_test_edge(i, 100 + i as u16)).is_ok());
+            assert!(
+                registry
+                    .register(create_test_edge(i, 100 + i as u16))
+                    .is_ok()
+            );
         }
 
         for i in 4..=5 {
@@ -587,7 +599,11 @@ mod tests {
         assert_eq!(registry.count(), 0);
 
         for i in 1..=10 {
-            assert!(registry.register(create_test_edge(i, 100 + i as u16)).is_ok());
+            assert!(
+                registry
+                    .register(create_test_edge(i, 100 + i as u16))
+                    .is_ok()
+            );
         }
 
         assert_eq!(registry.count(), 10);
@@ -598,7 +614,11 @@ mod tests {
         let registry = EdgeRegistry::new();
 
         for i in 1..=7 {
-            assert!(registry.register(create_test_edge(i, 100 + i as u16)).is_ok());
+            assert!(
+                registry
+                    .register(create_test_edge(i, 100 + i as u16))
+                    .is_ok()
+            );
         }
 
         for i in 8..=10 {
@@ -616,7 +636,11 @@ mod tests {
 
         // Add fresh edges
         for i in 1..=3 {
-            assert!(registry.register(create_test_edge(i, 100 + i as u16)).is_ok());
+            assert!(
+                registry
+                    .register(create_test_edge(i, 100 + i as u16))
+                    .is_ok()
+            );
         }
 
         // Add stale edges
@@ -640,7 +664,11 @@ mod tests {
         let registry = EdgeRegistry::new();
 
         for i in 1..=3 {
-            assert!(registry.register(create_test_edge(i, 100 + i as u16)).is_ok());
+            assert!(
+                registry
+                    .register(create_test_edge(i, 100 + i as u16))
+                    .is_ok()
+            );
         }
 
         let pruned = registry.prune_stale(Duration::from_secs(60));
@@ -653,7 +681,11 @@ mod tests {
         let registry = EdgeRegistry::new();
 
         for i in 1..=5 {
-            assert!(registry.register(create_test_edge(i, 100 + i as u16)).is_ok());
+            assert!(
+                registry
+                    .register(create_test_edge(i, 100 + i as u16))
+                    .is_ok()
+            );
         }
 
         let snapshot = registry.snapshot();
@@ -726,7 +758,11 @@ mod tests {
 
         // Pre-populate
         for i in 1..=10 {
-            assert!(registry.register(create_test_edge(i, 100 + i as u16)).is_ok());
+            assert!(
+                registry
+                    .register(create_test_edge(i, 100 + i as u16))
+                    .is_ok()
+            );
         }
 
         let registry_read = registry.clone();
@@ -755,7 +791,11 @@ mod tests {
         let registry = EdgeRegistry::new();
 
         for i in 1..=100 {
-            assert!(registry.register(create_test_edge(i, 100 + i as u16)).is_ok());
+            assert!(
+                registry
+                    .register(create_test_edge(i, 100 + i as u16))
+                    .is_ok()
+            );
         }
 
         let registry_clone = registry.clone();

@@ -8,7 +8,7 @@ use serde::{Deserialize, Serialize};
 use std::net::SocketAddr;
 use std::sync::Arc;
 use std::time::{Duration, SystemTime};
-use tokio::sync::{mpsc, RwLock};
+use tokio::sync::{RwLock, mpsc};
 use tokio::time::interval;
 
 use crate::discovery::LocalEdgeInfo;
@@ -19,19 +19,44 @@ use crate::{PortalNetError, Result};
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[allow(missing_docs)]
 pub enum HubMessage {
-    Register { public_key: [u8; 32], virtual_ip: Option<VirtualIp>, endpoint: SocketAddr },
-    RegisterResponse { virtual_ip: VirtualIp },
-    Heartbeat { public_key: [u8; 32], status: PeerStatus },
+    Register {
+        public_key: [u8; 32],
+        virtual_ip: Option<VirtualIp>,
+        endpoint: SocketAddr,
+    },
+    RegisterResponse {
+        virtual_ip: VirtualIp,
+    },
+    Heartbeat {
+        public_key: [u8; 32],
+        status: PeerStatus,
+    },
     HeartbeatAck,
-    PeerQuery { public_key: [u8; 32] },
-    PeerResponse { peer: Option<PeerMetadata> },
+    PeerQuery {
+        public_key: [u8; 32],
+    },
+    PeerResponse {
+        peer: Option<PeerMetadata>,
+    },
     PeerListRequest,
-    PeerList { peers: Vec<PeerMetadata> },
-    HolePunchRequest { target: [u8; 32] },
-    HolePunchResponse { endpoint: SocketAddr },
-    Relay { from: [u8; 32], to: [u8; 32], payload: Vec<u8> },
+    PeerList {
+        peers: Vec<PeerMetadata>,
+    },
+    HolePunchRequest {
+        target: [u8; 32],
+    },
+    HolePunchResponse {
+        endpoint: SocketAddr,
+    },
+    Relay {
+        from: [u8; 32],
+        to: [u8; 32],
+        payload: Vec<u8>,
+    },
     RelayAck,
-    Disconnect { public_key: [u8; 32] },
+    Disconnect {
+        public_key: [u8; 32],
+    },
     DisconnectAck,
 }
 
@@ -61,6 +86,9 @@ struct CoordinatorState {
     public_key: [u8; 32],
     last_heartbeat: Option<SystemTime>,
     peer_cache: Vec<PeerMetadata>,
+    /// Version counter for optimistic locking - incremented on each state mutation.
+    /// Used to detect concurrent modifications between lock acquisitions.
+    version: u64,
 }
 
 /// Hub coordinator for managing Hub communication
@@ -73,10 +101,14 @@ impl HubCoordinator {
     /// Creates a new Hub coordinator with the given configuration
     pub fn new(config: HubNetConfig) -> Result<Self> {
         if config.endpoint.port() == 0 {
-            return Err(PortalNetError::Configuration("Hub endpoint port cannot be 0".to_string()));
+            return Err(PortalNetError::Configuration(
+                "Hub endpoint port cannot be 0".to_string(),
+            ));
         }
         if config.heartbeat_secs == 0 {
-            return Err(PortalNetError::Configuration("Heartbeat interval must be greater than 0".to_string()));
+            return Err(PortalNetError::Configuration(
+                "Heartbeat interval must be greater than 0".to_string(),
+            ));
         }
 
         let state = CoordinatorState {
@@ -85,18 +117,30 @@ impl HubCoordinator {
             public_key: [0u8; 32],
             last_heartbeat: None,
             peer_cache: Vec::new(),
+            version: 0,
         };
 
-        Ok(Self { config, state: Arc::new(RwLock::new(state)) })
+        Ok(Self {
+            config,
+            state: Arc::new(RwLock::new(state)),
+        })
     }
 
     /// Registers this edge with the Hub
+    ///
+    /// Uses optimistic locking to detect concurrent modifications during the async
+    /// Hub communication. If the state version changes during the operation,
+    /// it means another task modified state and this registration is aborted.
     pub async fn register(&self, edge: &LocalEdgeInfo) -> Result<VirtualIp> {
         edge.validate()?;
 
-        let mut state = self.state.write().await;
-        state.connection_state = ConnectionState::Connecting;
-        state.public_key = edge.public_key;
+        let expected_version = {
+            let mut state = self.state.write().await;
+            state.connection_state = ConnectionState::Connecting;
+            state.public_key = edge.public_key;
+            state.version += 1;
+            state.version
+        };
 
         let message = HubMessage::Register {
             public_key: edge.public_key,
@@ -104,19 +148,31 @@ impl HubCoordinator {
             endpoint: edge.endpoint,
         };
 
-        drop(state);
         let response = self.simulate_hub_response(message).await?;
 
         if let HubMessage::RegisterResponse { virtual_ip } = response {
             let mut state = self.state.write().await;
+            // Check for concurrent modification using optimistic locking
+            if state.version != expected_version {
+                return Err(PortalNetError::HubConnection(
+                    "concurrent state modification detected during registration".to_string(),
+                ));
+            }
             state.virtual_ip = Some(virtual_ip);
             state.connection_state = ConnectionState::Connected;
             state.last_heartbeat = Some(SystemTime::now());
+            state.version += 1;
             Ok(virtual_ip)
         } else {
             let mut state = self.state.write().await;
-            state.connection_state = ConnectionState::Failed;
-            Err(PortalNetError::HubConnection("unexpected response from Hub".to_string()))
+            // Check for concurrent modification
+            if state.version == expected_version {
+                state.connection_state = ConnectionState::Failed;
+                state.version += 1;
+            }
+            Err(PortalNetError::HubConnection(
+                "unexpected response from Hub".to_string(),
+            ))
         }
     }
 
@@ -124,18 +180,24 @@ impl HubCoordinator {
     pub async fn get_peers(&self) -> Result<Vec<PeerMetadata>> {
         let state = self.state.read().await;
         if state.connection_state != ConnectionState::Connected {
-            return Err(PortalNetError::HubConnection("not connected to Hub".to_string()));
+            return Err(PortalNetError::HubConnection(
+                "not connected to Hub".to_string(),
+            ));
         }
         drop(state);
 
-        let response = self.simulate_hub_response(HubMessage::PeerListRequest).await?;
+        let response = self
+            .simulate_hub_response(HubMessage::PeerListRequest)
+            .await?;
 
         if let HubMessage::PeerList { peers } = response {
             let mut state = self.state.write().await;
             state.peer_cache.clone_from(&peers);
             Ok(peers)
         } else {
-            Err(PortalNetError::HubConnection("unexpected response from Hub".to_string()))
+            Err(PortalNetError::HubConnection(
+                "unexpected response from Hub".to_string(),
+            ))
         }
     }
 
@@ -143,16 +205,24 @@ impl HubCoordinator {
     pub async fn get_peer(&self, public_key: &[u8; 32]) -> Result<Option<PeerMetadata>> {
         let state = self.state.read().await;
         if state.connection_state != ConnectionState::Connected {
-            return Err(PortalNetError::HubConnection("not connected to Hub".to_string()));
+            return Err(PortalNetError::HubConnection(
+                "not connected to Hub".to_string(),
+            ));
         }
         drop(state);
 
-        let response = self.simulate_hub_response(HubMessage::PeerQuery { public_key: *public_key }).await?;
+        let response = self
+            .simulate_hub_response(HubMessage::PeerQuery {
+                public_key: *public_key,
+            })
+            .await?;
 
         if let HubMessage::PeerResponse { peer } = response {
             Ok(peer)
         } else {
-            Err(PortalNetError::HubConnection("unexpected response from Hub".to_string()))
+            Err(PortalNetError::HubConnection(
+                "unexpected response from Hub".to_string(),
+            ))
         }
     }
 
@@ -160,12 +230,17 @@ impl HubCoordinator {
     pub async fn heartbeat(&self) -> Result<()> {
         let state = self.state.read().await;
         if state.connection_state != ConnectionState::Connected {
-            return Err(PortalNetError::HubConnection("not connected to Hub".to_string()));
+            return Err(PortalNetError::HubConnection(
+                "not connected to Hub".to_string(),
+            ));
         }
         let public_key = state.public_key;
         drop(state);
 
-        let message = HubMessage::Heartbeat { public_key, status: PeerStatus::Online };
+        let message = HubMessage::Heartbeat {
+            public_key,
+            status: PeerStatus::Online,
+        };
         let response = self.simulate_hub_response(message).await?;
 
         if response == HubMessage::HeartbeatAck {
@@ -173,7 +248,9 @@ impl HubCoordinator {
             state.last_heartbeat = Some(SystemTime::now());
             Ok(())
         } else {
-            Err(PortalNetError::HubConnection("unexpected response from Hub".to_string()))
+            Err(PortalNetError::HubConnection(
+                "unexpected response from Hub".to_string(),
+            ))
         }
     }
 
@@ -181,16 +258,22 @@ impl HubCoordinator {
     pub async fn request_hole_punch(&self, target: &[u8; 32]) -> Result<SocketAddr> {
         let state = self.state.read().await;
         if state.connection_state != ConnectionState::Connected {
-            return Err(PortalNetError::HubConnection("not connected to Hub".to_string()));
+            return Err(PortalNetError::HubConnection(
+                "not connected to Hub".to_string(),
+            ));
         }
         drop(state);
 
-        let response = self.simulate_hub_response(HubMessage::HolePunchRequest { target: *target }).await?;
+        let response = self
+            .simulate_hub_response(HubMessage::HolePunchRequest { target: *target })
+            .await?;
 
         if let HubMessage::HolePunchResponse { endpoint } = response {
             Ok(endpoint)
         } else {
-            Err(PortalNetError::HubConnection("unexpected response from Hub".to_string()))
+            Err(PortalNetError::HubConnection(
+                "unexpected response from Hub".to_string(),
+            ))
         }
     }
 
@@ -198,22 +281,32 @@ impl HubCoordinator {
     pub async fn relay(&self, to: &[u8; 32], data: &[u8]) -> Result<()> {
         let state = self.state.read().await;
         if state.connection_state != ConnectionState::Connected {
-            return Err(PortalNetError::HubConnection("not connected to Hub".to_string()));
+            return Err(PortalNetError::HubConnection(
+                "not connected to Hub".to_string(),
+            ));
         }
         let from = state.public_key;
         drop(state);
 
         if data.len() > 65536 {
-            return Err(PortalNetError::Configuration("relay payload too large (max 64KB)".to_string()));
+            return Err(PortalNetError::Configuration(
+                "relay payload too large (max 64KB)".to_string(),
+            ));
         }
 
-        let message = HubMessage::Relay { from, to: *to, payload: data.to_vec() };
+        let message = HubMessage::Relay {
+            from,
+            to: *to,
+            payload: data.to_vec(),
+        };
         let response = self.simulate_hub_response(message).await?;
 
         if response == HubMessage::RelayAck {
             Ok(())
         } else {
-            Err(PortalNetError::HubConnection("unexpected response from Hub".to_string()))
+            Err(PortalNetError::HubConnection(
+                "unexpected response from Hub".to_string(),
+            ))
         }
     }
 
@@ -226,7 +319,9 @@ impl HubCoordinator {
         let public_key = state.public_key;
         drop(state);
 
-        let response = self.simulate_hub_response(HubMessage::Disconnect { public_key }).await?;
+        let response = self
+            .simulate_hub_response(HubMessage::Disconnect { public_key })
+            .await?;
 
         if response == HubMessage::DisconnectAck {
             let mut state = self.state.write().await;
@@ -235,7 +330,9 @@ impl HubCoordinator {
             state.last_heartbeat = None;
             Ok(())
         } else {
-            Err(PortalNetError::HubConnection("unexpected response from Hub".to_string()))
+            Err(PortalNetError::HubConnection(
+                "unexpected response from Hub".to_string(),
+            ))
         }
     }
 
@@ -264,7 +361,9 @@ impl HubCoordinator {
     pub async fn start_heartbeat_loop(&self) -> Result<mpsc::Receiver<Result<()>>> {
         let state = self.state.read().await;
         if state.connection_state != ConnectionState::Connected {
-            return Err(PortalNetError::HubConnection("not connected to Hub".to_string()));
+            return Err(PortalNetError::HubConnection(
+                "not connected to Hub".to_string(),
+            ));
         }
         drop(state);
 
@@ -286,20 +385,26 @@ impl HubCoordinator {
     }
 
     async fn clone_state(&self) -> Self {
-        Self { config: self.config.clone(), state: Arc::clone(&self.state) }
+        Self {
+            config: self.config.clone(),
+            state: Arc::clone(&self.state),
+        }
     }
 
     async fn simulate_hub_response(&self, message: HubMessage) -> Result<HubMessage> {
         tokio::time::sleep(Duration::from_millis(10)).await;
 
         match message {
-            HubMessage::Register { virtual_ip, .. } => {
-                Ok(HubMessage::RegisterResponse { virtual_ip: virtual_ip.unwrap_or_else(|| VirtualIp::new(100)) })
-            }
+            HubMessage::Register { virtual_ip, .. } => Ok(HubMessage::RegisterResponse {
+                virtual_ip: virtual_ip.unwrap_or_else(|| VirtualIp::new(100)),
+            }),
             HubMessage::Heartbeat { .. } => Ok(HubMessage::HeartbeatAck),
             HubMessage::PeerQuery { public_key } => {
                 let peer = if public_key == [1u8; 32] {
-                    Some(PeerMetadata::new(PeerConfig::new(public_key, VirtualIp::new(50))))
+                    Some(PeerMetadata::new(PeerConfig::new(
+                        public_key,
+                        VirtualIp::new(50),
+                    )))
                 } else {
                     None
                 };
@@ -312,12 +417,14 @@ impl HubCoordinator {
                 ];
                 Ok(HubMessage::PeerList { peers })
             }
-            HubMessage::HolePunchRequest { .. } => {
-                Ok(HubMessage::HolePunchResponse { endpoint: "192.168.1.100:51820".parse().unwrap() })
-            }
+            HubMessage::HolePunchRequest { .. } => Ok(HubMessage::HolePunchResponse {
+                endpoint: "192.168.1.100:51820".parse().unwrap(),
+            }),
             HubMessage::Relay { .. } => Ok(HubMessage::RelayAck),
             HubMessage::Disconnect { .. } => Ok(HubMessage::DisconnectAck),
-            _ => Err(PortalNetError::HubConnection("unexpected message type".to_string())),
+            _ => Err(PortalNetError::HubConnection(
+                "unexpected message type".to_string(),
+            )),
         }
     }
 }
@@ -331,7 +438,11 @@ mod tests {
     }
 
     fn test_edge() -> LocalEdgeInfo {
-        LocalEdgeInfo::new([2u8; 32], VirtualIp::new(100), "192.168.1.50:51820".parse().unwrap())
+        LocalEdgeInfo::new(
+            [2u8; 32],
+            VirtualIp::new(100),
+            "192.168.1.50:51820".parse().unwrap(),
+        )
     }
 
     #[test]
@@ -343,14 +454,20 @@ mod tests {
     fn test_hub_coordinator_new_invalid_port() {
         let mut config = test_config();
         config.endpoint = "192.168.1.100:0".parse().unwrap();
-        assert!(matches!(HubCoordinator::new(config), Err(PortalNetError::Configuration(_))));
+        assert!(matches!(
+            HubCoordinator::new(config),
+            Err(PortalNetError::Configuration(_))
+        ));
     }
 
     #[test]
     fn test_hub_coordinator_new_invalid_heartbeat() {
         let mut config = test_config();
         config.heartbeat_secs = 0;
-        assert!(matches!(HubCoordinator::new(config), Err(PortalNetError::Configuration(_))));
+        assert!(matches!(
+            HubCoordinator::new(config),
+            Err(PortalNetError::Configuration(_))
+        ));
     }
 
     #[tokio::test]
@@ -358,7 +475,10 @@ mod tests {
         let coordinator = HubCoordinator::new(test_config()).unwrap();
         let vip = coordinator.register(&test_edge()).await.unwrap();
         assert_eq!(vip, VirtualIp::new(100));
-        assert_eq!(coordinator.connection_state().await, ConnectionState::Connected);
+        assert_eq!(
+            coordinator.connection_state().await,
+            ConnectionState::Connected
+        );
     }
 
     #[tokio::test]
@@ -371,7 +491,10 @@ mod tests {
     #[tokio::test]
     async fn test_get_peers_not_connected() {
         let coordinator = HubCoordinator::new(test_config()).unwrap();
-        assert!(matches!(coordinator.get_peers().await, Err(PortalNetError::HubConnection(_))));
+        assert!(matches!(
+            coordinator.get_peers().await,
+            Err(PortalNetError::HubConnection(_))
+        ));
     }
 
     #[tokio::test]
@@ -447,7 +570,12 @@ mod tests {
     async fn test_relay() {
         let coordinator = HubCoordinator::new(test_config()).unwrap();
         coordinator.register(&test_edge()).await.unwrap();
-        assert!(coordinator.relay(&[3u8; 32], b"test relay data").await.is_ok());
+        assert!(
+            coordinator
+                .relay(&[3u8; 32], b"test relay data")
+                .await
+                .is_ok()
+        );
     }
 
     #[tokio::test]
@@ -455,16 +583,25 @@ mod tests {
         let coordinator = HubCoordinator::new(test_config()).unwrap();
         coordinator.register(&test_edge()).await.unwrap();
         let data = vec![0u8; 100000];
-        assert!(matches!(coordinator.relay(&[3u8; 32], &data).await, Err(PortalNetError::Configuration(_))));
+        assert!(matches!(
+            coordinator.relay(&[3u8; 32], &data).await,
+            Err(PortalNetError::Configuration(_))
+        ));
     }
 
     #[tokio::test]
     async fn test_disconnect() {
         let coordinator = HubCoordinator::new(test_config()).unwrap();
         coordinator.register(&test_edge()).await.unwrap();
-        assert_eq!(coordinator.connection_state().await, ConnectionState::Connected);
+        assert_eq!(
+            coordinator.connection_state().await,
+            ConnectionState::Connected
+        );
         assert!(coordinator.disconnect().await.is_ok());
-        assert_eq!(coordinator.connection_state().await, ConnectionState::Disconnected);
+        assert_eq!(
+            coordinator.connection_state().await,
+            ConnectionState::Disconnected
+        );
         assert!(coordinator.virtual_ip().await.is_none());
     }
 
@@ -477,11 +614,20 @@ mod tests {
     #[tokio::test]
     async fn test_connection_state_transitions() {
         let coordinator = HubCoordinator::new(test_config()).unwrap();
-        assert_eq!(coordinator.connection_state().await, ConnectionState::Disconnected);
+        assert_eq!(
+            coordinator.connection_state().await,
+            ConnectionState::Disconnected
+        );
         coordinator.register(&test_edge()).await.unwrap();
-        assert_eq!(coordinator.connection_state().await, ConnectionState::Connected);
+        assert_eq!(
+            coordinator.connection_state().await,
+            ConnectionState::Connected
+        );
         coordinator.disconnect().await.unwrap();
-        assert_eq!(coordinator.connection_state().await, ConnectionState::Disconnected);
+        assert_eq!(
+            coordinator.connection_state().await,
+            ConnectionState::Disconnected
+        );
     }
 
     #[test]
@@ -492,16 +638,33 @@ mod tests {
     #[test]
     fn test_hub_message_serialization() {
         let messages = vec![
-            HubMessage::Register { public_key: [1u8; 32], virtual_ip: Some(VirtualIp::new(100)), endpoint: "192.168.1.1:51820".parse().unwrap() },
-            HubMessage::RegisterResponse { virtual_ip: VirtualIp::new(100) },
-            HubMessage::Heartbeat { public_key: [2u8; 32], status: PeerStatus::Online },
+            HubMessage::Register {
+                public_key: [1u8; 32],
+                virtual_ip: Some(VirtualIp::new(100)),
+                endpoint: "192.168.1.1:51820".parse().unwrap(),
+            },
+            HubMessage::RegisterResponse {
+                virtual_ip: VirtualIp::new(100),
+            },
+            HubMessage::Heartbeat {
+                public_key: [2u8; 32],
+                status: PeerStatus::Online,
+            },
             HubMessage::HeartbeatAck,
-            HubMessage::PeerQuery { public_key: [3u8; 32] },
+            HubMessage::PeerQuery {
+                public_key: [3u8; 32],
+            },
             HubMessage::PeerListRequest,
             HubMessage::HolePunchRequest { target: [4u8; 32] },
-            HubMessage::Relay { from: [5u8; 32], to: [6u8; 32], payload: vec![1, 2, 3] },
+            HubMessage::Relay {
+                from: [5u8; 32],
+                to: [6u8; 32],
+                payload: vec![1, 2, 3],
+            },
             HubMessage::RelayAck,
-            HubMessage::Disconnect { public_key: [7u8; 32] },
+            HubMessage::Disconnect {
+                public_key: [7u8; 32],
+            },
             HubMessage::DisconnectAck,
         ];
 
@@ -577,7 +740,10 @@ mod tests {
 
     #[test]
     fn test_hub_message_debug() {
-        let message = HubMessage::Heartbeat { public_key: [1u8; 32], status: PeerStatus::Online };
+        let message = HubMessage::Heartbeat {
+            public_key: [1u8; 32],
+            status: PeerStatus::Online,
+        };
         let debug_str = format!("{:?}", message);
         assert!(debug_str.contains("Heartbeat"));
     }

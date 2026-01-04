@@ -369,7 +369,9 @@ mod tests {
     #[tokio::test]
     async fn test_rmpi_adapter_creation() {
         let temp_dir = tempfile::tempdir().unwrap();
-        let backend = crate::backend::LocalBackend::new(temp_dir.path()).await.unwrap();
+        let backend = crate::backend::LocalBackend::new(temp_dir.path())
+            .await
+            .unwrap();
         let adapter = RmpiCollectiveAdapter::new(Arc::new(backend));
 
         // Verify backend is accessible - just check it exists
@@ -379,7 +381,9 @@ mod tests {
     #[tokio::test]
     async fn test_rmpi_scatter() {
         let temp_dir = tempfile::tempdir().unwrap();
-        let backend = crate::backend::LocalBackend::new(temp_dir.path()).await.unwrap();
+        let backend = crate::backend::LocalBackend::new(temp_dir.path())
+            .await
+            .unwrap();
         let adapter = RmpiCollectiveAdapter::new(Arc::new(backend));
 
         let ctx = CollectiveContext::new(4, Rank::new(0));
@@ -400,7 +404,9 @@ mod tests {
     #[tokio::test]
     async fn test_rmpi_barrier() {
         let temp_dir = tempfile::tempdir().unwrap();
-        let backend = crate::backend::LocalBackend::new(temp_dir.path()).await.unwrap();
+        let backend = crate::backend::LocalBackend::new(temp_dir.path())
+            .await
+            .unwrap();
         let adapter = RmpiCollectiveAdapter::new(Arc::new(backend));
 
         let ctx = CollectiveContext::new(4, Rank::new(2));
@@ -413,7 +419,9 @@ mod tests {
     fn test_serialize_deserialize_object() {
         let data = ObjectData::from(vec![1, 2, 3, 4, 5]);
         let bytes = RmpiCollectiveAdapter::<crate::backend::LocalBackend>::serialize_object(&data);
-        let recovered = RmpiCollectiveAdapter::<crate::backend::LocalBackend>::deserialize_object(&bytes).unwrap();
+        let recovered =
+            RmpiCollectiveAdapter::<crate::backend::LocalBackend>::deserialize_object(&bytes)
+                .unwrap();
         assert_eq!(data.as_ref(), recovered.as_ref());
     }
 }

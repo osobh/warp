@@ -140,7 +140,10 @@ impl PeerManager {
     ///
     /// Returns a vector of cloned peer metadata. The order is not guaranteed.
     pub fn list_all(&self) -> Vec<PeerMetadata> {
-        self.peers.iter().map(|entry| entry.value().clone()).collect()
+        self.peers
+            .iter()
+            .map(|entry| entry.value().clone())
+            .collect()
     }
 
     /// Counts peers with a specific status
@@ -317,17 +320,42 @@ mod tests {
         manager.add_peer(config.clone()).unwrap();
 
         // Initially no endpoint
-        assert!(manager.get_by_key(&config.public_key).unwrap().config.endpoint.is_none());
+        assert!(
+            manager
+                .get_by_key(&config.public_key)
+                .unwrap()
+                .config
+                .endpoint
+                .is_none()
+        );
 
         // Update endpoint
         let endpoint: SocketAddr = "192.168.1.100:51820".parse().unwrap();
-        manager.update_endpoint(&config.public_key, endpoint).unwrap();
-        assert_eq!(manager.get_by_key(&config.public_key).unwrap().config.endpoint, Some(endpoint));
+        manager
+            .update_endpoint(&config.public_key, endpoint)
+            .unwrap();
+        assert_eq!(
+            manager
+                .get_by_key(&config.public_key)
+                .unwrap()
+                .config
+                .endpoint,
+            Some(endpoint)
+        );
 
         // Update to different endpoint
         let endpoint2: SocketAddr = "10.0.0.50:12345".parse().unwrap();
-        manager.update_endpoint(&config.public_key, endpoint2).unwrap();
-        assert_eq!(manager.get_by_key(&config.public_key).unwrap().config.endpoint, Some(endpoint2));
+        manager
+            .update_endpoint(&config.public_key, endpoint2)
+            .unwrap();
+        assert_eq!(
+            manager
+                .get_by_key(&config.public_key)
+                .unwrap()
+                .config
+                .endpoint,
+            Some(endpoint2)
+        );
 
         // Test nonexistent peer
         assert!(manager.update_endpoint(&[99u8; 32], endpoint).is_err());
@@ -340,15 +368,27 @@ mod tests {
         manager.add_peer(config.clone()).unwrap();
 
         // Test all status transitions
-        let statuses = [PeerStatus::Unknown, PeerStatus::Online, PeerStatus::DirectP2P,
-                        PeerStatus::Relayed, PeerStatus::Offline];
+        let statuses = [
+            PeerStatus::Unknown,
+            PeerStatus::Online,
+            PeerStatus::DirectP2P,
+            PeerStatus::Relayed,
+            PeerStatus::Offline,
+        ];
         for status in statuses {
             manager.update_status(&config.public_key, status).unwrap();
-            assert_eq!(manager.get_by_key(&config.public_key).unwrap().status, status);
+            assert_eq!(
+                manager.get_by_key(&config.public_key).unwrap().status,
+                status
+            );
         }
 
         // Test nonexistent peer
-        assert!(manager.update_status(&[99u8; 32], PeerStatus::Online).is_err());
+        assert!(
+            manager
+                .update_status(&[99u8; 32], PeerStatus::Online)
+                .is_err()
+        );
     }
 
     #[test]
@@ -389,10 +429,18 @@ mod tests {
         assert_eq!(manager.count_by_status(PeerStatus::Online), 0);
 
         // Update statuses
-        manager.update_status(&[1u8; 32], PeerStatus::DirectP2P).unwrap();
-        manager.update_status(&[2u8; 32], PeerStatus::DirectP2P).unwrap();
-        manager.update_status(&[3u8; 32], PeerStatus::Relayed).unwrap();
-        manager.update_status(&[4u8; 32], PeerStatus::Offline).unwrap();
+        manager
+            .update_status(&[1u8; 32], PeerStatus::DirectP2P)
+            .unwrap();
+        manager
+            .update_status(&[2u8; 32], PeerStatus::DirectP2P)
+            .unwrap();
+        manager
+            .update_status(&[3u8; 32], PeerStatus::Relayed)
+            .unwrap();
+        manager
+            .update_status(&[4u8; 32], PeerStatus::Offline)
+            .unwrap();
 
         // Verify counts
         assert_eq!(manager.count_by_status(PeerStatus::Unknown), 0);
@@ -456,10 +504,14 @@ mod tests {
                 assert_eq!(peer.config.public_key, key);
 
                 // Update status
-                manager_clone.update_status(&key, PeerStatus::Online).unwrap();
+                manager_clone
+                    .update_status(&key, PeerStatus::Online)
+                    .unwrap();
 
                 // Update stats
-                manager_clone.update_stats(&key, i * 1000, i * 2000).unwrap();
+                manager_clone
+                    .update_stats(&key, i * 1000, i * 2000)
+                    .unwrap();
 
                 // Read again
                 let peer = manager_clone.get_by_key(&key).unwrap();
@@ -613,8 +665,17 @@ mod tests {
         let endpoints = ["192.168.1.100:51820", "10.0.0.50:51820", "172.16.0.1:51820"];
         for endpoint_str in endpoints {
             let endpoint: SocketAddr = endpoint_str.parse().unwrap();
-            manager.update_endpoint(&config.public_key, endpoint).unwrap();
-            assert_eq!(manager.get_by_key(&config.public_key).unwrap().config.endpoint, Some(endpoint));
+            manager
+                .update_endpoint(&config.public_key, endpoint)
+                .unwrap();
+            assert_eq!(
+                manager
+                    .get_by_key(&config.public_key)
+                    .unwrap()
+                    .config
+                    .endpoint,
+                Some(endpoint)
+            );
         }
     }
 

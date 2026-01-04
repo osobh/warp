@@ -2,15 +2,15 @@
 
 use crate::{
     ApiError, EdgeInfo, EdgeListResponse, ErrorResponse, HealthStatus, MetricsResponse,
-    SystemCapabilities, SystemInfo, TransferListResponse, TransferRequest,
-    TransferResponse, TransferStatus,
+    SystemCapabilities, SystemInfo, TransferListResponse, TransferRequest, TransferResponse,
+    TransferStatus,
 };
 use axum::{
+    Json, Router,
     extract::{Path, State},
     http::StatusCode,
     response::{IntoResponse, Response},
     routing::{delete, get, post},
-    Json, Router,
 };
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -128,6 +128,9 @@ impl ApiState {
             let now = std::time::Instant::now();
 
             // Get clock ticks per second (usually 100 on Linux)
+            // SAFETY: sysconf(_SC_CLK_TCK) is always safe to call. It queries a
+            // system configuration value with no side effects. The return value
+            // is checked for validity below (must be > 0).
             let ticks_per_sec = unsafe { libc::sysconf(libc::_SC_CLK_TCK) } as f64;
             if ticks_per_sec <= 0.0 {
                 return 0.0;
@@ -218,11 +221,7 @@ async fn info_handler(State(state): State<ApiState>) -> Json<SystemInfo> {
         capabilities: SystemCapabilities {
             gpu_available: false, // Can be detected dynamically
             max_transfers: 100,
-            supported_compression: vec![
-                "zstd".to_string(),
-                "lz4".to_string(),
-                "none".to_string(),
-            ],
+            supported_compression: vec!["zstd".to_string(), "lz4".to_string(), "none".to_string()],
             supported_encryption: vec!["chacha20poly1305".to_string()],
         },
     })
@@ -304,9 +303,7 @@ async fn create_transfer_handler(
     ),
     tag = "transfers"
 )]
-async fn list_transfers_handler(
-    State(state): State<ApiState>,
-) -> Json<TransferListResponse> {
+async fn list_transfers_handler(State(state): State<ApiState>) -> Json<TransferListResponse> {
     let transfers = state.transfers.read().await;
     let transfer_list: Vec<TransferResponse> = transfers.values().cloned().collect();
     let total = transfer_list.len();
@@ -437,7 +434,12 @@ mod tests {
         let state = ApiState::new();
         let response = info_handler(State(state)).await;
         assert_eq!(response.version, env!("CARGO_PKG_VERSION"));
-        assert!(response.capabilities.supported_compression.contains(&"zstd".to_string()));
+        assert!(
+            response
+                .capabilities
+                .supported_compression
+                .contains(&"zstd".to_string())
+        );
     }
 
     #[tokio::test]

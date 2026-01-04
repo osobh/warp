@@ -145,7 +145,9 @@ impl SeqCdcChunker {
     ///
     /// Accepts either `SeqCdcConfig` or legacy `ChunkerConfig` for backward compatibility.
     pub fn new(config: impl Into<SeqCdcConfig>) -> Self {
-        Self { config: config.into() }
+        Self {
+            config: config.into(),
+        }
     }
 
     /// Get the chunker configuration
@@ -238,7 +240,8 @@ impl SeqCdcChunker {
 
                 // Check for boundary after minimum size
                 if size >= self.config.min_size {
-                    let at_boundary = self.is_boundary(window.make_contiguous()) || size >= self.config.max_size;
+                    let at_boundary =
+                        self.is_boundary(window.make_contiguous()) || size >= self.config.max_size;
 
                     if at_boundary {
                         chunks.push(std::mem::take(&mut current_chunk));
@@ -375,7 +378,7 @@ pub struct ChunkerConfig {
 impl Default for ChunkerConfig {
     fn default() -> Self {
         Self {
-            min_size: 1024 * 1024,       // 1MB
+            min_size: 1024 * 1024,        // 1MB
             target_size: 4 * 1024 * 1024, // 4MB
             max_size: 16 * 1024 * 1024,   // 16MB
             window_size: 48,
@@ -425,7 +428,11 @@ impl BuzhashChunker {
             *entry = state;
         }
 
-        Self { config, mask, table }
+        Self {
+            config,
+            mask,
+            table,
+        }
     }
 
     /// Get the chunker configuration

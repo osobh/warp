@@ -7,7 +7,7 @@
 
 use axum::{
     extract::{Path, State},
-    http::{header, StatusCode},
+    http::{StatusCode, header},
     response::{IntoResponse, Response},
 };
 use bytes::Bytes;
@@ -16,8 +16,8 @@ use serde::{Deserialize, Serialize};
 use warp_store::backend::StorageBackend;
 use warp_store::bucket::{CorsConfig, CorsRule};
 
-use crate::error::{ApiError, ApiResult};
 use crate::AppState;
+use crate::error::{ApiError, ApiResult};
 
 // =============================================================================
 // XML Types for S3 CORS API
@@ -78,10 +78,7 @@ pub async fn get_cors<B: StorageBackend>(
     }
 
     // Get CORS config from state
-    let config = state
-        .cors_configs
-        .get(&bucket)
-        .map(|r| r.value().clone());
+    let config = state.cors_configs.get(&bucket).map(|r| r.value().clone());
 
     match config {
         Some(config) if !config.rules.is_empty() => {
@@ -271,10 +268,7 @@ mod tests {
 
         let config = from_cors_xml(&xml);
         assert_eq!(config.rules.len(), 1);
-        assert_eq!(
-            config.rules[0].allowed_origins,
-            vec!["https://example.com"]
-        );
+        assert_eq!(config.rules[0].allowed_origins, vec!["https://example.com"]);
         assert_eq!(config.rules[0].allowed_methods, vec!["GET"]);
         assert_eq!(config.rules[0].max_age_seconds, Some(600));
     }

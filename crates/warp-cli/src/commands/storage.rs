@@ -3,8 +3,8 @@
 //! These commands provide MinIO mc-compatible CLI operations for
 //! interacting with warp-store.
 
-use anyhow::{bail, Context, Result};
-use console::{style, Term};
+use anyhow::{Context, Result, bail};
+use console::{Term, style};
 use std::path::Path;
 
 /// Parse a storage path like "alias/bucket/key" or "bucket/key"
@@ -21,7 +21,10 @@ pub fn parse_path(path: &str) -> (Option<&str>, Option<&str>, Option<&str>) {
 
 /// Check if a path is a local file path
 pub fn is_local_path(path: &str) -> bool {
-    path.starts_with('/') || path.starts_with("./") || path.starts_with("../") || Path::new(path).exists()
+    path.starts_with('/')
+        || path.starts_with("./")
+        || path.starts_with("../")
+        || Path::new(path).exists()
 }
 
 /// List buckets or objects
@@ -42,7 +45,10 @@ pub async fn list(path: &str, recursive: bool, json: bool) -> Result<()> {
         if json {
             println!("{{\"buckets\": []}}");
         } else {
-            println!("{}", style("No buckets found (store not connected)").yellow());
+            println!(
+                "{}",
+                style("No buckets found (store not connected)").yellow()
+            );
         }
     } else {
         // List objects in bucket
@@ -76,7 +82,10 @@ pub async fn make_bucket(bucket: &str, with_lock: bool, with_versioning: bool) -
         bail!("Bucket name must be between 3 and 63 characters");
     }
 
-    if !bucket.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-') {
+    if !bucket
+        .chars()
+        .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-')
+    {
         bail!("Bucket name can only contain lowercase letters, numbers, and hyphens");
     }
 
@@ -244,7 +253,9 @@ pub async fn cat(path: &str, version_id: Option<&str>) -> Result<()> {
         "{} cat {}{} (not implemented - connect to store)",
         style("[INFO]").cyan(),
         path,
-        version_id.map(|v| format!(" (version: {})", v)).unwrap_or_default()
+        version_id
+            .map(|v| format!(" (version: {})", v))
+            .unwrap_or_default()
     );
 
     Ok(())
@@ -378,10 +389,7 @@ pub async fn retention_clear(
     ))?;
 
     // TODO: Connect to store and clear retention
-    term.write_line(&format!(
-        "{} Retention cleared",
-        style("[OK]").green()
-    ))?;
+    term.write_line(&format!("{} Retention cleared", style("[OK]").green()))?;
 
     Ok(())
 }
@@ -405,10 +413,7 @@ pub async fn legal_hold_set(path: &str, version_id: Option<&str>) -> Result<()> 
     ))?;
 
     // TODO: Connect to store and set legal hold
-    term.write_line(&format!(
-        "{} Legal hold enabled",
-        style("[OK]").green()
-    ))?;
+    term.write_line(&format!("{} Legal hold enabled", style("[OK]").green()))?;
 
     Ok(())
 }
@@ -432,10 +437,7 @@ pub async fn legal_hold_clear(path: &str, version_id: Option<&str>) -> Result<()
     ))?;
 
     // TODO: Connect to store and clear legal hold
-    term.write_line(&format!(
-        "{} Legal hold disabled",
-        style("[OK]").green()
-    ))?;
+    term.write_line(&format!("{} Legal hold disabled", style("[OK]").green()))?;
 
     Ok(())
 }
@@ -520,10 +522,7 @@ pub async fn alias_remove(alias: &str) -> Result<()> {
 pub async fn alias_list() -> Result<()> {
     let term = Term::stdout();
 
-    term.write_line(&format!(
-        "{} Configured aliases:",
-        style("[INFO]").cyan()
-    ))?;
+    term.write_line(&format!("{} Configured aliases:", style("[INFO]").cyan()))?;
 
     // TODO: Load from config file
     println!("  (no aliases configured)");

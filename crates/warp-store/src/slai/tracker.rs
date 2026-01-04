@@ -124,7 +124,7 @@ impl AccessTracker {
             object_stats: DashMap::new(),
             access_history: RwLock::new(VecDeque::with_capacity(10000)),
             global_stats: RwLock::new(AccessStats::default()),
-            hot_threshold: 10,  // 10 accesses per minute = hot
+            hot_threshold: 10, // 10 accesses per minute = hot
             max_history: 10000,
             pattern_window: 100,
         }
@@ -137,13 +137,7 @@ impl AccessTracker {
     }
 
     /// Record an access
-    pub fn record(
-        &self,
-        key: &str,
-        op: AccessOp,
-        size: Option<u64>,
-        latency_us: Option<u64>,
-    ) {
+    pub fn record(&self, key: &str, op: AccessOp, size: Option<u64>, latency_us: Option<u64>) {
         let now = Instant::now();
 
         // Record in history
@@ -359,7 +353,11 @@ impl AccessTracker {
             .collect();
 
         objects.sort_by(|a, b| b.2.cmp(&a.2));
-        objects.into_iter().take(limit).map(|(k, s, _)| (k, s)).collect()
+        objects
+            .into_iter()
+            .take(limit)
+            .map(|(k, s, _)| (k, s))
+            .collect()
     }
 
     /// Get cold objects (rarely accessed)

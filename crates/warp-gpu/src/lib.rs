@@ -67,52 +67,52 @@
 //! pool.release(buffer);
 //! ```
 
-pub mod error;
 pub mod backend;
 pub mod backends;
+pub mod error;
 
-#[cfg(feature = "cuda")]
-pub mod context;
-#[cfg(feature = "cuda")]
-pub mod memory;
-#[cfg(feature = "cuda")]
-pub mod buffer;
-pub mod traits;
 #[cfg(feature = "cuda")]
 pub mod blake3;
 #[cfg(feature = "metal")]
 pub mod blake3_metal;
 #[cfg(feature = "cuda")]
+pub mod buffer;
+#[cfg(feature = "cuda")]
 pub mod chacha20;
 #[cfg(feature = "metal")]
 pub mod chacha20_metal;
 #[cfg(feature = "cuda")]
-pub mod stream;
+pub mod context;
+#[cfg(feature = "cuda")]
+pub mod memory;
 #[cfg(feature = "cuda")]
 pub mod pooled;
+#[cfg(feature = "cuda")]
+pub mod stream;
+pub mod traits;
 
-pub use error::{Error, Result};
 pub use backend::{BackendType, DeviceInfo, GpuBackend, KernelSource};
+pub use error::{Error, Result};
 
 #[cfg(feature = "cuda")]
-pub use context::{GpuContext, DeviceCapabilities};
-#[cfg(feature = "cuda")]
-pub use memory::{PinnedBuffer, PinnedMemoryPool, PoolConfig, PoolStatistics};
-#[cfg(feature = "cuda")]
-pub use buffer::{GpuBuffer, HostBuffer};
-pub use traits::{GpuOp, GpuHasher, GpuCipher, GpuCompressor};
-#[cfg(feature = "cuda")]
-pub use blake3::{Blake3Hasher, Blake3Batch};
+pub use blake3::{Blake3Batch, Blake3Hasher};
 #[cfg(feature = "metal")]
 pub use blake3_metal::{BLAKE3_METAL_KERNEL, MetalBlake3Hasher};
+#[cfg(feature = "cuda")]
+pub use buffer::{GpuBuffer, HostBuffer};
 #[cfg(feature = "cuda")]
 pub use chacha20::{ChaCha20Poly1305, EncryptionBatch};
 #[cfg(feature = "metal")]
 pub use chacha20_metal::{CHACHA20_METAL_KERNEL, MetalChaCha20Cipher};
 #[cfg(feature = "cuda")]
-pub use stream::{StreamConfig, StreamManager, StreamGuard, PipelineExecutor};
+pub use context::{DeviceCapabilities, GpuContext};
 #[cfg(feature = "cuda")]
-pub use pooled::{PooledHasher, PooledCipher, create_shared_pool};
+pub use memory::{PinnedBuffer, PinnedMemoryPool, PoolConfig, PoolStatistics};
+#[cfg(feature = "cuda")]
+pub use pooled::{PooledCipher, PooledHasher, create_shared_pool};
+#[cfg(feature = "cuda")]
+pub use stream::{PipelineExecutor, StreamConfig, StreamGuard, StreamManager};
+pub use traits::{GpuCipher, GpuCompressor, GpuHasher, GpuOp};
 
 // Re-export backend implementations
 #[cfg(feature = "cuda")]

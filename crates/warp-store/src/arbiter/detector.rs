@@ -8,7 +8,7 @@ use dashmap::DashMap;
 use parking_lot::RwLock;
 use tracing::{debug, info, warn};
 
-use super::vote::{NodeId, VoteTracker, QuorumStatus};
+use super::vote::{NodeId, QuorumStatus, VoteTracker};
 use crate::replication::DomainId;
 
 /// State of a network partition
@@ -253,7 +253,8 @@ impl SplitBrainDetector {
 
     /// Register a node to monitor
     pub fn register_node(&self, node_id: NodeId, domain_id: DomainId) {
-        self.heartbeats.insert(node_id, HeartbeatRecord::new(node_id));
+        self.heartbeats
+            .insert(node_id, HeartbeatRecord::new(node_id));
 
         self.domain_nodes
             .entry(domain_id)
@@ -303,14 +304,16 @@ impl SplitBrainDetector {
         let mut info = self.partition_info.write();
 
         // Collect unreachable nodes
-        let unreachable: HashSet<NodeId> = self.heartbeats
+        let unreachable: HashSet<NodeId> = self
+            .heartbeats
             .iter()
             .filter(|r| !r.is_responsive(self.config.suspect_timeout))
             .map(|r| r.node_id)
             .collect();
 
         // Collect reachable nodes
-        let reachable: HashSet<NodeId> = self.heartbeats
+        let reachable: HashSet<NodeId> = self
+            .heartbeats
             .iter()
             .filter(|r| r.is_responsive(self.config.suspect_timeout))
             .map(|r| r.node_id)
@@ -343,7 +346,10 @@ impl SplitBrainDetector {
                     info.state = PartitionState::Suspected;
                     info.detected_at = Some(SystemTime::now());
                     info.cause = self.estimate_cause(&unreachable);
-                    self.record_event(PartitionEventType::Detected, unreachable.iter().copied().collect());
+                    self.record_event(
+                        PartitionEventType::Detected,
+                        unreachable.iter().copied().collect(),
+                    );
                     warn!(
                         unreachable = ?unreachable,
                         cause = ?info.cause,
@@ -353,10 +359,15 @@ impl SplitBrainDetector {
                 PartitionState::Suspected => {
                     // Check if we should confirm
                     if let Some(detected) = info.detected_at {
-                        if detected.elapsed().unwrap_or(Duration::ZERO) > self.config.confirm_timeout {
+                        if detected.elapsed().unwrap_or(Duration::ZERO)
+                            > self.config.confirm_timeout
+                        {
                             info.state = PartitionState::Confirmed;
                             info.confirmed_at = Some(SystemTime::now());
-                            self.record_event(PartitionEventType::Confirmed, unreachable.iter().copied().collect());
+                            self.record_event(
+                                PartitionEventType::Confirmed,
+                                unreachable.iter().copied().collect(),
+                            );
                             warn!(
                                 unreachable = ?unreachable,
                                 we_have_quorum = info.we_have_quorum,
@@ -380,17 +391,15 @@ impl SplitBrainDetector {
 
         if info.state == PartitionState::Confirmed {
             // Check if any previously unreachable nodes are now reachable
-            let now_reachable: HashSet<NodeId> = self.heartbeats
+            let now_reachable: HashSet<NodeId> = self
+                .heartbeats
                 .iter()
                 .filter(|r| r.is_responsive(self.config.suspect_timeout))
                 .map(|r| r.node_id)
                 .collect();
 
-            let all_unreachable: HashSet<NodeId> = info.other_partitions
-                .iter()
-                .flatten()
-                .copied()
-                .collect();
+            let all_unreachable: HashSet<NodeId> =
+                info.other_partitions.iter().flatten().copied().collect();
 
             let recovered: Vec<NodeId> = all_unreachable
                 .intersection(&now_reachable)

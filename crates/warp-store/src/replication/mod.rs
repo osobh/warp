@@ -11,10 +11,16 @@ mod geo_router;
 mod shards;
 mod wireguard;
 
-pub use domain::{Domain, DomainId, DomainRegistry, DomainHealth, NodeInfo, NodeStatus};
-pub use geo_router::{GeoRouter, LatencyStats, ShardReadPlan, GeoRouterStats};
-pub use shards::{DistributedShardManager, ShardKey, ShardLocation, ShardHealth, ShardIndex, ShardDistributionInfo, ShardManagerStats, ShardVerification};
-pub use wireguard::{WireGuardTunnelManager, WireGuardTunnel, WireGuardConfig, WireGuardKeyPair, TunnelStatus, TunnelStats};
+pub use domain::{Domain, DomainHealth, DomainId, DomainRegistry, NodeInfo, NodeStatus};
+pub use geo_router::{GeoRouter, GeoRouterStats, LatencyStats, ShardReadPlan};
+pub use shards::{
+    DistributedShardManager, ShardDistributionInfo, ShardHealth, ShardIndex, ShardKey,
+    ShardLocation, ShardManagerStats, ShardVerification,
+};
+pub use wireguard::{
+    TunnelStats, TunnelStatus, WireGuardConfig, WireGuardKeyPair, WireGuardTunnel,
+    WireGuardTunnelManager,
+};
 
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;

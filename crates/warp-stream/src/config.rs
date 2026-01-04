@@ -33,9 +33,9 @@ pub struct StreamConfig {
 impl Default for StreamConfig {
     fn default() -> Self {
         Self {
-            chunk_size: 64 * 1024,           // 64KB - optimized for <5ms latency
-            buffer_count: 3,                  // Triple buffering
-            max_queue_depth: 16,              // Allow 16 chunks in flight
+            chunk_size: 64 * 1024, // 64KB - optimized for <5ms latency
+            buffer_count: 3,       // Triple buffering
+            max_queue_depth: 16,   // Allow 16 chunks in flight
             target_latency: Duration::from_millis(5),
             use_gpu: true,
             gpu_stream_count: 4,
@@ -53,12 +53,12 @@ impl StreamConfig {
     /// Configure for low-latency streaming (<5ms per chunk)
     pub fn low_latency() -> Self {
         Self {
-            chunk_size: 64 * 1024,            // 64KB chunks
+            chunk_size: 64 * 1024, // 64KB chunks
             buffer_count: 3,
-            max_queue_depth: 8,               // Smaller queue for lower latency
+            max_queue_depth: 8, // Smaller queue for lower latency
             target_latency: Duration::from_millis(5),
             use_gpu: true,
-            gpu_stream_count: 2,              // Fewer streams for lower latency
+            gpu_stream_count: 2, // Fewer streams for lower latency
             collect_stats: true,
         }
     }
@@ -66,12 +66,12 @@ impl StreamConfig {
     /// Configure for high-throughput streaming (>10 GB/s)
     pub fn high_throughput() -> Self {
         Self {
-            chunk_size: 1024 * 1024,          // 1MB chunks
-            buffer_count: 4,                   // More buffers
-            max_queue_depth: 32,              // Deeper queue
+            chunk_size: 1024 * 1024, // 1MB chunks
+            buffer_count: 4,         // More buffers
+            max_queue_depth: 32,     // Deeper queue
             target_latency: Duration::from_millis(50),
             use_gpu: true,
-            gpu_stream_count: 8,              // More concurrent streams
+            gpu_stream_count: 8, // More concurrent streams
             collect_stats: true,
         }
     }

@@ -49,7 +49,9 @@ impl ObjectKey {
 
     /// Get the key name (last component after /)
     pub fn name(&self) -> &str {
-        self.key.rfind('/').map_or(&self.key, |i| &self.key[i + 1..])
+        self.key
+            .rfind('/')
+            .map_or(&self.key, |i| &self.key[i + 1..])
     }
 
     /// Get the file extension, if any
@@ -76,7 +78,8 @@ impl ObjectKey {
     /// Parse from a path string like "bucket/path/to/object"
     pub fn parse(path: &str) -> Result<Self> {
         let path = path.trim_start_matches('/');
-        let (bucket, key) = path.split_once('/')
+        let (bucket, key) = path
+            .split_once('/')
             .ok_or_else(|| Error::InvalidKey("key must contain bucket/path".to_string()))?;
         Self::new(bucket, key)
     }
@@ -90,31 +93,35 @@ impl ObjectKey {
         // S3-compatible bucket naming rules
         if bucket.len() < 3 || bucket.len() > 63 {
             return Err(Error::InvalidBucketName(
-                "bucket name must be 3-63 characters".to_string()
+                "bucket name must be 3-63 characters".to_string(),
             ));
         }
 
-        if !bucket.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-' || c == '.') {
+        if !bucket
+            .chars()
+            .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-' || c == '.')
+        {
             return Err(Error::InvalidBucketName(
-                "bucket name must contain only lowercase letters, numbers, hyphens, and periods".to_string()
+                "bucket name must contain only lowercase letters, numbers, hyphens, and periods"
+                    .to_string(),
             ));
         }
 
         if bucket.starts_with('-') || bucket.ends_with('-') {
             return Err(Error::InvalidBucketName(
-                "bucket name cannot start or end with a hyphen".to_string()
+                "bucket name cannot start or end with a hyphen".to_string(),
             ));
         }
 
         if bucket.starts_with('.') || bucket.ends_with('.') {
             return Err(Error::InvalidBucketName(
-                "bucket name cannot start or end with a period".to_string()
+                "bucket name cannot start or end with a period".to_string(),
             ));
         }
 
         if bucket.contains("..") {
             return Err(Error::InvalidBucketName(
-                "bucket name cannot contain consecutive periods".to_string()
+                "bucket name cannot contain consecutive periods".to_string(),
             ));
         }
 
@@ -124,21 +131,19 @@ impl ObjectKey {
     fn validate_key(key: &str) -> Result<()> {
         if key.is_empty() || key.len() > 1024 {
             return Err(Error::InvalidKey(
-                "key must be 1-1024 characters".to_string()
+                "key must be 1-1024 characters".to_string(),
             ));
         }
 
         if key.contains('\0') {
             return Err(Error::InvalidKey(
-                "key cannot contain null bytes".to_string()
+                "key cannot contain null bytes".to_string(),
             ));
         }
 
         // Prevent path traversal
         if key.contains("..") {
-            return Err(Error::InvalidKey(
-                "key cannot contain '..'".to_string()
-            ));
+            return Err(Error::InvalidKey("key cannot contain '..'".to_string()));
         }
 
         Ok(())

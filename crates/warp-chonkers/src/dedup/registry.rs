@@ -9,8 +9,8 @@ use crate::{Error, Result};
 use dashmap::DashMap;
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
-use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU32, Ordering};
 
 /// Storage location for a chunk
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -229,10 +229,7 @@ impl ChunkRegistry {
             existing.inc_ref();
 
             // Add to version's chunk set
-            self.version_chunks
-                .entry(version)
-                .or_default()
-                .insert(id);
+            self.version_chunks.entry(version).or_default().insert(id);
 
             return Ok(false); // Not a new chunk
         }
@@ -247,10 +244,7 @@ impl ChunkRegistry {
         self.chunks.insert(id, metadata);
 
         // Add to version's chunk set
-        self.version_chunks
-            .entry(version)
-            .or_default()
-            .insert(id);
+        self.version_chunks.entry(version).or_default().insert(id);
 
         Ok(true) // New chunk
     }
@@ -296,7 +290,10 @@ impl ChunkRegistry {
     }
 
     /// Get chunk metadata
-    pub fn get(&self, id: &ChunkId) -> Option<dashmap::mapref::one::Ref<'_, ChunkId, ChunkMetadata>> {
+    pub fn get(
+        &self,
+        id: &ChunkId,
+    ) -> Option<dashmap::mapref::one::Ref<'_, ChunkId, ChunkMetadata>> {
         self.chunks.get(id)
     }
 

@@ -104,11 +104,7 @@ mod tests {
 
         for shell in crate::completions::supported_shells() {
             let result = execute(*shell, Some(temp_dir.path())).await;
-            assert!(
-                result.is_ok(),
-                "Failed to execute for shell: {:?}",
-                shell
-            );
+            assert!(result.is_ok(), "Failed to execute for shell: {:?}", shell);
         }
 
         // Verify files were created

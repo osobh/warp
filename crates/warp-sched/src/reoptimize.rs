@@ -16,10 +16,7 @@ pub enum ReoptScope {
     /// Only chunks on specific edges
     Edges(Vec<EdgeIdx>),
     /// Edges and their neighbors within radius
-    Region {
-        edges: Vec<EdgeIdx>,
-        radius: u32,
-    },
+    Region { edges: Vec<EdgeIdx>, radius: u32 },
     /// Complete reschedule of all chunks
     Full,
 }
@@ -34,9 +31,7 @@ pub enum ReoptStrategy {
     /// Find globally optimal solution (more expensive)
     CostOptimal,
     /// Balance between disruption and optimality
-    Hybrid {
-        disruption_weight: f64,
-    },
+    Hybrid { disruption_weight: f64 },
 }
 
 /// Reason for chunk reassignment
@@ -240,7 +235,9 @@ impl ReoptMetrics {
         let n = self.total_reopts as f64;
         self.avg_improvement = ((n - 1.0) * self.avg_improvement + plan.estimated_improvement) / n;
         self.avg_disruption = ((n - 1.0) * self.avg_disruption + plan.estimated_disruption) / n;
-        self.avg_execution_time_ms = ((n - 1.0) * self.avg_execution_time_ms as f64 + execution_time_ms as f64) as u64 / self.total_reopts;
+        self.avg_execution_time_ms = ((n - 1.0) * self.avg_execution_time_ms as f64
+            + execution_time_ms as f64) as u64
+            / self.total_reopts;
     }
 
     /// Record an aborted reoptimization
@@ -262,13 +259,9 @@ pub enum ReoptState {
         current_step: usize,
     },
     /// Paused for external reason
-    Paused {
-        reason: String,
-    },
+    Paused { reason: String },
     /// Reoptimization completed
-    Completed {
-        metrics: ReoptMetrics,
-    },
+    Completed { metrics: ReoptMetrics },
 }
 
 /// Incremental scheduler for reoptimization
@@ -312,7 +305,8 @@ impl IncrementalScheduler {
                 reassignments = Self::plan_cost_optimal(&chunks_to_consider, current, costs);
             }
             ReoptStrategy::Hybrid { disruption_weight } => {
-                reassignments = Self::plan_hybrid(&chunks_to_consider, current, costs, disruption_weight);
+                reassignments =
+                    Self::plan_hybrid(&chunks_to_consider, current, costs, disruption_weight);
             }
         }
 
@@ -323,7 +317,13 @@ impl IncrementalScheduler {
         // Sort reassignments by priority
         reassignments.sort_by_key(|r| r.priority);
 
-        ReoptPlan::new(scope, strategy, reassignments, estimated_improvement, estimated_disruption)
+        ReoptPlan::new(
+            scope,
+            strategy,
+            reassignments,
+            estimated_improvement,
+            estimated_disruption,
+        )
     }
 
     /// Execute a single step of the plan
@@ -331,23 +331,36 @@ impl IncrementalScheduler {
         if step >= plan.reassignments.len() {
             return Err(SchedError::InvalidState("step index out of bounds".into()));
         }
-        let order_idx = plan.execution_order.get(step)
+        let order_idx = plan
+            .execution_order
+            .get(step)
             .ok_or_else(|| SchedError::InvalidState("invalid execution order".into()))?;
-        let reassignment = plan.reassignments.get(*order_idx)
+        let reassignment = plan
+            .reassignments
+            .get(*order_idx)
             .ok_or_else(|| SchedError::InvalidState("invalid reassignment index".into()))?;
-        self.state = ReoptState::Executing { plan: plan.clone(), current_step: step };
+        self.state = ReoptState::Executing {
+            plan: plan.clone(),
+            current_step: step,
+        };
         Ok(reassignment.clone())
     }
 
     /// Estimate improvement for a single reassignment
     pub fn estimate_improvement(reassignment: &Reassignment, costs: &CpuCostMatrix) -> f64 {
         let chunk_id = reassignment.chunk_id;
-        let current_cost = costs.get_cost(chunk_id, reassignment.from_edge).unwrap_or(f32::MAX);
-        let new_cost = reassignment.to_edges.iter()
+        let current_cost = costs
+            .get_cost(chunk_id, reassignment.from_edge)
+            .unwrap_or(f32::MAX);
+        let new_cost = reassignment
+            .to_edges
+            .iter()
             .filter_map(|&edge| costs.get_cost(chunk_id, edge))
             .min_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal))
             .unwrap_or(f32::MAX);
-        if current_cost == 0.0 { return 0.0; }
+        if current_cost == 0.0 {
+            return 0.0;
+        }
         ((current_cost - new_cost) / current_cost).max(0.0) as f64
     }
 
@@ -360,19 +373,25 @@ impl IncrementalScheduler {
     pub fn validate_plan(plan: &ReoptPlan) -> Result<()> {
         for &idx in &plan.execution_order {
             if idx >= plan.reassignments.len() {
-                return Err(SchedError::InvalidState("invalid execution order index".into()));
+                return Err(SchedError::InvalidState(
+                    "invalid execution order index".into(),
+                ));
             }
         }
         let mut seen = vec![false; plan.reassignments.len()];
         for &idx in &plan.execution_order {
             if seen[idx] {
-                return Err(SchedError::InvalidState("duplicate execution order index".into()));
+                return Err(SchedError::InvalidState(
+                    "duplicate execution order index".into(),
+                ));
             }
             seen[idx] = true;
         }
         for reassignment in &plan.reassignments {
             if reassignment.to_edges.is_empty() {
-                return Err(SchedError::InvalidState("reassignment has no target edges".into()));
+                return Err(SchedError::InvalidState(
+                    "reassignment has no target edges".into(),
+                ));
             }
         }
         Ok(())
@@ -399,31 +418,37 @@ impl IncrementalScheduler {
     fn extract_chunks_from_scope(scope: &ReoptScope, current: &[Assignment]) -> Vec<ChunkId> {
         match scope {
             ReoptScope::Chunks(chunks) => chunks.clone(),
-            ReoptScope::Edges(edges) => {
-                current.iter()
-                    .filter(|a| a.source_edges.iter().any(|e| edges.contains(e)))
-                    .map(|a| ChunkId::from_hash(&a.chunk_hash))
-                    .collect()
-            }
+            ReoptScope::Edges(edges) => current
+                .iter()
+                .filter(|a| a.source_edges.iter().any(|e| edges.contains(e)))
+                .map(|a| ChunkId::from_hash(&a.chunk_hash))
+                .collect(),
             ReoptScope::Region { edges, radius: _ } => {
                 // For simplicity, treat region as edges for now
-                current.iter()
+                current
+                    .iter()
                     .filter(|a| a.source_edges.iter().any(|e| edges.contains(e)))
                     .map(|a| ChunkId::from_hash(&a.chunk_hash))
                     .collect()
             }
-            ReoptScope::Full => {
-                current.iter().map(|a| ChunkId::from_hash(&a.chunk_hash)).collect()
-            }
+            ReoptScope::Full => current
+                .iter()
+                .map(|a| ChunkId::from_hash(&a.chunk_hash))
+                .collect(),
         }
     }
 
-    fn plan_greedy(chunks: &[ChunkId], current: &[Assignment], costs: &CpuCostMatrix) -> Vec<Reassignment> {
+    fn plan_greedy(
+        chunks: &[ChunkId],
+        current: &[Assignment],
+        costs: &CpuCostMatrix,
+    ) -> Vec<Reassignment> {
         let mut reassignments = Vec::new();
 
         for &chunk_id in chunks {
             // Find current assignment
-            let current_assignment = current.iter()
+            let current_assignment = current
+                .iter()
                 .find(|a| ChunkId::from_hash(&a.chunk_hash) == chunk_id);
 
             if let Some(assignment) = current_assignment {
@@ -431,7 +456,8 @@ impl IncrementalScheduler {
                     // Get all valid edges and pick the best
                     let valid_edges = costs.get_valid_edges(chunk_id);
                     if let Some((best_edge, best_cost)) = valid_edges.first() {
-                        let current_cost = costs.get_cost(chunk_id, current_edge).unwrap_or(f32::MAX);
+                        let current_cost =
+                            costs.get_cost(chunk_id, current_edge).unwrap_or(f32::MAX);
 
                         // Only reassign if there's improvement
                         if *best_cost < current_cost * 0.95 {
@@ -451,11 +477,16 @@ impl IncrementalScheduler {
         reassignments
     }
 
-    fn plan_min_disruption(chunks: &[ChunkId], current: &[Assignment], costs: &CpuCostMatrix) -> Vec<Reassignment> {
+    fn plan_min_disruption(
+        chunks: &[ChunkId],
+        current: &[Assignment],
+        costs: &CpuCostMatrix,
+    ) -> Vec<Reassignment> {
         let mut reassignments = Vec::new();
 
         for &chunk_id in chunks {
-            let current_assignment = current.iter()
+            let current_assignment = current
+                .iter()
                 .find(|a| ChunkId::from_hash(&a.chunk_hash) == chunk_id);
 
             if let Some(assignment) = current_assignment {
@@ -482,19 +513,25 @@ impl IncrementalScheduler {
         reassignments
     }
 
-    fn plan_cost_optimal(chunks: &[ChunkId], current: &[Assignment], costs: &CpuCostMatrix) -> Vec<Reassignment> {
+    fn plan_cost_optimal(
+        chunks: &[ChunkId],
+        current: &[Assignment],
+        costs: &CpuCostMatrix,
+    ) -> Vec<Reassignment> {
         // For cost optimal, always pick the absolute best edge
         let mut reassignments = Vec::new();
 
         for &chunk_id in chunks {
-            let current_assignment = current.iter()
+            let current_assignment = current
+                .iter()
                 .find(|a| ChunkId::from_hash(&a.chunk_hash) == chunk_id);
 
             if let Some(assignment) = current_assignment {
                 if let Some(&current_edge) = assignment.source_edges.first() {
                     let valid_edges = costs.get_valid_edges(chunk_id);
                     if let Some((best_edge, best_cost)) = valid_edges.first() {
-                        let current_cost = costs.get_cost(chunk_id, current_edge).unwrap_or(f32::MAX);
+                        let current_cost =
+                            costs.get_cost(chunk_id, current_edge).unwrap_or(f32::MAX);
 
                         // Reassign even for small improvements
                         if *best_cost < current_cost {
@@ -524,14 +561,16 @@ impl IncrementalScheduler {
         let threshold = 0.5 - (disruption_weight * 0.4); // Higher weight = higher threshold
 
         for &chunk_id in chunks {
-            let current_assignment = current.iter()
+            let current_assignment = current
+                .iter()
                 .find(|a| ChunkId::from_hash(&a.chunk_hash) == chunk_id);
 
             if let Some(assignment) = current_assignment {
                 if let Some(&current_edge) = assignment.source_edges.first() {
                     let valid_edges = costs.get_valid_edges(chunk_id);
                     if let Some((best_edge, best_cost)) = valid_edges.first() {
-                        let current_cost = costs.get_cost(chunk_id, current_edge).unwrap_or(f32::MAX);
+                        let current_cost =
+                            costs.get_cost(chunk_id, current_edge).unwrap_or(f32::MAX);
 
                         if *best_cost < current_cost * threshold as f32 {
                             reassignments.push(Reassignment::new(
@@ -550,12 +589,17 @@ impl IncrementalScheduler {
         reassignments
     }
 
-    fn calculate_improvement(reassignments: &[Reassignment], current: &[Assignment], costs: &CpuCostMatrix) -> f64 {
+    fn calculate_improvement(
+        reassignments: &[Reassignment],
+        current: &[Assignment],
+        costs: &CpuCostMatrix,
+    ) -> f64 {
         if reassignments.is_empty() {
             return 0.0;
         }
 
-        let total_improvement: f64 = reassignments.iter()
+        let total_improvement: f64 = reassignments
+            .iter()
             .map(|r| Self::estimate_improvement(r, costs))
             .sum();
 
@@ -587,18 +631,19 @@ mod tests {
         for i in 0..10 {
             let mut hash = [0u8; 32];
             hash[0] = i as u8;
-            state.add_chunk(ChunkState::new(hash, 1024, 128, 3)).unwrap();
+            state
+                .add_chunk(ChunkState::new(hash, 1024, 128, 3))
+                .unwrap();
         }
 
         for i in 0..5 {
             let bandwidth = 1_000_000_000 - (i as u64 * 100_000_000);
-            state.add_edge(i, EdgeStateGpu::new(
-                EdgeIdx(i),
-                bandwidth,
-                10_000,
-                0.95,
-                10,
-            )).unwrap();
+            state
+                .add_edge(
+                    i,
+                    EdgeStateGpu::new(EdgeIdx(i), bandwidth, 10_000, 0.95, 10),
+                )
+                .unwrap();
         }
 
         for i in 0..10 {
@@ -615,9 +660,21 @@ mod tests {
 
     #[test]
     fn test_reopt_scope_variants() {
-        assert_eq!(ReoptScope::Chunks(vec![ChunkId(1)]), ReoptScope::Chunks(vec![ChunkId(1)]));
-        assert!(matches!(ReoptScope::Edges(vec![EdgeIdx(0)]), ReoptScope::Edges(_)));
-        assert!(matches!(ReoptScope::Region { edges: vec![], radius: 2 }, ReoptScope::Region { .. }));
+        assert_eq!(
+            ReoptScope::Chunks(vec![ChunkId(1)]),
+            ReoptScope::Chunks(vec![ChunkId(1)])
+        );
+        assert!(matches!(
+            ReoptScope::Edges(vec![EdgeIdx(0)]),
+            ReoptScope::Edges(_)
+        ));
+        assert!(matches!(
+            ReoptScope::Region {
+                edges: vec![],
+                radius: 2
+            },
+            ReoptScope::Region { .. }
+        ));
         assert!(matches!(ReoptScope::Full, ReoptScope::Full));
     }
 
@@ -626,17 +683,40 @@ mod tests {
         assert_eq!(ReoptStrategy::Greedy, ReoptStrategy::Greedy);
         assert_eq!(ReoptStrategy::MinDisruption, ReoptStrategy::MinDisruption);
         assert_eq!(ReoptStrategy::CostOptimal, ReoptStrategy::CostOptimal);
-        assert!(matches!(ReoptStrategy::Hybrid { disruption_weight: 0.5 }, ReoptStrategy::Hybrid { .. }));
+        assert!(matches!(
+            ReoptStrategy::Hybrid {
+                disruption_weight: 0.5
+            },
+            ReoptStrategy::Hybrid { .. }
+        ));
     }
 
     #[test]
     fn test_reassignment_reason_variants() {
-        assert_eq!(ReassignmentReason::EdgeDegraded, ReassignmentReason::EdgeDegraded);
-        assert_eq!(ReassignmentReason::EdgeOverloaded, ReassignmentReason::EdgeOverloaded);
-        assert_eq!(ReassignmentReason::BetterPathFound, ReassignmentReason::BetterPathFound);
-        assert_eq!(ReassignmentReason::LoadBalance, ReassignmentReason::LoadBalance);
-        assert_eq!(ReassignmentReason::CostReduction, ReassignmentReason::CostReduction);
-        assert_eq!(ReassignmentReason::Preposition, ReassignmentReason::Preposition);
+        assert_eq!(
+            ReassignmentReason::EdgeDegraded,
+            ReassignmentReason::EdgeDegraded
+        );
+        assert_eq!(
+            ReassignmentReason::EdgeOverloaded,
+            ReassignmentReason::EdgeOverloaded
+        );
+        assert_eq!(
+            ReassignmentReason::BetterPathFound,
+            ReassignmentReason::BetterPathFound
+        );
+        assert_eq!(
+            ReassignmentReason::LoadBalance,
+            ReassignmentReason::LoadBalance
+        );
+        assert_eq!(
+            ReassignmentReason::CostReduction,
+            ReassignmentReason::CostReduction
+        );
+        assert_eq!(
+            ReassignmentReason::Preposition,
+            ReassignmentReason::Preposition
+        );
     }
 
     #[test]
@@ -659,9 +739,13 @@ mod tests {
     fn test_reopt_plan_creation() {
         let scope = ReoptScope::Full;
         let strategy = ReoptStrategy::Greedy;
-        let reassignments = vec![
-            Reassignment::new(ChunkId(0), EdgeIdx(0), vec![EdgeIdx(1)], ReassignmentReason::CostReduction, 0),
-        ];
+        let reassignments = vec![Reassignment::new(
+            ChunkId(0),
+            EdgeIdx(0),
+            vec![EdgeIdx(1)],
+            ReassignmentReason::CostReduction,
+            0,
+        )];
 
         let plan = ReoptPlan::new(scope.clone(), strategy, reassignments.clone(), 0.1, 0.2);
         assert_eq!(plan.scope, scope);
@@ -707,7 +791,11 @@ mod tests {
     fn test_incremental_config_validate_failures() {
         assert!(IncrementalConfig::new(0, 0.05, 0.3, 3).validate().is_err());
         assert!(IncrementalConfig::new(10, 1.5, 0.3, 3).validate().is_err());
-        assert!(IncrementalConfig::new(10, 0.05, -0.1, 3).validate().is_err());
+        assert!(
+            IncrementalConfig::new(10, 0.05, -0.1, 3)
+                .validate()
+                .is_err()
+        );
         assert!(IncrementalConfig::new(10, 0.05, 0.3, 0).validate().is_err());
     }
 
@@ -724,7 +812,12 @@ mod tests {
         let mut hash = [0u8; 32];
 
         // Empty scope
-        let empty_plan = IncrementalScheduler::plan_reopt(ReoptScope::Chunks(vec![]), ReoptStrategy::Greedy, &[], &costs);
+        let empty_plan = IncrementalScheduler::plan_reopt(
+            ReoptScope::Chunks(vec![]),
+            ReoptStrategy::Greedy,
+            &[],
+            &costs,
+        );
         assert!(empty_plan.is_empty());
 
         // Chunk scope - worst edge should trigger improvement
@@ -757,7 +850,12 @@ mod tests {
             hash[0] = i;
             bad_assignments.push(make_test_assignment(hash, vec![EdgeIdx(4)]));
         }
-        let greedy_plan = IncrementalScheduler::plan_reopt(ReoptScope::Full, ReoptStrategy::Greedy, &bad_assignments, &costs);
+        let greedy_plan = IncrementalScheduler::plan_reopt(
+            ReoptScope::Full,
+            ReoptStrategy::Greedy,
+            &bad_assignments,
+            &costs,
+        );
         assert!(greedy_plan.reassignments.len() >= 0);
 
         // Min disruption - minimizes changes on good edges
@@ -767,7 +865,12 @@ mod tests {
             hash[0] = i;
             good_assignments.push(make_test_assignment(hash, vec![EdgeIdx(0)]));
         }
-        let min_disrupt_plan = IncrementalScheduler::plan_reopt(ReoptScope::Full, ReoptStrategy::MinDisruption, &good_assignments, &costs);
+        let min_disrupt_plan = IncrementalScheduler::plan_reopt(
+            ReoptScope::Full,
+            ReoptStrategy::MinDisruption,
+            &good_assignments,
+            &costs,
+        );
         assert!(min_disrupt_plan.reassignments.len() <= good_assignments.len());
     }
 
@@ -776,15 +879,33 @@ mod tests {
         let (costs, _) = make_test_costs();
 
         // Test improvement with change (bad to good edge)
-        let r1 = Reassignment::new(ChunkId(0), EdgeIdx(4), vec![EdgeIdx(0)], ReassignmentReason::CostReduction, 0);
+        let r1 = Reassignment::new(
+            ChunkId(0),
+            EdgeIdx(4),
+            vec![EdgeIdx(0)],
+            ReassignmentReason::CostReduction,
+            0,
+        );
         assert!(IncrementalScheduler::estimate_improvement(&r1, &costs) > 0.0);
 
         // Test no improvement (same edge)
-        let r2 = Reassignment::new(ChunkId(0), EdgeIdx(0), vec![EdgeIdx(0)], ReassignmentReason::CostReduction, 0);
+        let r2 = Reassignment::new(
+            ChunkId(0),
+            EdgeIdx(0),
+            vec![EdgeIdx(0)],
+            ReassignmentReason::CostReduction,
+            0,
+        );
         assert_eq!(IncrementalScheduler::estimate_improvement(&r2, &costs), 0.0);
 
         // Test disruption estimation
-        let plan = ReoptPlan::new(ReoptScope::Full, ReoptStrategy::Greedy, vec![r1, r2], 0.1, 0.5);
+        let plan = ReoptPlan::new(
+            ReoptScope::Full,
+            ReoptStrategy::Greedy,
+            vec![r1, r2],
+            0.1,
+            0.5,
+        );
         assert_eq!(IncrementalScheduler::estimate_disruption(&plan), 0.5);
         assert_eq!(plan.execution_order, vec![0, 1]);
     }
@@ -792,7 +913,13 @@ mod tests {
     #[test]
     fn test_execute_step() {
         let mut scheduler = IncrementalScheduler::new(IncrementalConfig::default());
-        let r = Reassignment::new(ChunkId(0), EdgeIdx(0), vec![EdgeIdx(1)], ReassignmentReason::CostReduction, 0);
+        let r = Reassignment::new(
+            ChunkId(0),
+            EdgeIdx(0),
+            vec![EdgeIdx(1)],
+            ReassignmentReason::CostReduction,
+            0,
+        );
         let plan = ReoptPlan::new(ReoptScope::Full, ReoptStrategy::Greedy, vec![r], 0.1, 0.1);
 
         assert!(scheduler.execute_step(&plan, 0).is_ok());
@@ -805,7 +932,13 @@ mod tests {
 
     #[test]
     fn test_validate_plan() {
-        let r = Reassignment::new(ChunkId(0), EdgeIdx(0), vec![EdgeIdx(1)], ReassignmentReason::CostReduction, 0);
+        let r = Reassignment::new(
+            ChunkId(0),
+            EdgeIdx(0),
+            vec![EdgeIdx(1)],
+            ReassignmentReason::CostReduction,
+            0,
+        );
         let plan = ReoptPlan::new(ReoptScope::Full, ReoptStrategy::Greedy, vec![r], 0.1, 0.1);
         assert!(IncrementalScheduler::validate_plan(&plan).is_ok());
 
@@ -815,7 +948,13 @@ mod tests {
         assert!(IncrementalScheduler::validate_plan(&bad_plan).is_err());
 
         // Empty target edges
-        let r2 = Reassignment::new(ChunkId(0), EdgeIdx(0), vec![], ReassignmentReason::CostReduction, 0);
+        let r2 = Reassignment::new(
+            ChunkId(0),
+            EdgeIdx(0),
+            vec![],
+            ReassignmentReason::CostReduction,
+            0,
+        );
         let bad_plan2 = ReoptPlan::new(ReoptScope::Full, ReoptStrategy::Greedy, vec![r2], 0.1, 0.1);
         assert!(IncrementalScheduler::validate_plan(&bad_plan2).is_err());
     }
@@ -842,7 +981,13 @@ mod tests {
         assert_eq!(metrics.avg_improvement, 0.1);
 
         // Record partial reopt
-        let partial_plan = ReoptPlan::new(ReoptScope::Chunks(vec![ChunkId(0)]), ReoptStrategy::Greedy, vec![], 0.15, 0.1);
+        let partial_plan = ReoptPlan::new(
+            ReoptScope::Chunks(vec![ChunkId(0)]),
+            ReoptStrategy::Greedy,
+            vec![],
+            0.15,
+            0.1,
+        );
         metrics.record(&partial_plan, 50);
         assert_eq!(metrics.total_reopts, 2);
         assert_eq!(metrics.partial_reopts, 1);
@@ -861,7 +1006,12 @@ mod tests {
             hash[0] = i;
             assignments.push(make_test_assignment(hash, vec![EdgeIdx(4)]));
         }
-        let plan = IncrementalScheduler::plan_reopt(ReoptScope::Full, ReoptStrategy::CostOptimal, &assignments, &costs);
+        let plan = IncrementalScheduler::plan_reopt(
+            ReoptScope::Full,
+            ReoptStrategy::CostOptimal,
+            &assignments,
+            &costs,
+        );
         assert!(IncrementalScheduler::validate_plan(&plan).is_ok());
 
         let mut scheduler = IncrementalScheduler::new(IncrementalConfig::default());
@@ -879,7 +1029,12 @@ mod tests {
             hash[0] = i;
             assignments.push(make_test_assignment(hash, vec![EdgeIdx(0)])); // Already optimal
         }
-        let plan = IncrementalScheduler::plan_reopt(ReoptScope::Full, ReoptStrategy::Greedy, &assignments, &costs);
+        let plan = IncrementalScheduler::plan_reopt(
+            ReoptScope::Full,
+            ReoptStrategy::Greedy,
+            &assignments,
+            &costs,
+        );
         assert!(plan.estimated_improvement <= 0.1); // Minimal improvement possible
     }
 }

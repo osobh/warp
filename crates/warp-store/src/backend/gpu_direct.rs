@@ -37,10 +37,13 @@ use serde::{Deserialize, Serialize};
 use tokio::sync::RwLock;
 use tracing::{debug, info};
 
+use super::{HpcStorageBackend, StorageBackend};
 use crate::error::{Error, Result};
 use crate::key::ObjectKey;
-use crate::object::{FieldData, ListOptions, ObjectData, ObjectMeta, ObjectList, ObjectEntry, PutOptions, StorageClass};
-use super::{StorageBackend, HpcStorageBackend};
+use crate::object::{
+    FieldData, ListOptions, ObjectData, ObjectEntry, ObjectList, ObjectMeta, PutOptions,
+    StorageClass,
+};
 
 /// GPU-Direct storage configuration.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -68,7 +71,7 @@ impl Default for GpuDirectConfig {
             enable_p2p: true,
             enable_rdma: false,
             max_pinned_pool_size: 1024 * 1024 * 1024, // 1 GB
-            chunk_size: 16 * 1024 * 1024, // 16 MB
+            chunk_size: 16 * 1024 * 1024,             // 16 MB
             enable_async_io: true,
             io_workers: 4,
         }
@@ -265,10 +268,7 @@ impl GpuDirectBackend {
             max_total_memory: config.max_pinned_pool_size,
             ..Default::default()
         };
-        let pinned_pool = warp_gpu::PinnedMemoryPool::new(
-            gpu_ctx.context().clone(),
-            pool_config,
-        );
+        let pinned_pool = warp_gpu::PinnedMemoryPool::new(gpu_ctx.context().clone(), pool_config);
 
         info!(
             path = %config.base_path.display(),
@@ -538,7 +538,8 @@ impl HpcStorageBackend for GpuDirectBackend {
             match pool.acquire(size) {
                 Ok(mut pinned) => {
                     // Copy from GPU to pinned memory
-                    gpu_buffer.copy_to_host_into(pinned.as_mut_slice())
+                    gpu_buffer
+                        .copy_to_host_into(pinned.as_mut_slice())
                         .map_err(|e| Error::Backend(format!("GPU copy failed: {}", e)))?;
 
                     self.stats.write().await.pinned_hits += 1;
@@ -547,13 +548,15 @@ impl HpcStorageBackend for GpuDirectBackend {
                 Err(_) => {
                     // Fallback to regular copy
                     self.stats.write().await.pinned_misses += 1;
-                    gpu_buffer.copy_to_host()
+                    gpu_buffer
+                        .copy_to_host()
                         .map_err(|e| Error::Backend(format!("GPU copy failed: {}", e)))?
                 }
             }
         } else {
             // No pinned pool, regular copy
-            gpu_buffer.copy_to_host()
+            gpu_buffer
+                .copy_to_host()
                 .map_err(|e| Error::Backend(format!("GPU copy failed: {}", e)))?
         };
 
@@ -652,7 +655,10 @@ mod tests {
         // Put object
         let key = ObjectKey::new("test", "object1").unwrap();
         let data = ObjectData::from(vec![1u8, 2, 3, 4, 5]);
-        let meta = backend.put(&key, data.clone(), PutOptions::default()).await.unwrap();
+        let meta = backend
+            .put(&key, data.clone(), PutOptions::default())
+            .await
+            .unwrap();
 
         assert_eq!(meta.size, 5);
 
@@ -677,7 +683,10 @@ mod tests {
 
         let key = ObjectKey::new("test", "to-delete").unwrap();
         let data = ObjectData::from(vec![1u8, 2, 3]);
-        backend.put(&key, data, PutOptions::default()).await.unwrap();
+        backend
+            .put(&key, data, PutOptions::default())
+            .await
+            .unwrap();
 
         backend.delete(&key).await.unwrap();
 
@@ -698,11 +707,17 @@ mod tests {
         for i in 0..5 {
             let key = ObjectKey::new("test", &format!("object-{}", i)).unwrap();
             let data = ObjectData::from(vec![i as u8; 10]);
-            backend.put(&key, data, PutOptions::default()).await.unwrap();
+            backend
+                .put(&key, data, PutOptions::default())
+                .await
+                .unwrap();
         }
 
         // List objects
-        let list = backend.list("test", "object-", ListOptions::default()).await.unwrap();
+        let list = backend
+            .list("test", "object-", ListOptions::default())
+            .await
+            .unwrap();
         assert_eq!(list.objects.len(), 5);
     }
 
@@ -729,7 +744,13 @@ mod tests {
     #[test]
     fn test_p2p_path() {
         assert_eq!(P2PPath::SameGpu.bandwidth_gbps(), 900);
-        assert_eq!(P2PPath::NvLink { bandwidth_gbps: 600 }.bandwidth_gbps(), 600);
+        assert_eq!(
+            P2PPath::NvLink {
+                bandwidth_gbps: 600
+            }
+            .bandwidth_gbps(),
+            600
+        );
         assert_eq!(P2PPath::NvSwitch.bandwidth_gbps(), 600);
         assert_eq!(P2PPath::PciE.bandwidth_gbps(), 32);
     }

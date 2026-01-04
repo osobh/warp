@@ -1,7 +1,7 @@
 //! CPU compression implementations
 
-mod zstd;
 mod lz4;
+mod zstd;
 
-pub use self::zstd::ZstdCompressor;
 pub use self::lz4::Lz4Compressor;
+pub use self::zstd::ZstdCompressor;

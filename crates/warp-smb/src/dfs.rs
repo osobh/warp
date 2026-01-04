@@ -338,7 +338,12 @@ impl DfsManager {
 
             link_referrals
                 .iter()
-                .map(|r| DfsReferralEntry::from_referral(r, &format!("{}\\{}", namespace.root, link_name)))
+                .map(|r| {
+                    DfsReferralEntry::from_referral(
+                        r,
+                        &format!("{}\\{}", namespace.root, link_name),
+                    )
+                })
                 .collect()
         };
 
@@ -374,10 +379,7 @@ mod tests {
     #[test]
     fn test_dfs_namespace() {
         let mut ns = DfsNamespace::standalone("dfs", "WARP");
-        ns.add_link(
-            "data",
-            vec![DfsReferral::new("storage1", "data")],
-        );
+        ns.add_link("data", vec![DfsReferral::new("storage1", "data")]);
 
         assert_eq!(ns.root, "\\\\WARP\\dfs");
         assert!(ns.get_referrals("\\\\WARP\\dfs\\data").is_some());

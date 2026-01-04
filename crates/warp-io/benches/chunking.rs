@@ -1,17 +1,15 @@
-use criterion::{black_box, criterion_group, criterion_main, Criterion, Throughput, BenchmarkId};
-use warp_io::{BuzhashChunker, SeqCdcChunker, SeqCdcConfig, ChunkerConfig, chunk_file_async};
+use criterion::{BenchmarkId, Criterion, Throughput, black_box, criterion_group, criterion_main};
 use std::io::Cursor;
 use std::io::Write;
 use tempfile::NamedTempFile;
+use warp_io::{BuzhashChunker, ChunkerConfig, SeqCdcChunker, SeqCdcConfig, chunk_file_async};
 
 /// Generate pseudo-random test data with configurable patterns
 fn generate_test_data(size: usize, pattern: DataPattern) -> Vec<u8> {
     match pattern {
-        DataPattern::PseudoRandom => {
-            (0..size)
-                .map(|i| ((i.wrapping_mul(17).wrapping_add(31)) % 256) as u8)
-                .collect()
-        }
+        DataPattern::PseudoRandom => (0..size)
+            .map(|i| ((i.wrapping_mul(17).wrapping_add(31)) % 256) as u8)
+            .collect(),
         DataPattern::Compressible => {
             // Mix of runs and varying data (simulates text/code)
             (0..size)
@@ -184,15 +182,15 @@ fn bench_simd_direct(c: &mut Criterion) {
         });
 
         // Scalar-only boundary detection for comparison
-        group.bench_with_input(BenchmarkId::new("boundaries-scalar", name), &data, |b, data| {
-            b.iter(|| {
-                simd::find_boundaries_scalar(
-                    black_box(data),
-                    config.seq_length,
-                    config.mode,
-                )
-            })
-        });
+        group.bench_with_input(
+            BenchmarkId::new("boundaries-scalar", name),
+            &data,
+            |b, data| {
+                b.iter(|| {
+                    simd::find_boundaries_scalar(black_box(data), config.seq_length, config.mode)
+                })
+            },
+        );
     }
 
     group.finish();
@@ -222,9 +220,7 @@ fn bench_data_patterns(c: &mut Criterion) {
         group.bench_with_input(
             BenchmarkId::new("seqcdc-simd", pattern.name()),
             &data,
-            |b, data| {
-                b.iter(|| chunker.chunk_simd(Cursor::new(black_box(data))))
-            },
+            |b, data| b.iter(|| chunker.chunk_simd(Cursor::new(black_box(data)))),
         );
     }
 
@@ -252,13 +248,9 @@ fn bench_chunk_sizes(c: &mut Criterion) {
     for (config, name) in configs {
         let chunker = SeqCdcChunker::new(config);
 
-        group.bench_with_input(
-            BenchmarkId::new("seqcdc-simd", name),
-            &data,
-            |b, data| {
-                b.iter(|| chunker.chunk_simd(Cursor::new(black_box(data))))
-            },
-        );
+        group.bench_with_input(BenchmarkId::new("seqcdc-simd", name), &data, |b, data| {
+            b.iter(|| chunker.chunk_simd(Cursor::new(black_box(data))))
+        });
     }
 
     group.finish();
@@ -277,20 +269,26 @@ fn bench_comparison(c: &mut Criterion) {
 
     // Buzhash (legacy)
     let buzhash = BuzhashChunker::new(ChunkerConfig::default());
-    group.bench_with_input(BenchmarkId::new("algorithm", "buzhash"), &data, |b, data| {
-        b.iter(|| buzhash.chunk(Cursor::new(black_box(data))))
-    });
+    group.bench_with_input(
+        BenchmarkId::new("algorithm", "buzhash"),
+        &data,
+        |b, data| b.iter(|| buzhash.chunk(Cursor::new(black_box(data)))),
+    );
 
     // SeqCDC scalar
     let seqcdc = SeqCdcChunker::new(SeqCdcConfig::target_16kb());
-    group.bench_with_input(BenchmarkId::new("algorithm", "seqcdc-scalar"), &data, |b, data| {
-        b.iter(|| seqcdc.chunk(Cursor::new(black_box(data))))
-    });
+    group.bench_with_input(
+        BenchmarkId::new("algorithm", "seqcdc-scalar"),
+        &data,
+        |b, data| b.iter(|| seqcdc.chunk(Cursor::new(black_box(data)))),
+    );
 
     // SeqCDC SIMD
-    group.bench_with_input(BenchmarkId::new("algorithm", "seqcdc-simd"), &data, |b, data| {
-        b.iter(|| seqcdc.chunk_simd(Cursor::new(black_box(data))))
-    });
+    group.bench_with_input(
+        BenchmarkId::new("algorithm", "seqcdc-simd"),
+        &data,
+        |b, data| b.iter(|| seqcdc.chunk_simd(Cursor::new(black_box(data)))),
+    );
 
     group.finish();
 }
@@ -325,7 +323,9 @@ fn bench_async_chunker(c: &mut Criterion) {
         group.bench_with_input(BenchmarkId::new("chunk", name), &path, |b, path| {
             b.iter(|| {
                 rt.block_on(async {
-                    chunk_file_async(black_box(path), config.clone()).await.unwrap()
+                    chunk_file_async(black_box(path), config.clone())
+                        .await
+                        .unwrap()
                 })
             })
         });
@@ -361,13 +361,19 @@ fn bench_async_vs_sync(c: &mut Criterion) {
     let path = file.path().to_path_buf();
     let config = SeqCdcConfig::target_16kb();
 
-    group.bench_with_input(BenchmarkId::new("method", "async-vecdeque"), &path, |b, path| {
-        b.iter(|| {
-            rt.block_on(async {
-                chunk_file_async(black_box(path), config.clone()).await.unwrap()
+    group.bench_with_input(
+        BenchmarkId::new("method", "async-vecdeque"),
+        &path,
+        |b, path| {
+            b.iter(|| {
+                rt.block_on(async {
+                    chunk_file_async(black_box(path), config.clone())
+                        .await
+                        .unwrap()
+                })
             })
-        })
-    });
+        },
+    );
 
     group.finish();
 }

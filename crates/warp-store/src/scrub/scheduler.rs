@@ -32,11 +32,11 @@ pub struct ScrubSchedule {
 impl Default for ScrubSchedule {
     fn default() -> Self {
         Self {
-            light_interval: Duration::from_secs(24 * 3600),    // Daily
+            light_interval: Duration::from_secs(24 * 3600), // Daily
             deep_interval: Duration::from_secs(7 * 24 * 3600), // Weekly
-            window_start: 2,                                    // 2 AM
-            window_end: 6,                                      // 6 AM
-            deep_scrub_days: vec![0],                          // Sunday
+            window_start: 2,                                // 2 AM
+            window_end: 6,                                  // 6 AM
+            deep_scrub_days: vec![0],                       // Sunday
             pause_during_high_load: true,
             load_threshold: 0.8,
         }
@@ -47,11 +47,11 @@ impl ScrubSchedule {
     /// Create a schedule for high-frequency scrubbing (test/critical data)
     pub fn high_frequency() -> Self {
         Self {
-            light_interval: Duration::from_secs(4 * 3600),     // 4 hours
-            deep_interval: Duration::from_secs(24 * 3600),     // Daily
+            light_interval: Duration::from_secs(4 * 3600), // 4 hours
+            deep_interval: Duration::from_secs(24 * 3600), // Daily
             window_start: 0,
-            window_end: 24,                                     // Any time
-            deep_scrub_days: vec![0, 1, 2, 3, 4, 5, 6],        // Every day
+            window_end: 24,                             // Any time
+            deep_scrub_days: vec![0, 1, 2, 3, 4, 5, 6], // Every day
             pause_during_high_load: false,
             load_threshold: 1.0,
         }
@@ -60,11 +60,11 @@ impl ScrubSchedule {
     /// Create a schedule for archive data (low frequency)
     pub fn archive() -> Self {
         Self {
-            light_interval: Duration::from_secs(7 * 24 * 3600),   // Weekly
-            deep_interval: Duration::from_secs(30 * 24 * 3600),   // Monthly
+            light_interval: Duration::from_secs(7 * 24 * 3600), // Weekly
+            deep_interval: Duration::from_secs(30 * 24 * 3600), // Monthly
             window_start: 0,
-            window_end: 6,                                         // Night only
-            deep_scrub_days: vec![0],                             // Sunday
+            window_end: 6,            // Night only
+            deep_scrub_days: vec![0], // Sunday
             pause_during_high_load: true,
             load_threshold: 0.5,
         }
@@ -147,7 +147,8 @@ impl ScrubScheduler {
             return false;
         }
 
-        if self.schedule.pause_during_high_load && self.current_load > self.schedule.load_threshold {
+        if self.schedule.pause_during_high_load && self.current_load > self.schedule.load_threshold
+        {
             return false;
         }
 
@@ -171,7 +172,8 @@ impl ScrubScheduler {
             return false;
         }
 
-        if self.schedule.pause_during_high_load && self.current_load > self.schedule.load_threshold {
+        if self.schedule.pause_during_high_load && self.current_load > self.schedule.load_threshold
+        {
             return false;
         }
 

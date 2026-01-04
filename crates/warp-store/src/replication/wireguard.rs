@@ -12,7 +12,7 @@ use bytes::Bytes;
 use dashmap::DashMap;
 use serde::{Deserialize, Serialize};
 use tokio::net::UdpSocket;
-use tokio::sync::{mpsc, RwLock};
+use tokio::sync::{RwLock, mpsc};
 use tracing::{debug, error, info, warn};
 
 use super::DomainId;
@@ -479,7 +479,8 @@ impl WireGuardTunnelManager {
 
         let vip = self.allocate_vip();
 
-        let mut tunnel = WireGuardTunnel::new(domain_id, peer_pubkey, endpoint, vip, send_tx, recv_rx);
+        let mut tunnel =
+            WireGuardTunnel::new(domain_id, peer_pubkey, endpoint, vip, send_tx, recv_rx);
         tunnel.status = TunnelStatus::Connected;
         tunnel.stats.last_handshake = Some(Instant::now());
         tunnel.stats.handshake_count = 1;
@@ -616,7 +617,11 @@ impl WireGuardTunnelManager {
     ///
     /// Currently a stub - real packet decryption will be added when boringtun
     /// updates its x25519-dalek dependency to stable 2.0.x.
-    pub async fn process_incoming(&self, src: SocketAddr, packet: &[u8]) -> Result<Option<(DomainId, Bytes)>> {
+    pub async fn process_incoming(
+        &self,
+        src: SocketAddr,
+        packet: &[u8],
+    ) -> Result<Option<(DomainId, Bytes)>> {
         // Find the tunnel for this source
         for entry in self.tunnels.iter() {
             let domain_id = *entry.key();
@@ -713,7 +718,9 @@ impl WireGuardTunnelManager {
     /// Reconnect a failed tunnel
     pub async fn reconnect(&self, domain_id: DomainId) -> Result<()> {
         let (peer_pubkey, endpoint) = {
-            let tunnel = self.tunnels.get(&domain_id)
+            let tunnel = self
+                .tunnels
+                .get(&domain_id)
                 .ok_or_else(|| Error::WireGuard(format!("tunnel {} not found", domain_id)))?;
 
             let t = tunnel.read().await;
@@ -724,7 +731,8 @@ impl WireGuardTunnelManager {
         self.tunnels.remove(&domain_id);
 
         // Reconnect with retry
-        self.connect_with_retry(domain_id, peer_pubkey, endpoint).await
+        self.connect_with_retry(domain_id, peer_pubkey, endpoint)
+            .await
     }
 }
 
@@ -876,10 +884,16 @@ mod tests {
         let endpoint: SocketAddr = "127.0.0.1:51822".parse().unwrap();
 
         // First call creates tunnel
-        let tunnel1 = manager.get_or_connect(1, peer_pubkey, endpoint).await.unwrap();
+        let tunnel1 = manager
+            .get_or_connect(1, peer_pubkey, endpoint)
+            .await
+            .unwrap();
 
         // Second call returns existing tunnel
-        let tunnel2 = manager.get_or_connect(1, peer_pubkey, endpoint).await.unwrap();
+        let tunnel2 = manager
+            .get_or_connect(1, peer_pubkey, endpoint)
+            .await
+            .unwrap();
 
         // Should be the same tunnel
         assert_eq!(manager.tunnel_count(), 1);

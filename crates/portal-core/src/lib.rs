@@ -18,19 +18,19 @@
 #![warn(clippy::all, clippy::pedantic, clippy::nursery)]
 #![allow(clippy::module_name_repetitions)]
 
-pub mod keys;
-pub mod encryption;
-pub mod portal;
 pub mod access;
+pub mod encryption;
+pub mod keys;
+pub mod portal;
 
 // Re-exports for convenience
+pub use access::{AccessConditions, AccessControlList, AccessGrant, AccessLevel, Accessor};
+pub use encryption::{ConvergentEncryptor, EncryptedChunk, ManifestEncryptor};
 pub use keys::{
     AuthenticationKey, DeviceKey, KeyHierarchy, MasterEncryptionKey, MasterSeed, MasterSigningKey,
     RecoveryPhrase,
 };
-pub use encryption::{ConvergentEncryptor, EncryptedChunk, ManifestEncryptor};
 pub use portal::{Portal, PortalBuilder, PortalStats};
-pub use access::{AccessControlList, AccessGrant, AccessLevel, AccessConditions, Accessor};
 
 use uuid::Uuid;
 

@@ -44,7 +44,12 @@ struct CollectingWriter {
 impl CollectingWriter {
     fn new() -> (Self, Arc<Mutex<Vec<u8>>>) {
         let data = Arc::new(Mutex::new(Vec::new()));
-        (Self { data: Arc::clone(&data) }, data)
+        (
+            Self {
+                data: Arc::clone(&data),
+            },
+            data,
+        )
     }
 }
 
@@ -176,11 +181,7 @@ pub async fn encrypt(
 }
 
 /// Decrypt data from stdin to stdout
-pub async fn decrypt(
-    password: Option<&str>,
-    no_gpu: bool,
-    show_progress: bool,
-) -> Result<()> {
+pub async fn decrypt(password: Option<&str>, no_gpu: bool, show_progress: bool) -> Result<()> {
     // Get password (prompt if not provided)
     let password = match password {
         Some(p) => p.to_string(),
@@ -237,8 +238,7 @@ pub async fn decrypt(
     let encrypted_size = encrypted_data.len();
 
     // Configure the pipeline for decryption
-    let config = StreamConfig::new()
-        .with_gpu(!no_gpu);
+    let config = StreamConfig::new().with_gpu(!no_gpu);
 
     let pipeline = PipelineBuilder::new()
         .with_config(config)

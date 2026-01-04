@@ -6,17 +6,17 @@
 //! - IAM users and roles (if enabled)
 
 use axum::{
+    Json, Router,
     extract::{Path, State},
     http::StatusCode,
     response::IntoResponse,
     routing::{delete, get, post, put},
-    Json, Router,
 };
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 
-use crate::error::ApiResult;
 use crate::AppState;
+use crate::error::ApiResult;
 use warp_store::backend::StorageBackend;
 
 // ============================================================================
@@ -217,8 +217,8 @@ pub async fn set_policy<B: StorageBackend>(
     Path(bucket): Path<String>,
     body: String,
 ) -> ApiResult<impl IntoResponse> {
-    let policy: crate::s3::PolicyDocument =
-        serde_json::from_str(&body).map_err(|e| crate::error::ApiError::InvalidRequest(e.to_string()))?;
+    let policy: crate::s3::PolicyDocument = serde_json::from_str(&body)
+        .map_err(|e| crate::error::ApiError::InvalidRequest(e.to_string()))?;
 
     if let Some(ref pm) = state.policy_manager {
         match pm.set(&bucket, policy) {
@@ -409,7 +409,7 @@ pub async fn get_status<B: StorageBackend>(
 
     let status = SystemStatus {
         version: env!("CARGO_PKG_VERSION").to_string(),
-        uptime_seconds: 0, // Placeholder - would need startup time tracking
+        uptime_seconds: 0,  // Placeholder - would need startup time tracking
         kms_enabled: false, // Will be true when KMS is integrated into AppState
         #[cfg(feature = "iam")]
         iam_enabled: state.iam.is_some(),
@@ -433,7 +433,10 @@ pub fn routes<B: StorageBackend>(state: AppState<B>) -> Router {
         .route("/admin/status", get(get_status::<B>))
         // KMS key management
         .route("/admin/keys", get(list_keys::<B>).post(create_key::<B>))
-        .route("/admin/keys/{key_id}", get(get_key::<B>).delete(schedule_key_deletion::<B>))
+        .route(
+            "/admin/keys/{key_id}",
+            get(get_key::<B>).delete(schedule_key_deletion::<B>),
+        )
         .route("/admin/keys/{key_id}/rotate", post(rotate_key::<B>))
         // Policy management
         .route("/admin/policies", get(list_policies::<B>))

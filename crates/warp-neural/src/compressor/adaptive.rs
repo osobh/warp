@@ -91,7 +91,10 @@ impl AdaptiveNeuralCompressor {
                 ("neural", self.neural.compress(input)?)
             } else if analysis.entropy > 0.7 {
                 // High entropy but still compressible - use fast LZ4
-                debug!(entropy = analysis.entropy, "Using LZ4 for high-entropy data");
+                debug!(
+                    entropy = analysis.entropy,
+                    "Using LZ4 for high-entropy data"
+                );
                 ("lz4", self.lz4.compress(input)?)
             } else {
                 // Default to balanced zstd
@@ -175,9 +178,7 @@ mod tests {
 
     #[test]
     fn test_adaptive_threshold() {
-        let compressor = AdaptiveNeuralCompressor::new()
-            .unwrap()
-            .with_threshold(0.8);
+        let compressor = AdaptiveNeuralCompressor::new().unwrap().with_threshold(0.8);
         assert_eq!(compressor.neural_threshold(), 0.8);
     }
 
@@ -203,8 +204,7 @@ mod tests {
 
     #[test]
     fn test_compressor_trait() {
-        let compressor: Box<dyn Compressor> =
-            Box::new(AdaptiveNeuralCompressor::new().unwrap());
+        let compressor: Box<dyn Compressor> = Box::new(AdaptiveNeuralCompressor::new().unwrap());
 
         let data = b"Test data for trait implementation";
         let compressed = compressor.compress(data).unwrap();

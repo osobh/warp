@@ -44,10 +44,10 @@ mod manager;
 mod policy;
 mod tracker;
 
-pub use enforcement::{QuotaEnforcement, EnforcementResult, QuotaViolation};
-pub use manager::{QuotaManager, QuotaConfig};
-pub use policy::{QuotaPolicy, QuotaLimit, QuotaScope, QuotaLimitType};
-pub use tracker::{QuotaUsage, UsageTracker, UsageSnapshot};
+pub use enforcement::{EnforcementResult, QuotaEnforcement, QuotaViolation};
+pub use manager::{QuotaConfig, QuotaManager};
+pub use policy::{QuotaLimit, QuotaLimitType, QuotaPolicy, QuotaScope};
+pub use tracker::{QuotaUsage, UsageSnapshot, UsageTracker};
 
 /// Alert for quota threshold crossings
 #[derive(Debug, Clone)]
@@ -101,12 +101,7 @@ impl AlertLevel {
 
 impl QuotaAlert {
     /// Create a new alert
-    pub fn new(
-        scope: QuotaScope,
-        level: AlertLevel,
-        current_usage: u64,
-        limit: u64,
-    ) -> Self {
+    pub fn new(scope: QuotaScope, level: AlertLevel, current_usage: u64, limit: u64) -> Self {
         let percent_used = if limit > 0 {
             (current_usage as f64 / limit as f64) * 100.0
         } else {

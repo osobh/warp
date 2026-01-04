@@ -52,8 +52,7 @@ impl PooledBuffer {
 
     /// Create a standalone buffer without pooling (CPU fallback)
     pub fn standalone(size: usize) -> Result<Self> {
-        let inner = warp_gpu::PinnedBuffer::new(size)
-            .map_err(StreamError::GpuError)?;
+        let inner = warp_gpu::PinnedBuffer::new(size).map_err(StreamError::GpuError)?;
         Ok(Self {
             inner: Some(inner),
             pool: None,
@@ -64,7 +63,8 @@ impl PooledBuffer {
     /// Get the data as a slice
     #[inline]
     pub fn as_slice(&self) -> &[u8] {
-        self.inner.as_ref()
+        self.inner
+            .as_ref()
             .map(|b| &b.as_slice()[..self.len])
             .unwrap_or(&[])
     }
@@ -73,7 +73,8 @@ impl PooledBuffer {
     #[inline]
     pub fn as_mut_slice(&mut self) -> &mut [u8] {
         let len = self.len;
-        self.inner.as_mut()
+        self.inner
+            .as_mut()
             .map(|b| &mut b.as_mut_slice()[..len])
             .unwrap_or(&mut [])
     }
@@ -111,8 +112,7 @@ impl PooledBuffer {
             return Err(StreamError::BufferOverflow);
         }
         if let Some(inner) = &mut self.inner {
-            inner.copy_from_slice(data)
-                .map_err(StreamError::GpuError)?;
+            inner.copy_from_slice(data).map_err(StreamError::GpuError)?;
             self.len = data.len();
         }
         Ok(())
@@ -181,14 +181,13 @@ impl BufferPoolManager {
 
     /// Try to initialize the pinned memory pool
     fn try_init_pool(buffer_size: usize) -> Result<warp_gpu::PinnedMemoryPool> {
-        let ctx = warp_gpu::GpuContext::new()
-            .map_err(StreamError::GpuError)?;
+        let ctx = warp_gpu::GpuContext::new().map_err(StreamError::GpuError)?;
 
         // Configure pool with size classes based on buffer size
         let size_classes = vec![
-            buffer_size,            // Exact chunk size
-            buffer_size * 4,        // 4x for batch processing
-            buffer_size * 16,       // 16x for large batches
+            buffer_size,      // Exact chunk size
+            buffer_size * 4,  // 4x for batch processing
+            buffer_size * 16, // 16x for large batches
         ];
 
         let config = warp_gpu::PoolConfig {
@@ -198,7 +197,10 @@ impl BufferPoolManager {
             track_statistics: true,
         };
 
-        Ok(warp_gpu::PinnedMemoryPool::new(ctx.context().clone(), config))
+        Ok(warp_gpu::PinnedMemoryPool::new(
+            ctx.context().clone(),
+            config,
+        ))
     }
 
     /// Acquire a buffer from the pool
@@ -209,8 +211,7 @@ impl BufferPoolManager {
         let size = size.unwrap_or(self.buffer_size);
 
         if let Some(pool) = &self.pool {
-            let inner = pool.acquire(size)
-                .map_err(StreamError::GpuError)?;
+            let inner = pool.acquire(size).map_err(StreamError::GpuError)?;
             Ok(PooledBuffer::new(inner, Arc::clone(pool)))
         } else {
             PooledBuffer::standalone(size)

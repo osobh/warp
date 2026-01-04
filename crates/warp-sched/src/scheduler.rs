@@ -7,17 +7,19 @@
 //! - Load balancing
 //! - Assignment dispatch
 
-use crate::{
-    Assignment, AssignmentBatch, ChunkId, EdgeIdx, ScheduleRequest, SchedulerMetrics,
-    CpuStateBuffers,
-};
 use crate::balance::{CpuLoadBalancer, LoadBalanceConfig};
 use crate::constraints::ConstraintEvaluator;
 use crate::cost::{CostConfig, CpuCostMatrix};
 use crate::dispatch::DispatchQueue;
 use crate::failover::{CpuFailoverManager, FailoverConfig, FailoverDecision};
 use crate::paths::{CpuPathSelector, PathConfig};
-use crate::reoptimize::{IncrementalConfig, IncrementalScheduler, ReoptPlan, ReoptScope, ReoptStrategy, Reassignment};
+use crate::reoptimize::{
+    IncrementalConfig, IncrementalScheduler, Reassignment, ReoptPlan, ReoptScope, ReoptStrategy,
+};
+use crate::{
+    Assignment, AssignmentBatch, ChunkId, CpuStateBuffers, EdgeIdx, ScheduleRequest,
+    SchedulerMetrics,
+};
 use chrono::Utc;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -218,7 +220,9 @@ impl CpuChunkScheduler {
         }
 
         // Execute the next step
-        let result = self.incremental_scheduler.execute_step(plan, self.reopt_step);
+        let result = self
+            .incremental_scheduler
+            .execute_step(plan, self.reopt_step);
 
         if let Ok(reassignment) = result {
             self.reopt_step += 1;
@@ -618,11 +622,13 @@ mod tests {
     fn test_handle_failover() {
         let mut scheduler = CpuChunkScheduler::new(SchedulerConfig::default(), 100, 10);
 
-        use crate::failover::{FailoverReason, FailoverAction};
+        use crate::failover::{FailoverAction, FailoverReason};
         let decision = FailoverDecision {
             chunk_id: ChunkId(1),
             reason: FailoverReason::Timeout,
-            action: FailoverAction::Retry { edge_idx: EdgeIdx(0) },
+            action: FailoverAction::Retry {
+                edge_idx: EdgeIdx(0),
+            },
             failed_edge: EdgeIdx(0),
             retry_count: 1,
             timestamp_ms: 12345,
@@ -758,11 +764,13 @@ mod tests {
     fn test_failover_requeues_chunks() {
         let mut scheduler = CpuChunkScheduler::new(SchedulerConfig::default(), 100, 10);
 
-        use crate::failover::{FailoverReason, FailoverAction};
+        use crate::failover::{FailoverAction, FailoverReason};
         let decision = FailoverDecision {
             chunk_id: ChunkId(5),
             reason: FailoverReason::Timeout,
-            action: FailoverAction::Retry { edge_idx: EdgeIdx(0) },
+            action: FailoverAction::Retry {
+                edge_idx: EdgeIdx(0),
+            },
             failed_edge: EdgeIdx(0),
             retry_count: 1,
             timestamp_ms: 12345,
@@ -836,8 +844,7 @@ mod tests {
 
         // Modify through mutable reference
         if let Some(evaluator) = scheduler.constraint_evaluator_mut() {
-            let constraints = EdgeConstraints::new(EdgeIdx(0))
-                .with_time(TimeConstraint::Anytime);
+            let constraints = EdgeConstraints::new(EdgeIdx(0)).with_time(TimeConstraint::Anytime);
             evaluator.add_constraint(EdgeIdx(0), constraints);
         }
 
@@ -919,14 +926,17 @@ mod tests {
 
         // Set up state buffers with chunks and edges
         let hash = [1u8; 32];
-        scheduler.state_mut().add_chunk(ChunkState::new(hash, 1024, 128, 3)).unwrap();
-        scheduler.state_mut().add_edge(0, EdgeStateGpu::new(
-            EdgeIdx(0),
-            1_000_000_000,
-            10_000,
-            0.95,
-            10,
-        )).unwrap();
+        scheduler
+            .state_mut()
+            .add_chunk(ChunkState::new(hash, 1024, 128, 3))
+            .unwrap();
+        scheduler
+            .state_mut()
+            .add_edge(
+                0,
+                EdgeStateGpu::new(EdgeIdx(0), 1_000_000_000, 10_000, 0.95, 10),
+            )
+            .unwrap();
         scheduler.state_mut().add_replica(0, EdgeIdx(0));
 
         // Schedule a chunk

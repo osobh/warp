@@ -299,7 +299,9 @@ mod tests {
             let hasher = PooledHasher::new(ctx, pool).expect("Hasher creation should succeed");
 
             let chunks: Vec<&[u8]> = vec![b"chunk1", b"chunk2", b"chunk3"];
-            let hashes = hasher.hash_batch(&chunks).expect("Batch hash should succeed");
+            let hashes = hasher
+                .hash_batch(&chunks)
+                .expect("Batch hash should succeed");
 
             assert_eq!(hashes.len(), 3);
             for (i, chunk) in chunks.iter().enumerate() {

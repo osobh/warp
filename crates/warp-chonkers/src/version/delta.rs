@@ -155,11 +155,7 @@ impl Delta {
     }
 
     /// Compute deduplication ratio
-    fn compute_dedup_ratio(
-        unchanged: &[ChunkId],
-        added: &[ChunkId],
-        removed: &[ChunkId],
-    ) -> f64 {
+    fn compute_dedup_ratio(unchanged: &[ChunkId], added: &[ChunkId], removed: &[ChunkId]) -> f64 {
         let total = unchanged.len() + added.len() + removed.len();
         if total == 0 {
             return 1.0;
@@ -403,10 +399,7 @@ mod tests {
 
         let delta = Delta::compute(&tree1, &tree2);
 
-        assert_eq!(
-            delta.stats.unchanged_count,
-            delta.unchanged.len()
-        );
+        assert_eq!(delta.stats.unchanged_count, delta.unchanged.len());
         assert_eq!(delta.stats.added_count, delta.added.len());
         assert_eq!(delta.stats.removed_count, delta.removed.len());
     }
@@ -416,9 +409,7 @@ mod tests {
         let tree1 = make_tree(b"some data here");
         let tree2 = make_tree(b"some different data");
 
-        let delta = DeltaBuilder::new()
-            .without_moves()
-            .compute(&tree1, &tree2);
+        let delta = DeltaBuilder::new().without_moves().compute(&tree1, &tree2);
 
         assert!(delta.moved.is_empty());
     }
@@ -428,9 +419,7 @@ mod tests {
         let tree1 = make_tree(b"data version one");
         let tree2 = make_tree(b"data version two");
 
-        let delta = DeltaBuilder::new()
-            .without_bytes()
-            .compute(&tree1, &tree2);
+        let delta = DeltaBuilder::new().without_bytes().compute(&tree1, &tree2);
 
         assert_eq!(delta.stats.bytes_added, 0);
         assert_eq!(delta.stats.bytes_removed, 0);

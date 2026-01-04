@@ -1,10 +1,10 @@
 //! ChaCha20-Poly1305 AEAD encryption
 
 use chacha20poly1305::{
-    aead::{Aead, KeyInit},
     ChaCha20Poly1305, Nonce,
+    aead::{Aead, KeyInit},
 };
-use rand::{rngs::OsRng, RngCore};
+use rand::{RngCore, rngs::OsRng};
 use zeroize::Zeroize;
 
 use crate::{Error, Result};

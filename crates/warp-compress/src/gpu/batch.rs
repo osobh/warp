@@ -11,9 +11,9 @@
 //! - PinnedMemoryPool for zero-copy transfers
 //! - Efficient buffer reuse for batch operations
 
-use crate::{Compressor, Result};
 use super::lz4::GpuLz4Compressor;
 use super::zstd::GpuZstdCompressor;
+use crate::{Compressor, Result};
 use rayon::prelude::*;
 use std::sync::Arc;
 use tracing::{debug, warn};
@@ -269,9 +269,7 @@ impl BatchCompressor {
         chunks
             .par_iter()
             .map(|chunk| match self.algorithm {
-                CompressionAlgorithm::Lz4 => {
-                    self.lz4_compressor.as_ref().unwrap().compress(chunk)
-                }
+                CompressionAlgorithm::Lz4 => self.lz4_compressor.as_ref().unwrap().compress(chunk),
                 CompressionAlgorithm::Zstd(_) => {
                     self.zstd_compressor.as_ref().unwrap().compress(chunk)
                 }
@@ -565,7 +563,11 @@ mod tests {
             let chunks = vec![data.as_slice()];
 
             let ratio = compressor.estimate_compression_ratio(&chunks);
-            assert!(ratio > 1.0, "Expected compression ratio > 1.0, got {}", ratio);
+            assert!(
+                ratio > 1.0,
+                "Expected compression ratio > 1.0, got {}",
+                ratio
+            );
         }
     }
 

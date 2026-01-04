@@ -5,12 +5,22 @@ use dashmap::DashMap;
 use parking_lot::RwLock;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Duration, Instant};
 
-pub const LATENCY_BUCKETS: &[f64] = &[1.0, 5.0, 10.0, 25.0, 50.0, 100.0, 250.0, 500.0, 1000.0, 2500.0, 5000.0];
-pub const SIZE_BUCKETS: &[f64] = &[1024.0, 10240.0, 102400.0, 1048576.0, 10485760.0, 104857600.0, 1073741824.0];
+pub const LATENCY_BUCKETS: &[f64] = &[
+    1.0, 5.0, 10.0, 25.0, 50.0, 100.0, 250.0, 500.0, 1000.0, 2500.0, 5000.0,
+];
+pub const SIZE_BUCKETS: &[f64] = &[
+    1024.0,
+    10240.0,
+    102400.0,
+    1048576.0,
+    10485760.0,
+    104857600.0,
+    1073741824.0,
+];
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum MetricType {
@@ -48,19 +58,39 @@ pub struct Counter {
 
 impl Counter {
     pub fn new(name: &str, description: &str) -> Self {
-        Self { name: name.to_string(), description: description.to_string(), value: Arc::new(AtomicU64::new(0)) }
+        Self {
+            name: name.to_string(),
+            description: description.to_string(),
+            value: Arc::new(AtomicU64::new(0)),
+        }
     }
-    pub fn inc(&self) { self.value.fetch_add(1, Ordering::Relaxed); }
-    pub fn inc_by(&self, n: u64) { self.value.fetch_add(n, Ordering::Relaxed); }
-    pub fn get(&self) -> u64 { self.value.load(Ordering::Relaxed) }
-    pub fn reset(&self) { self.value.store(0, Ordering::Relaxed); }
-    pub fn name(&self) -> &str { &self.name }
-    pub fn description(&self) -> &str { &self.description }
+    pub fn inc(&self) {
+        self.value.fetch_add(1, Ordering::Relaxed);
+    }
+    pub fn inc_by(&self, n: u64) {
+        self.value.fetch_add(n, Ordering::Relaxed);
+    }
+    pub fn get(&self) -> u64 {
+        self.value.load(Ordering::Relaxed)
+    }
+    pub fn reset(&self) {
+        self.value.store(0, Ordering::Relaxed);
+    }
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+    pub fn description(&self) -> &str {
+        &self.description
+    }
 }
 
 impl Clone for Counter {
     fn clone(&self) -> Self {
-        Self { name: self.name.clone(), description: self.description.clone(), value: Arc::clone(&self.value) }
+        Self {
+            name: self.name.clone(),
+            description: self.description.clone(),
+            value: Arc::clone(&self.value),
+        }
     }
 }
 
@@ -73,21 +103,45 @@ pub struct Gauge {
 
 impl Gauge {
     pub fn new(name: &str, description: &str) -> Self {
-        Self { name: name.to_string(), description: description.to_string(), value: Arc::new(RwLock::new(0.0)) }
+        Self {
+            name: name.to_string(),
+            description: description.to_string(),
+            value: Arc::new(RwLock::new(0.0)),
+        }
     }
-    pub fn set(&self, value: f64) { *self.value.write() = value; }
-    pub fn inc(&self) { *self.value.write() += 1.0; }
-    pub fn dec(&self) { *self.value.write() -= 1.0; }
-    pub fn inc_by(&self, n: f64) { *self.value.write() += n; }
-    pub fn dec_by(&self, n: f64) { *self.value.write() -= n; }
-    pub fn get(&self) -> f64 { *self.value.read() }
-    pub fn name(&self) -> &str { &self.name }
-    pub fn description(&self) -> &str { &self.description }
+    pub fn set(&self, value: f64) {
+        *self.value.write() = value;
+    }
+    pub fn inc(&self) {
+        *self.value.write() += 1.0;
+    }
+    pub fn dec(&self) {
+        *self.value.write() -= 1.0;
+    }
+    pub fn inc_by(&self, n: f64) {
+        *self.value.write() += n;
+    }
+    pub fn dec_by(&self, n: f64) {
+        *self.value.write() -= n;
+    }
+    pub fn get(&self) -> f64 {
+        *self.value.read()
+    }
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+    pub fn description(&self) -> &str {
+        &self.description
+    }
 }
 
 impl Clone for Gauge {
     fn clone(&self) -> Self {
-        Self { name: self.name.clone(), description: self.description.clone(), value: Arc::clone(&self.value) }
+        Self {
+            name: self.name.clone(),
+            description: self.description.clone(),
+            value: Arc::clone(&self.value),
+        }
     }
 }
 
@@ -111,7 +165,8 @@ impl Histogram {
     pub fn new(name: &str, description: &str, buckets: Vec<f64>) -> Self {
         let mut sorted_buckets = buckets;
         sorted_buckets.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
-        let bucket_counts: Vec<AtomicU64> = sorted_buckets.iter().map(|_| AtomicU64::new(0)).collect();
+        let bucket_counts: Vec<AtomicU64> =
+            sorted_buckets.iter().map(|_| AtomicU64::new(0)).collect();
         Self {
             name: name.to_string(),
             description: description.to_string(),
@@ -137,25 +192,38 @@ impl Histogram {
         }
     }
 
-    pub fn count(&self) -> u64 { self.inner.read().count }
-    pub fn sum(&self) -> f64 { self.inner.read().sum }
+    pub fn count(&self) -> u64 {
+        self.inner.read().count
+    }
+    pub fn sum(&self) -> f64 {
+        self.inner.read().sum
+    }
     pub fn mean(&self) -> f64 {
         let inner = self.inner.read();
-        if inner.count == 0 { 0.0 } else { inner.sum / inner.count as f64 }
+        if inner.count == 0 {
+            0.0
+        } else {
+            inner.sum / inner.count as f64
+        }
     }
 
     pub fn percentile(&self, p: f64) -> f64 {
         let inner = self.inner.read();
-        if inner.samples.is_empty() { return 0.0; }
+        if inner.samples.is_empty() {
+            return 0.0;
+        }
 
         // Filter out NaN values before sorting to prevent unpredictable ordering
-        let mut sorted: Vec<f64> = inner.samples
+        let mut sorted: Vec<f64> = inner
+            .samples
             .iter()
             .copied()
             .filter(|x| !x.is_nan())
             .collect();
 
-        if sorted.is_empty() { return 0.0; }
+        if sorted.is_empty() {
+            return 0.0;
+        }
 
         // Use total_cmp for deterministic ordering (handles infinities correctly)
         sorted.sort_by(|a, b| a.total_cmp(b));
@@ -166,16 +234,29 @@ impl Histogram {
 
     pub fn buckets(&self) -> Vec<(f64, u64)> {
         let inner = self.inner.read();
-        inner.buckets.iter().enumerate().map(|(i, &bucket)| (bucket, inner.bucket_counts[i].load(Ordering::Relaxed))).collect()
+        inner
+            .buckets
+            .iter()
+            .enumerate()
+            .map(|(i, &bucket)| (bucket, inner.bucket_counts[i].load(Ordering::Relaxed)))
+            .collect()
     }
 
-    pub fn name(&self) -> &str { &self.name }
-    pub fn description(&self) -> &str { &self.description }
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+    pub fn description(&self) -> &str {
+        &self.description
+    }
 }
 
 impl Clone for Histogram {
     fn clone(&self) -> Self {
-        Self { name: self.name.clone(), description: self.description.clone(), inner: Arc::clone(&self.inner) }
+        Self {
+            name: self.name.clone(),
+            description: self.description.clone(),
+            inner: Arc::clone(&self.inner),
+        }
     }
 }
 
@@ -186,20 +267,40 @@ pub struct Timer {
 
 impl Timer {
     pub fn new(name: &str, description: &str) -> Self {
-        Self { histogram: Histogram::new(name, description, LATENCY_BUCKETS.to_vec()) }
+        Self {
+            histogram: Histogram::new(name, description, LATENCY_BUCKETS.to_vec()),
+        }
     }
     pub fn start(&self) -> TimerGuard {
-        TimerGuard { histogram: self.histogram.clone(), start: Instant::now(), stopped: false }
+        TimerGuard {
+            histogram: self.histogram.clone(),
+            start: Instant::now(),
+            stopped: false,
+        }
     }
-    pub fn record(&self, duration: Duration) { self.histogram.observe(duration.as_secs_f64() * 1000.0); }
-    pub fn observe_ms(&self, ms: u64) { self.histogram.observe(ms as f64); }
-    pub fn name(&self) -> &str { self.histogram.name() }
-    pub fn description(&self) -> &str { self.histogram.description() }
-    pub fn histogram(&self) -> &Histogram { &self.histogram }
+    pub fn record(&self, duration: Duration) {
+        self.histogram.observe(duration.as_secs_f64() * 1000.0);
+    }
+    pub fn observe_ms(&self, ms: u64) {
+        self.histogram.observe(ms as f64);
+    }
+    pub fn name(&self) -> &str {
+        self.histogram.name()
+    }
+    pub fn description(&self) -> &str {
+        self.histogram.description()
+    }
+    pub fn histogram(&self) -> &Histogram {
+        &self.histogram
+    }
 }
 
 impl Clone for Timer {
-    fn clone(&self) -> Self { Self { histogram: self.histogram.clone() } }
+    fn clone(&self) -> Self {
+        Self {
+            histogram: self.histogram.clone(),
+        }
+    }
 }
 
 pub struct TimerGuard {
@@ -232,12 +333,18 @@ pub struct Labels {
 }
 
 impl Labels {
-    pub fn new() -> Self { Self { labels: HashMap::new() } }
+    pub fn new() -> Self {
+        Self {
+            labels: HashMap::new(),
+        }
+    }
     pub fn add(mut self, key: &str, value: &str) -> Self {
         self.labels.insert(key.to_string(), value.to_string());
         self
     }
-    pub fn as_map(&self) -> &HashMap<String, String> { &self.labels }
+    pub fn as_map(&self) -> &HashMap<String, String> {
+        &self.labels
+    }
 }
 
 impl std::fmt::Display for Labels {
@@ -273,7 +380,11 @@ enum MetricEntry {
 }
 
 impl MetricRegistry {
-    pub fn new() -> Self { Self { metrics: DashMap::new() } }
+    pub fn new() -> Self {
+        Self {
+            metrics: DashMap::new(),
+        }
+    }
 
     pub fn global() -> &'static MetricRegistry {
         static INSTANCE: std::sync::OnceLock<MetricRegistry> = std::sync::OnceLock::new();
@@ -281,9 +392,10 @@ impl MetricRegistry {
     }
 
     pub fn counter(&self, name: &str, description: &str) -> Counter {
-        let entry = self.metrics.entry(name.to_string()).or_insert_with(|| {
-            MetricEntry::Counter(Counter::new(name, description))
-        });
+        let entry = self
+            .metrics
+            .entry(name.to_string())
+            .or_insert_with(|| MetricEntry::Counter(Counter::new(name, description)));
         match entry.value() {
             MetricEntry::Counter(c) => c.clone(),
             _ => panic!("Metric {} already exists with different type", name),
@@ -291,9 +403,10 @@ impl MetricRegistry {
     }
 
     pub fn gauge(&self, name: &str, description: &str) -> Gauge {
-        let entry = self.metrics.entry(name.to_string()).or_insert_with(|| {
-            MetricEntry::Gauge(Gauge::new(name, description))
-        });
+        let entry = self
+            .metrics
+            .entry(name.to_string())
+            .or_insert_with(|| MetricEntry::Gauge(Gauge::new(name, description)));
         match entry.value() {
             MetricEntry::Gauge(g) => g.clone(),
             _ => panic!("Metric {} already exists with different type", name),
@@ -301,9 +414,10 @@ impl MetricRegistry {
     }
 
     pub fn histogram(&self, name: &str, description: &str, buckets: Vec<f64>) -> Histogram {
-        let entry = self.metrics.entry(name.to_string()).or_insert_with(|| {
-            MetricEntry::Histogram(Histogram::new(name, description, buckets))
-        });
+        let entry = self
+            .metrics
+            .entry(name.to_string())
+            .or_insert_with(|| MetricEntry::Histogram(Histogram::new(name, description, buckets)));
         match entry.value() {
             MetricEntry::Histogram(h) => h.clone(),
             _ => panic!("Metric {} already exists with different type", name),
@@ -311,9 +425,10 @@ impl MetricRegistry {
     }
 
     pub fn timer(&self, name: &str, description: &str) -> Timer {
-        let entry = self.metrics.entry(name.to_string()).or_insert_with(|| {
-            MetricEntry::Timer(Timer::new(name, description))
-        });
+        let entry = self
+            .metrics
+            .entry(name.to_string())
+            .or_insert_with(|| MetricEntry::Timer(Timer::new(name, description)));
         match entry.value() {
             MetricEntry::Timer(t) => t.clone(),
             _ => panic!("Metric {} already exists with different type", name),
@@ -329,7 +444,12 @@ impl MetricRegistry {
                     name: c.name().to_string(),
                     description: c.description().to_string(),
                     metric_type: MetricType::Counter,
-                    value: MetricValue { counter: Some(c.get()), gauge: None, histogram: None, timestamp_ms },
+                    value: MetricValue {
+                        counter: Some(c.get()),
+                        gauge: None,
+                        histogram: None,
+                        timestamp_ms,
+                    },
                     labels: HashMap::new(),
                     timestamp_ms,
                 },
@@ -337,7 +457,12 @@ impl MetricRegistry {
                     name: g.name().to_string(),
                     description: g.description().to_string(),
                     metric_type: MetricType::Gauge,
-                    value: MetricValue { counter: None, gauge: Some(g.get()), histogram: None, timestamp_ms },
+                    value: MetricValue {
+                        counter: None,
+                        gauge: Some(g.get()),
+                        histogram: None,
+                        timestamp_ms,
+                    },
                     labels: HashMap::new(),
                     timestamp_ms,
                 },
@@ -348,7 +473,12 @@ impl MetricRegistry {
                     value: MetricValue {
                         counter: None,
                         gauge: None,
-                        histogram: Some(HistogramData { count: h.count(), sum: h.sum(), mean: h.mean(), buckets: h.buckets() }),
+                        histogram: Some(HistogramData {
+                            count: h.count(),
+                            sum: h.sum(),
+                            mean: h.mean(),
+                            buckets: h.buckets(),
+                        }),
                         timestamp_ms,
                     },
                     labels: HashMap::new(),
@@ -363,7 +493,12 @@ impl MetricRegistry {
                         value: MetricValue {
                             counter: None,
                             gauge: None,
-                            histogram: Some(HistogramData { count: h.count(), sum: h.sum(), mean: h.mean(), buckets: h.buckets() }),
+                            histogram: Some(HistogramData {
+                                count: h.count(),
+                                sum: h.sum(),
+                                mean: h.mean(),
+                                buckets: h.buckets(),
+                            }),
                             timestamp_ms,
                         },
                         labels: HashMap::new(),
@@ -394,9 +529,18 @@ impl MetricRegistry {
                     output.push_str(&format!("# HELP {} {}\n", h.name(), h.description()));
                     output.push_str(&format!("# TYPE {} histogram\n", h.name()));
                     for (bucket, count) in h.buckets() {
-                        output.push_str(&format!("{}_bucket{{le=\"{}\"}} {}\n", h.name(), bucket, count));
+                        output.push_str(&format!(
+                            "{}_bucket{{le=\"{}\"}} {}\n",
+                            h.name(),
+                            bucket,
+                            count
+                        ));
                     }
-                    output.push_str(&format!("{}_bucket{{le=\"+Inf\"}} {}\n", h.name(), h.count()));
+                    output.push_str(&format!(
+                        "{}_bucket{{le=\"+Inf\"}} {}\n",
+                        h.name(),
+                        h.count()
+                    ));
                     output.push_str(&format!("{}_sum {}\n", h.name(), h.sum()));
                     output.push_str(&format!("{}_count {}\n", h.name(), h.count()));
                 }
@@ -405,9 +549,18 @@ impl MetricRegistry {
                     output.push_str(&format!("# HELP {} {}\n", h.name(), h.description()));
                     output.push_str(&format!("# TYPE {} histogram\n", h.name()));
                     for (bucket, count) in h.buckets() {
-                        output.push_str(&format!("{}_bucket{{le=\"{}\"}} {}\n", h.name(), bucket, count));
+                        output.push_str(&format!(
+                            "{}_bucket{{le=\"{}\"}} {}\n",
+                            h.name(),
+                            bucket,
+                            count
+                        ));
                     }
-                    output.push_str(&format!("{}_bucket{{le=\"+Inf\"}} {}\n", h.name(), h.count()));
+                    output.push_str(&format!(
+                        "{}_bucket{{le=\"+Inf\"}} {}\n",
+                        h.name(),
+                        h.count()
+                    ));
                     output.push_str(&format!("{}_sum {}\n", h.name(), h.sum()));
                     output.push_str(&format!("{}_count {}\n", h.name(), h.count()));
                 }
@@ -424,7 +577,9 @@ impl MetricRegistry {
 }
 
 impl Default for MetricRegistry {
-    fn default() -> Self { Self::new() }
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 #[cfg(test)]
@@ -479,8 +634,16 @@ mod tests {
         let counter = Counter::new("test", "desc");
         let c1 = counter.clone();
         let c2 = counter.clone();
-        let h1 = thread::spawn(move || { for _ in 0..1000 { c1.inc(); } });
-        let h2 = thread::spawn(move || { for _ in 0..1000 { c2.inc(); } });
+        let h1 = thread::spawn(move || {
+            for _ in 0..1000 {
+                c1.inc();
+            }
+        });
+        let h2 = thread::spawn(move || {
+            for _ in 0..1000 {
+                c2.inc();
+            }
+        });
         h1.join().unwrap();
         h2.join().unwrap();
         assert_eq!(counter.get(), 2000);
@@ -570,7 +733,9 @@ mod tests {
     fn test_histogram_percentile_p50() {
         let buckets = vec![100.0];
         let hist = Histogram::new("test", "desc", buckets);
-        for i in 1..=100 { hist.observe(i as f64); }
+        for i in 1..=100 {
+            hist.observe(i as f64);
+        }
         let p50 = hist.percentile(50.0);
         assert!((p50 - 50.0).abs() < 2.0);
     }
@@ -579,7 +744,9 @@ mod tests {
     fn test_histogram_percentile_p90() {
         let buckets = vec![100.0];
         let hist = Histogram::new("test", "desc", buckets);
-        for i in 1..=100 { hist.observe(i as f64); }
+        for i in 1..=100 {
+            hist.observe(i as f64);
+        }
         let p90 = hist.percentile(90.0);
         assert!((p90 - 90.0).abs() < 2.0);
     }
@@ -588,7 +755,9 @@ mod tests {
     fn test_histogram_percentile_p99() {
         let buckets = vec![100.0];
         let hist = Histogram::new("test", "desc", buckets);
-        for i in 1..=100 { hist.observe(i as f64); }
+        for i in 1..=100 {
+            hist.observe(i as f64);
+        }
         let p99 = hist.percentile(99.0);
         assert!((p99 - 99.0).abs() < 2.0);
     }
@@ -750,7 +919,11 @@ mod tests {
     #[test]
     fn test_prometheus_export_histogram() {
         let registry = MetricRegistry::new();
-        let hist = registry.histogram("request_duration", "Request duration", vec![10.0, 50.0, 100.0]);
+        let hist = registry.histogram(
+            "request_duration",
+            "Request duration",
+            vec![10.0, 50.0, 100.0],
+        );
         hist.observe(25.0);
         hist.observe(75.0);
         let output = registry.export_prometheus();
@@ -778,7 +951,12 @@ mod tests {
             name: "test".to_string(),
             description: "desc".to_string(),
             metric_type: MetricType::Counter,
-            value: MetricValue { counter: Some(42), gauge: None, histogram: None, timestamp_ms: 1000 },
+            value: MetricValue {
+                counter: Some(42),
+                gauge: None,
+                histogram: None,
+                timestamp_ms: 1000,
+            },
             labels: HashMap::new(),
             timestamp_ms: 1000,
         };
@@ -819,8 +997,16 @@ mod tests {
         let gauge = Gauge::new("test", "desc");
         let g1 = gauge.clone();
         let g2 = gauge.clone();
-        let h1 = thread::spawn(move || { for _ in 0..100 { g1.inc(); } });
-        let h2 = thread::spawn(move || { for _ in 0..100 { g2.inc(); } });
+        let h1 = thread::spawn(move || {
+            for _ in 0..100 {
+                g1.inc();
+            }
+        });
+        let h2 = thread::spawn(move || {
+            for _ in 0..100 {
+                g2.inc();
+            }
+        });
         h1.join().unwrap();
         h2.join().unwrap();
         assert_eq!(gauge.get(), 200.0);
@@ -848,7 +1034,12 @@ mod tests {
 
     #[test]
     fn test_metric_value_timestamp() {
-        let value = MetricValue { counter: Some(100), gauge: None, histogram: None, timestamp_ms: 12345 };
+        let value = MetricValue {
+            counter: Some(100),
+            gauge: None,
+            histogram: None,
+            timestamp_ms: 12345,
+        };
         assert_eq!(value.timestamp_ms, 12345);
     }
 

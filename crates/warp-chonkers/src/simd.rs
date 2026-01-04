@@ -44,11 +44,7 @@ pub fn compute_priorities_scalar(data: &[u8], boundaries: &[usize]) -> Vec<u64> 
 /// Get the byte at a boundary position (or 0 if out of bounds)
 #[inline]
 fn boundaries_byte(data: &[u8], pos: usize) -> u8 {
-    if pos < data.len() {
-        data[pos]
-    } else {
-        0
-    }
+    if pos < data.len() { data[pos] } else { 0 }
 }
 
 /// Compute priority from two boundary bytes using XOR
@@ -135,11 +131,7 @@ pub mod avx2 {
     /// - All input arrays must have exactly 4 elements
     #[target_feature(enable = "avx2")]
     #[inline]
-    pub unsafe fn find_local_minima_4(
-        prev: &[u64; 4],
-        curr: &[u64; 4],
-        next: &[u64; 4],
-    ) -> u8 {
+    pub unsafe fn find_local_minima_4(prev: &[u64; 4], curr: &[u64; 4], next: &[u64; 4]) -> u8 {
         use std::arch::x86_64::*;
 
         // Load vectors
@@ -175,10 +167,7 @@ pub mod avx2 {
     /// - Both input arrays must have exactly 4 elements
     #[target_feature(enable = "avx2")]
     #[inline]
-    pub unsafe fn compute_priorities_4(
-        left_bytes: &[u8; 4],
-        right_bytes: &[u8; 4],
-    ) -> [u64; 4] {
+    pub unsafe fn compute_priorities_4(left_bytes: &[u8; 4], right_bytes: &[u8; 4]) -> [u64; 4] {
         let mut result = [0u64; 4];
 
         for i in 0..4 {
@@ -243,7 +232,9 @@ pub mod avx2 {
                     let idx = i + j;
                     if idx > 0 && idx < weight_vals.len() - 1 {
                         result.kittens.push(idx);
-                        result.merge_left.push(weight_vals[idx - 1] < weight_vals[idx + 1]);
+                        result
+                            .merge_left
+                            .push(weight_vals[idx - 1] < weight_vals[idx + 1]);
                     }
                 }
             }
@@ -256,7 +247,9 @@ pub mod avx2 {
             let w = weight_vals[i];
             if w < weight_vals[i - 1] && w < weight_vals[i + 1] {
                 result.kittens.push(i);
-                result.merge_left.push(weight_vals[i - 1] < weight_vals[i + 1]);
+                result
+                    .merge_left
+                    .push(weight_vals[i - 1] < weight_vals[i + 1]);
             }
             i += 1;
         }
@@ -289,13 +282,11 @@ pub mod neon {
     /// - This function is only available on aarch64 targets where NEON is guaranteed
     /// - All input arrays must have exactly 2 elements
     #[inline]
-    pub unsafe fn find_local_minima_2(
-        prev: &[u64; 2],
-        curr: &[u64; 2],
-        next: &[u64; 2],
-    ) -> u8 {
+    pub unsafe fn find_local_minima_2(prev: &[u64; 2], curr: &[u64; 2], next: &[u64; 2]) -> u8 {
         use std::arch::aarch64::*;
 
+        // SAFETY: NEON is always available on aarch64. All input arrays are
+        // exactly 2 elements (typed as [u64; 2]), so vld1q_u64 loads are valid.
         unsafe {
             // Load vectors (2 x 64-bit)
             let v_prev = vld1q_u64(prev.as_ptr());
@@ -353,6 +344,8 @@ pub mod neon {
             let curr = [weight_vals[i], weight_vals[i + 1]];
             let next = [weight_vals[i + 1], weight_vals[i + 2]];
 
+            // SAFETY: find_local_minima_2 requires aarch64 (we're in a neon module)
+            // and arrays of exactly 2 elements (which we provide as [u64; 2]).
             let mask = unsafe { find_local_minima_2(&prev, &curr, &next) };
 
             for j in 0..2 {
@@ -360,7 +353,9 @@ pub mod neon {
                     let idx = i + j;
                     if idx > 0 && idx < weight_vals.len() - 1 {
                         result.kittens.push(idx);
-                        result.merge_left.push(weight_vals[idx - 1] < weight_vals[idx + 1]);
+                        result
+                            .merge_left
+                            .push(weight_vals[idx - 1] < weight_vals[idx + 1]);
                     }
                 }
             }
@@ -373,7 +368,9 @@ pub mod neon {
             let w = weight_vals[i];
             if w < weight_vals[i - 1] && w < weight_vals[i + 1] {
                 result.kittens.push(i);
-                result.merge_left.push(weight_vals[i - 1] < weight_vals[i + 1]);
+                result
+                    .merge_left
+                    .push(weight_vals[i - 1] < weight_vals[i + 1]);
             }
             i += 1;
         }
@@ -397,6 +394,7 @@ pub fn find_kittens_auto(weights: &[ChunkWeight]) -> KittenScanResult {
 
     #[cfg(target_arch = "aarch64")]
     {
+        // SAFETY: We're on aarch64 where NEON is always available.
         return unsafe { neon::find_kittens_neon(weights) };
     }
 

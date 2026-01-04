@@ -19,17 +19,17 @@ pub struct FileEntry {
 /// Walk a directory and return all file entries
 pub fn walk_directory(root: &Path) -> crate::Result<Vec<FileEntry>> {
     let mut entries = Vec::new();
-    
+
     for entry in WalkDir::new(root).follow_links(false) {
         let entry = entry?;
         let metadata = entry.metadata()?;
-        
+
         let relative_path = entry
             .path()
             .strip_prefix(root)
             .unwrap_or(entry.path())
             .to_path_buf();
-        
+
         entries.push(FileEntry {
             path: entry.path().to_path_buf(),
             relative_path,
@@ -37,7 +37,7 @@ pub fn walk_directory(root: &Path) -> crate::Result<Vec<FileEntry>> {
             is_dir: metadata.is_dir(),
         });
     }
-    
+
     Ok(entries)
 }
 
@@ -53,11 +53,11 @@ mod tests {
     use std::fs::{self, File};
     use std::io::Write;
     use tempfile::tempdir;
-    
+
     #[test]
     fn test_walk() {
         let dir = tempdir().unwrap();
-        
+
         // Create test files
         File::create(dir.path().join("a.txt"))
             .unwrap()
@@ -68,12 +68,12 @@ mod tests {
             .unwrap()
             .write_all(b"world")
             .unwrap();
-        
+
         let entries = walk_directory(dir.path()).unwrap();
-        
+
         let files: Vec<_> = entries.iter().filter(|e| !e.is_dir).collect();
         assert_eq!(files.len(), 2);
-        
+
         let total_size = directory_size(dir.path()).unwrap();
         assert_eq!(total_size, 10); // "hello" + "world"
     }

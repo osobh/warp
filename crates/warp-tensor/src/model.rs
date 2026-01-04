@@ -146,10 +146,7 @@ pub struct ModelVersion {
 
 impl ModelVersion {
     /// Create a new version
-    pub fn new(
-        version: impl Into<String>,
-        checkpoint: impl Into<String>,
-    ) -> Self {
+    pub fn new(version: impl Into<String>, checkpoint: impl Into<String>) -> Self {
         Self {
             version: version.into(),
             checkpoint: checkpoint.into(),
@@ -245,7 +242,8 @@ impl ModelStore {
 
         // Set as current if first version
         if !self.current_versions.contains_key(model_name) {
-            self.current_versions.insert(model_name.to_string(), version_name);
+            self.current_versions
+                .insert(model_name.to_string(), version_name);
         }
 
         Ok(())
@@ -288,7 +286,8 @@ impl ModelStore {
         // Verify version exists
         let _ = self.get_version(model_name, version)?;
 
-        self.current_versions.insert(model_name.to_string(), version.to_string());
+        self.current_versions
+            .insert(model_name.to_string(), version.to_string());
         Ok(())
     }
 
@@ -370,8 +369,7 @@ mod tests {
         store
             .add_version(
                 "my_model",
-                ModelVersion::new("v1", "checkpoint_1")
-                    .with_metric("accuracy", 0.8),
+                ModelVersion::new("v1", "checkpoint_1").with_metric("accuracy", 0.8),
             )
             .unwrap();
 
@@ -415,11 +413,7 @@ mod tests {
                 .tag("transformer")
                 .build(),
         );
-        store.register_model(
-            ModelMetadata::builder("model3")
-                .tag("nlp")
-                .build(),
-        );
+        store.register_model(ModelMetadata::builder("model3").tag("nlp").build());
 
         let nlp_models = store.find_by_tag("nlp");
         assert_eq!(nlp_models.len(), 2);

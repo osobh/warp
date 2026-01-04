@@ -6,8 +6,11 @@ use std::time::{Duration, Instant};
 use tracing::{debug, error, info, warn};
 
 use super::{HealerMetrics, RepairJob, RepairQueue};
-use crate::replication::{DistributedShardManager, ShardDistributionInfo, ShardHealth, ShardKey, ShardLocation, ShardIndex};
 use crate::error::{Error, Result};
+use crate::replication::{
+    DistributedShardManager, ShardDistributionInfo, ShardHealth, ShardIndex, ShardKey,
+    ShardLocation,
+};
 
 /// Result of a repair operation
 #[derive(Debug, Clone)]

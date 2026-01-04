@@ -234,7 +234,7 @@ impl Default for StorageConfig {
             data_dir: home.join(".warp/data"),
             cache_dir: home.join(".warp/cache"),
             max_cache_size_bytes: 10 * 1024 * 1024 * 1024, // 10GB
-            chunk_size: 1024 * 1024,                        // 1MB
+            chunk_size: 1024 * 1024,                       // 1MB
         }
     }
 }
@@ -331,7 +331,8 @@ impl ConfigLoader {
 
     /// Add a file source
     pub fn with_file(mut self, path: impl AsRef<Path>) -> Self {
-        self.sources.push(ConfigSource::File(path.as_ref().to_path_buf()));
+        self.sources
+            .push(ConfigSource::File(path.as_ref().to_path_buf()));
         self
     }
 
@@ -353,8 +354,8 @@ impl ConfigLoader {
                 }
                 ConfigSource::File(path) => {
                     let content = std::fs::read_to_string(path)?;
-                    let file_config: WarpConfig = toml::from_str(&content)
-                        .map_err(|e| ConfigError::Parse(e.to_string()))?;
+                    let file_config: WarpConfig =
+                        toml::from_str(&content).map_err(|e| ConfigError::Parse(e.to_string()))?;
                     config = Self::merge_configs(config, file_config);
                 }
                 ConfigSource::Env => {
@@ -363,8 +364,8 @@ impl ConfigLoader {
                     }
                 }
                 ConfigSource::Memory(content) => {
-                    let mem_config: WarpConfig = toml::from_str(content)
-                        .map_err(|e| ConfigError::Parse(e.to_string()))?;
+                    let mem_config: WarpConfig =
+                        toml::from_str(content).map_err(|e| ConfigError::Parse(e.to_string()))?;
                     config = Self::merge_configs(config, mem_config);
                 }
             }
@@ -382,8 +383,8 @@ impl ConfigLoader {
 
     /// Load configuration from a TOML string
     pub fn load_from_str(toml: &str) -> Result<WarpConfig> {
-        let mut config: WarpConfig = toml::from_str(toml)
-            .map_err(|e| ConfigError::Parse(e.to_string()))?;
+        let mut config: WarpConfig =
+            toml::from_str(toml).map_err(|e| ConfigError::Parse(e.to_string()))?;
 
         // Expand paths
         config.storage.data_dir = Self::expand_path(&config.storage.data_dir);
@@ -412,24 +413,24 @@ impl ConfigLoader {
             config.network.bind_address = val;
         }
         if let Ok(val) = std::env::var(format!("{}_NETWORK_PORT", prefix)) {
-            config.network.port = val.parse().map_err(|_| ConfigError::EnvVar(
-                format!("Invalid port value: {}", val)
-            ))?;
+            config.network.port = val
+                .parse()
+                .map_err(|_| ConfigError::EnvVar(format!("Invalid port value: {}", val)))?;
         }
         if let Ok(val) = std::env::var(format!("{}_NETWORK_QUIC_PORT", prefix)) {
-            config.network.quic_port = val.parse().map_err(|_| ConfigError::EnvVar(
-                format!("Invalid quic_port value: {}", val)
-            ))?;
+            config.network.quic_port = val
+                .parse()
+                .map_err(|_| ConfigError::EnvVar(format!("Invalid quic_port value: {}", val)))?;
         }
         if let Ok(val) = std::env::var(format!("{}_NETWORK_MAX_CONNECTIONS", prefix)) {
-            config.network.max_connections = val.parse().map_err(|_| ConfigError::EnvVar(
-                format!("Invalid max_connections value: {}", val)
-            ))?;
+            config.network.max_connections = val.parse().map_err(|_| {
+                ConfigError::EnvVar(format!("Invalid max_connections value: {}", val))
+            })?;
         }
         if let Ok(val) = std::env::var(format!("{}_NETWORK_CONNECTION_TIMEOUT_MS", prefix)) {
-            config.network.connection_timeout_ms = val.parse().map_err(|_| ConfigError::EnvVar(
-                format!("Invalid connection_timeout_ms value: {}", val)
-            ))?;
+            config.network.connection_timeout_ms = val.parse().map_err(|_| {
+                ConfigError::EnvVar(format!("Invalid connection_timeout_ms value: {}", val))
+            })?;
         }
 
         // Storage overrides
@@ -440,36 +441,36 @@ impl ConfigLoader {
             config.storage.cache_dir = PathBuf::from(val);
         }
         if let Ok(val) = std::env::var(format!("{}_STORAGE_MAX_CACHE_SIZE_BYTES", prefix)) {
-            config.storage.max_cache_size_bytes = val.parse().map_err(|_| ConfigError::EnvVar(
-                format!("Invalid max_cache_size_bytes value: {}", val)
-            ))?;
+            config.storage.max_cache_size_bytes = val.parse().map_err(|_| {
+                ConfigError::EnvVar(format!("Invalid max_cache_size_bytes value: {}", val))
+            })?;
         }
         if let Ok(val) = std::env::var(format!("{}_STORAGE_CHUNK_SIZE", prefix)) {
-            config.storage.chunk_size = val.parse().map_err(|_| ConfigError::EnvVar(
-                format!("Invalid chunk_size value: {}", val)
-            ))?;
+            config.storage.chunk_size = val
+                .parse()
+                .map_err(|_| ConfigError::EnvVar(format!("Invalid chunk_size value: {}", val)))?;
         }
 
         // Scheduler overrides
         if let Ok(val) = std::env::var(format!("{}_SCHEDULER_TICK_INTERVAL_MS", prefix)) {
-            config.scheduler.tick_interval_ms = val.parse().map_err(|_| ConfigError::EnvVar(
-                format!("Invalid tick_interval_ms value: {}", val)
-            ))?;
+            config.scheduler.tick_interval_ms = val.parse().map_err(|_| {
+                ConfigError::EnvVar(format!("Invalid tick_interval_ms value: {}", val))
+            })?;
         }
         if let Ok(val) = std::env::var(format!("{}_SCHEDULER_MAX_CONCURRENT_TRANSFERS", prefix)) {
-            config.scheduler.max_concurrent_transfers = val.parse().map_err(|_| ConfigError::EnvVar(
-                format!("Invalid max_concurrent_transfers value: {}", val)
-            ))?;
+            config.scheduler.max_concurrent_transfers = val.parse().map_err(|_| {
+                ConfigError::EnvVar(format!("Invalid max_concurrent_transfers value: {}", val))
+            })?;
         }
         if let Ok(val) = std::env::var(format!("{}_SCHEDULER_FAILOVER_TIMEOUT_MS", prefix)) {
-            config.scheduler.failover_timeout_ms = val.parse().map_err(|_| ConfigError::EnvVar(
-                format!("Invalid failover_timeout_ms value: {}", val)
-            ))?;
+            config.scheduler.failover_timeout_ms = val.parse().map_err(|_| {
+                ConfigError::EnvVar(format!("Invalid failover_timeout_ms value: {}", val))
+            })?;
         }
         if let Ok(val) = std::env::var(format!("{}_SCHEDULER_USE_GPU", prefix)) {
-            config.scheduler.use_gpu = val.parse().map_err(|_| ConfigError::EnvVar(
-                format!("Invalid use_gpu value: {}", val)
-            ))?;
+            config.scheduler.use_gpu = val
+                .parse()
+                .map_err(|_| ConfigError::EnvVar(format!("Invalid use_gpu value: {}", val)))?;
         }
 
         // Log overrides
@@ -511,8 +512,16 @@ impl Default for ConfigLoader {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use tempfile::NamedTempFile;
     use std::io::Write;
+    use tempfile::NamedTempFile;
+
+    // SAFETY NOTE: This module uses unsafe std::env::set_var/remove_var calls.
+    // These are unsafe in Rust 2024 because they can cause data races if called
+    // concurrently. We mitigate this by:
+    // 1. Using unique env var prefixes per test (NETPORT_, STORDIR_, etc.)
+    // 2. Each test sets and removes its own env vars, avoiding cross-test interference
+    // 3. Tests are run with `cargo test -- --test-threads=1` when debugging env issues
+    // The env var manipulation is used to test config override behavior.
 
     #[test]
     fn test_config_source_variants() {
@@ -547,10 +556,7 @@ mod tests {
         assert_eq!(bool_val.as_boolean(), Some(true));
         assert_eq!(bool_val.as_string(), None);
 
-        let arr_val = ConfigValue::Array(vec![
-            ConfigValue::Integer(1),
-            ConfigValue::Integer(2),
-        ]);
+        let arr_val = ConfigValue::Array(vec![ConfigValue::Integer(1), ConfigValue::Integer(2)]);
         assert!(matches!(arr_val, ConfigValue::Array(_)));
 
         let mut map = HashMap::new();
@@ -904,5 +910,4 @@ mod tests {
             std::env::remove_var("MULTI_LOG_LEVEL");
         }
     }
-
 }

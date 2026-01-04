@@ -6,9 +6,9 @@
 //! The key insight is that by always merging kittens with their lighter neighbor,
 //! we maintain stability and edit locality.
 
+use crate::Result;
 use crate::chunk::ChunkWeight;
 use crate::config::LayerConfig;
-use crate::Result;
 
 /// Balancing phase processor
 pub struct BalancingPhase;
@@ -17,11 +17,7 @@ impl BalancingPhase {
     /// Process boundaries through the balancing phase
     ///
     /// Repeatedly finds and merges kittens until none remain.
-    pub fn process(
-        data: &[u8],
-        boundaries: &[usize],
-        config: &LayerConfig,
-    ) -> Result<Vec<usize>> {
+    pub fn process(data: &[u8], boundaries: &[usize], config: &LayerConfig) -> Result<Vec<usize>> {
         if boundaries.len() < 3 {
             return Ok(boundaries.to_vec());
         }
@@ -105,7 +101,11 @@ impl BalancingPhase {
             let chunk_weight = weights[i + 1];
 
             // Get weights of neighboring chunks
-            let left_weight = if i > 0 { weights[i] } else { ChunkWeight::new(u64::MAX) };
+            let left_weight = if i > 0 {
+                weights[i]
+            } else {
+                ChunkWeight::new(u64::MAX)
+            };
             let right_weight = if i + 2 < weights.len() {
                 weights[i + 2]
             } else {
@@ -124,11 +124,7 @@ impl BalancingPhase {
     }
 
     /// Merge a kitten with its lighter neighbor
-    fn merge_kitten(
-        boundaries: &mut Vec<usize>,
-        weights: &mut Vec<ChunkWeight>,
-        chunk_idx: usize,
-    ) {
+    fn merge_kitten(boundaries: &mut Vec<usize>, weights: &mut Vec<ChunkWeight>, chunk_idx: usize) {
         // chunk_idx is the index of the chunk (0-indexed)
         // The chunk spans boundaries[chunk_idx] to boundaries[chunk_idx+1]
         // We remove one of these boundaries
@@ -139,7 +135,9 @@ impl BalancingPhase {
 
         // Determine which neighbor is lighter
         let left_weight = weights[chunk_idx];
-        let right_weight = weights.get(chunk_idx + 2).copied()
+        let right_weight = weights
+            .get(chunk_idx + 2)
+            .copied()
             .unwrap_or(ChunkWeight::new(u64::MAX));
 
         if left_weight.is_lighter_than(&right_weight) && chunk_idx > 0 {

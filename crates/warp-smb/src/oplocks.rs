@@ -142,12 +142,7 @@ pub struct OplockEntry {
 
 impl OplockEntry {
     /// Create a new oplock entry
-    pub fn new(
-        file_id: u64,
-        session_id: u64,
-        tree_id: u32,
-        level: OplockLevel,
-    ) -> Self {
+    pub fn new(file_id: u64, session_id: u64, tree_id: u32, level: OplockLevel) -> Self {
         Self {
             file_id,
             session_id,
@@ -307,7 +302,8 @@ impl OplockManager {
         }
 
         // Grant new lease
-        let entry = OplockEntry::new_lease(file_id, session_id, tree_id, lease_key, requested_state);
+        let entry =
+            OplockEntry::new_lease(file_id, session_id, tree_id, lease_key, requested_state);
         self.leases.insert(lease_key, entry.clone());
         self.oplocks.insert(file_id, entry);
         Ok(requested_state)

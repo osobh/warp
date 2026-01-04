@@ -7,7 +7,7 @@
 
 use std::fs;
 use tempfile::TempDir;
-use warp_format::{WarpWriter, WarpReader, WarpWriterConfig};
+use warp_format::{WarpReader, WarpWriter, WarpWriterConfig};
 
 fn main() {
     println!("=== Warp Archive Demo ===\n");
@@ -36,10 +36,11 @@ fn main() {
     // Create archive with Zstd compression
     println!("\nCreating archive with Zstd compression...");
     let config = WarpWriterConfig::with_zstd();
-    let mut writer = WarpWriter::create_with_config(&archive_path, config)
-        .expect("Failed to create writer");
+    let mut writer =
+        WarpWriter::create_with_config(&archive_path, config).expect("Failed to create writer");
 
-    writer.add_directory(&source_dir, "")
+    writer
+        .add_directory(&source_dir, "")
         .expect("Failed to add directory");
 
     writer.finish().expect("Failed to finalize archive");
@@ -52,8 +53,7 @@ fn main() {
     println!("\nOpening archive...");
     fs::create_dir_all(&extract_dir).unwrap();
 
-    let reader = WarpReader::open(&archive_path)
-        .expect("Failed to open archive");
+    let reader = WarpReader::open(&archive_path).expect("Failed to open archive");
 
     println!("Archive info:");
     println!("  Encrypted: {}", reader.is_encrypted());
@@ -63,9 +63,7 @@ fn main() {
     // List entries
     println!("\nArchive contents:");
     for entry in reader.list_files() {
-        println!("  {} ({} bytes)",
-                 entry.path,
-                 entry.size);
+        println!("  {} ({} bytes)", entry.path, entry.size);
     }
 
     // Get stats
@@ -78,7 +76,10 @@ fn main() {
     // Verify integrity
     println!("\nVerifying integrity...");
     let valid = reader.verify().expect("Verification failed");
-    println!("  Merkle verification: {}", if valid { "PASSED" } else { "FAILED" });
+    println!(
+        "  Merkle verification: {}",
+        if valid { "PASSED" } else { "FAILED" }
+    );
 
     // Extract all files
     println!("\nExtracting files...");

@@ -84,28 +84,25 @@ impl ErasureDecoder {
         }
 
         // Need to reconstruct - use the decoder
-        let mut decoder = ReedSolomonDecoder::new(
-            data_count,
-            self.config.parity_shards(),
-            shard_size,
-        )
-        .map_err(|e| Error::EncodingError(format!("Failed to create decoder: {}", e)))?;
+        let mut decoder =
+            ReedSolomonDecoder::new(data_count, self.config.parity_shards(), shard_size)
+                .map_err(|e| Error::EncodingError(format!("Failed to create decoder: {}", e)))?;
 
         // Add original shards (data shards that are present)
         for (i, shard) in shards[..data_count].iter().enumerate() {
             if let Some(data) = shard {
-                decoder
-                    .add_original_shard(i, data)
-                    .map_err(|e| Error::EncodingError(format!("Failed to add original shard: {}", e)))?;
+                decoder.add_original_shard(i, data).map_err(|e| {
+                    Error::EncodingError(format!("Failed to add original shard: {}", e))
+                })?;
             }
         }
 
         // Add recovery shards (parity shards that are present)
         for (i, shard) in shards[data_count..].iter().enumerate() {
             if let Some(data) = shard {
-                decoder
-                    .add_recovery_shard(i, data)
-                    .map_err(|e| Error::EncodingError(format!("Failed to add recovery shard: {}", e)))?;
+                decoder.add_recovery_shard(i, data).map_err(|e| {
+                    Error::EncodingError(format!("Failed to add recovery shard: {}", e))
+                })?;
             }
         }
 
@@ -266,11 +263,7 @@ mod tests {
 
         for pattern in loss_patterns {
             let recovered = encode_and_decode(config.clone(), &data, &pattern).unwrap();
-            assert_eq!(
-                recovered, data,
-                "Failed with loss pattern: {:?}",
-                pattern
-            );
+            assert_eq!(recovered, data, "Failed with loss pattern: {:?}", pattern);
         }
     }
 }

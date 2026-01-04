@@ -21,11 +21,11 @@ impl DerivedKey {
 /// Derive a key from a password using Argon2id
 pub fn derive_key(password: &[u8], salt: &[u8]) -> Result<DerivedKey> {
     let mut output = [0u8; 32];
-    
+
     Argon2::default()
         .hash_password_into(password, salt, &mut output)
         .map_err(|e| Error::InvalidKey(e.to_string()))?;
-    
+
     Ok(DerivedKey(output))
 }
 
@@ -40,15 +40,15 @@ pub fn generate_salt() -> [u8; 16] {
 #[cfg(test)]
 mod tests {
     use super::*;
-    
+
     #[test]
     fn test_derive() {
         let password = b"test password";
         let salt = generate_salt();
-        
+
         let key1 = derive_key(password, &salt).unwrap();
         let key2 = derive_key(password, &salt).unwrap();
-        
+
         assert_eq!(key1.0, key2.0);
     }
 }

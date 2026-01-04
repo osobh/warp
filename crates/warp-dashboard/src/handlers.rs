@@ -9,14 +9,14 @@ use crate::templates::{
 use crate::types::{DashboardState, EdgeView, MetricsSummary, TransferView};
 use askama::Template;
 use axum::{
+    Json,
     extract::{Path, State},
     http::StatusCode,
-    response::{sse::Event, Html, IntoResponse, Response, Sse},
-    Json,
+    response::{Html, IntoResponse, Response, Sse, sse::Event},
 };
 use std::sync::Arc;
 use tokio::sync::RwLock;
-use tokio_stream::{wrappers::BroadcastStream, StreamExt};
+use tokio_stream::{StreamExt, wrappers::BroadcastStream};
 
 /// Shared application state
 #[derive(Clone)]
@@ -185,11 +185,8 @@ pub async fn sse_handler(
     State(app_state): State<AppState>,
 ) -> Sse<impl tokio_stream::Stream<Item = Result<Event, std::convert::Infallible>>> {
     let rx = app_state.update_tx.subscribe();
-    let stream = BroadcastStream::new(rx).map(|_| {
-        Ok(Event::default()
-            .event("update")
-            .data("State updated"))
-    });
+    let stream = BroadcastStream::new(rx)
+        .map(|_| Ok(Event::default().event("update").data("State updated")));
 
     Sse::new(stream).keep_alive(
         axum::response::sse::KeepAlive::new()
@@ -423,10 +420,7 @@ mod tests {
         app_state.notify();
 
         // Should receive notification
-        let result = tokio::time::timeout(
-            std::time::Duration::from_millis(100),
-            rx.recv()
-        ).await;
+        let result = tokio::time::timeout(std::time::Duration::from_millis(100), rx.recv()).await;
         assert!(result.is_ok());
     }
 }

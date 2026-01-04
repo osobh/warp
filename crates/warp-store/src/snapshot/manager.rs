@@ -1,8 +1,8 @@
 //! Snapshot management and lifecycle
 
 use std::collections::{HashMap, HashSet};
-use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Duration, Instant, SystemTime};
 
 use dashmap::DashMap;
@@ -145,9 +145,7 @@ impl Snapshot {
 
     /// Get snapshot age
     pub fn age(&self) -> Duration {
-        self.created_at
-            .elapsed()
-            .unwrap_or(Duration::ZERO)
+        self.created_at.elapsed().unwrap_or(Duration::ZERO)
     }
 }
 
@@ -432,24 +430,23 @@ impl SnapshotManager {
             stats.active_snapshots += 1;
         }
 
-        info!(
-            bucket,
-            name,
-            snapshot_id,
-            "Snapshot created"
-        );
+        info!(bucket, name, snapshot_id, "Snapshot created");
 
         Ok(self.snapshots.get(&snapshot_id).unwrap().clone())
     }
 
     /// Delete a snapshot
     pub async fn delete_snapshot(&self, snapshot_id: SnapshotId) -> Result<(), String> {
-        let snapshot = self.snapshots.get(&snapshot_id)
+        let snapshot = self
+            .snapshots
+            .get(&snapshot_id)
             .ok_or_else(|| format!("Snapshot {} not found", snapshot_id))?;
 
         if !snapshot.can_delete() {
-            return Err(format!("Snapshot {} cannot be deleted (state: {:?})",
-                snapshot_id, snapshot.state));
+            return Err(format!(
+                "Snapshot {} cannot be deleted (state: {:?})",
+                snapshot_id, snapshot.state
+            ));
         }
 
         let bucket = snapshot.bucket.clone();
@@ -491,14 +488,17 @@ impl SnapshotManager {
         snapshot_id: SnapshotId,
         options: RestoreOptions,
     ) -> Result<RestoreResult, String> {
-        let snapshot = self.snapshots.get(&snapshot_id)
+        let snapshot = self
+            .snapshots
+            .get(&snapshot_id)
             .ok_or_else(|| format!("Snapshot {} not found", snapshot_id))?;
 
         if !snapshot.is_active() {
             return Err(format!("Snapshot {} is not active", snapshot_id));
         }
 
-        let target_bucket = options.target_bucket
+        let target_bucket = options
+            .target_bucket
             .clone()
             .unwrap_or_else(|| snapshot.bucket.clone());
 
@@ -580,15 +580,13 @@ impl SnapshotManager {
 
     /// Find the latest active snapshot for a bucket
     pub fn find_latest_snapshot(&self, bucket: &str) -> Option<SnapshotId> {
-        self.bucket_snapshots
-            .get(bucket)
-            .and_then(|ids| {
-                ids.iter()
-                    .filter_map(|id| self.snapshots.get(id))
-                    .filter(|s| s.is_active())
-                    .max_by_key(|s| s.created_at)
-                    .map(|s| s.id)
-            })
+        self.bucket_snapshots.get(bucket).and_then(|ids| {
+            ids.iter()
+                .filter_map(|id| self.snapshots.get(id))
+                .filter(|s| s.is_active())
+                .max_by_key(|s| s.created_at)
+                .map(|s| s.id)
+        })
     }
 
     /// Diff two snapshots
@@ -597,9 +595,13 @@ impl SnapshotManager {
         from_id: SnapshotId,
         to_id: SnapshotId,
     ) -> Result<SnapshotDiff, String> {
-        let from = self.snapshots.get(&from_id)
+        let from = self
+            .snapshots
+            .get(&from_id)
             .ok_or_else(|| format!("Snapshot {} not found", from_id))?;
-        let to = self.snapshots.get(&to_id)
+        let to = self
+            .snapshots
+            .get(&to_id)
             .ok_or_else(|| format!("Snapshot {} not found", to_id))?;
 
         if from.bucket != to.bucket {
@@ -626,12 +628,14 @@ impl SnapshotManager {
             .collect();
 
         // Calculate byte changes
-        let bytes_added: u64 = added.iter()
+        let bytes_added: u64 = added
+            .iter()
             .filter_map(|key| to.object_versions.get(key))
             .map(|v| v.size)
             .sum();
 
-        let bytes_removed: u64 = removed.iter()
+        let bytes_removed: u64 = removed
+            .iter()
             .filter_map(|key| from.object_versions.get(key))
             .map(|v| v.size)
             .sum();
@@ -649,7 +653,9 @@ impl SnapshotManager {
 
     /// Add a snapshot schedule
     pub fn add_schedule(&self, schedule: SnapshotSchedule) {
-        self.schedules.write().insert(schedule.name.clone(), schedule);
+        self.schedules
+            .write()
+            .insert(schedule.name.clone(), schedule);
     }
 
     /// Remove a schedule
@@ -673,11 +679,13 @@ impl SnapshotManager {
         let mut results = Vec::new();
 
         for schedule in due_schedules {
-            let result = self.create_snapshot(
-                &schedule.bucket,
-                &format!("scheduled-{}", chrono::Utc::now().timestamp()),
-                schedule.prefix.as_deref(),
-            ).await;
+            let result = self
+                .create_snapshot(
+                    &schedule.bucket,
+                    &format!("scheduled-{}", chrono::Utc::now().timestamp()),
+                    schedule.prefix.as_deref(),
+                )
+                .await;
 
             // Mark as executed
             if let Some(mut s) = self.schedules.write().get_mut(&schedule.name) {
@@ -686,7 +694,8 @@ impl SnapshotManager {
 
             // Prune old snapshots if needed
             if result.is_ok() && schedule.keep_count > 0 {
-                self.prune_bucket_snapshots(&schedule.bucket, schedule.keep_count).await;
+                self.prune_bucket_snapshots(&schedule.bucket, schedule.keep_count)
+                    .await;
             }
 
             results.push(result);
@@ -720,7 +729,8 @@ impl SnapshotManager {
     pub async fn cleanup_expired(&self) {
         let now = SystemTime::now();
 
-        let expired: Vec<_> = self.snapshots
+        let expired: Vec<_> = self
+            .snapshots
             .iter()
             .filter(|r| {
                 if let Some(ref retention) = r.retention {
@@ -804,7 +814,10 @@ mod tests {
     async fn test_create_snapshot() {
         let manager = SnapshotManager::new(SnapshotConfig::default());
 
-        let snapshot = manager.create_snapshot("test-bucket", "snap1", None).await.unwrap();
+        let snapshot = manager
+            .create_snapshot("test-bucket", "snap1", None)
+            .await
+            .unwrap();
 
         assert_eq!(snapshot.bucket, "test-bucket");
         assert_eq!(snapshot.name, "snap1");
@@ -815,7 +828,10 @@ mod tests {
     async fn test_delete_snapshot() {
         let manager = SnapshotManager::new(SnapshotConfig::default());
 
-        let snapshot = manager.create_snapshot("test-bucket", "snap1", None).await.unwrap();
+        let snapshot = manager
+            .create_snapshot("test-bucket", "snap1", None)
+            .await
+            .unwrap();
         let id = snapshot.id;
 
         assert!(manager.get_snapshot(id).is_some());
@@ -829,9 +845,18 @@ mod tests {
     async fn test_list_snapshots() {
         let manager = SnapshotManager::new(SnapshotConfig::default());
 
-        manager.create_snapshot("bucket1", "snap1", None).await.unwrap();
-        manager.create_snapshot("bucket1", "snap2", None).await.unwrap();
-        manager.create_snapshot("bucket2", "snap3", None).await.unwrap();
+        manager
+            .create_snapshot("bucket1", "snap1", None)
+            .await
+            .unwrap();
+        manager
+            .create_snapshot("bucket1", "snap2", None)
+            .await
+            .unwrap();
+        manager
+            .create_snapshot("bucket2", "snap3", None)
+            .await
+            .unwrap();
 
         let bucket1_snaps = manager.list_snapshots("bucket1");
         assert_eq!(bucket1_snaps.len(), 2);
@@ -860,7 +885,10 @@ mod tests {
 
         rt.block_on(async {
             let manager = SnapshotManager::new(SnapshotConfig::default());
-            let snapshot = manager.create_snapshot("bucket", "snap", None).await.unwrap();
+            let snapshot = manager
+                .create_snapshot("bucket", "snap", None)
+                .await
+                .unwrap();
             let id = snapshot.id;
 
             // Lock

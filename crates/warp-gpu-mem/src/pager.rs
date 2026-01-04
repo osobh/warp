@@ -1,8 +1,8 @@
 //! GPU pager - handles page faults and memory management
 
 use std::collections::VecDeque;
-use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Instant;
 
 use dashmap::DashMap;
@@ -232,7 +232,8 @@ impl GpuPager {
         let tensor_id = tensor.id();
         if let Some(state) = self.get_state(tensor_id) {
             if state == PageState::Resident {
-                self.gpu_memory_used.fetch_sub(tensor.size_bytes(), Ordering::Relaxed);
+                self.gpu_memory_used
+                    .fetch_sub(tensor.size_bytes(), Ordering::Relaxed);
             }
         }
         self.page_states.insert(tensor_id, PageState::Invalid);

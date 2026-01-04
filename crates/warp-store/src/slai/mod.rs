@@ -39,6 +39,6 @@ mod engine;
 mod predictor;
 mod tracker;
 
-pub use engine::{PlacementEngine, PlacementDecision, PlacementHint};
-pub use predictor::{WorkloadPredictor, WorkloadType, PredictionResult};
-pub use tracker::{AccessTracker, AccessPattern, AccessStats};
+pub use engine::{PlacementDecision, PlacementEngine, PlacementHint};
+pub use predictor::{PredictionResult, WorkloadPredictor, WorkloadType};
+pub use tracker::{AccessPattern, AccessStats, AccessTracker};

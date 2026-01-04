@@ -1,6 +1,6 @@
 //! GPU and host buffer abstractions with lifetime safety
 
-use crate::{Error, Result, GpuContext};
+use crate::{Error, GpuContext, Result};
 use cudarc::driver::{CudaContext, CudaSlice, CudaStream, DeviceRepr, ValidAsZeroBits};
 use std::sync::Arc;
 
@@ -28,11 +28,7 @@ impl<T: DeviceRepr + ValidAsZeroBits + Unpin + Clone + Default> GpuBuffer<T> {
         let stream = context.stream().clone();
         let slice = stream.alloc_zeros::<T>(len)?;
 
-        Ok(Self {
-            slice,
-            ctx,
-            stream,
-        })
+        Ok(Self { slice, ctx, stream })
     }
 
     /// Create buffer from existing CudaSlice
@@ -77,6 +73,13 @@ impl<T: DeviceRepr + ValidAsZeroBits + Unpin + Clone + Default> GpuBuffer<T> {
     /// # Errors
     /// Returns error if src.len() != self.len or transfer fails
     pub fn copy_from_host(&mut self, src: &[T]) -> Result<()> {
+        debug_assert_eq!(
+            src.len(),
+            self.len(),
+            "copy_from_host: source length {} must match buffer length {}",
+            src.len(),
+            self.len()
+        );
         if src.len() != self.len() {
             return Err(Error::InvalidOperation(format!(
                 "Source length {} does not match buffer length {}",

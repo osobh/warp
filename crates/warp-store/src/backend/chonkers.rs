@@ -32,8 +32,8 @@ use tokio::io::AsyncWriteExt;
 use tracing::{debug, trace};
 
 use warp_chonkers::{
-    ChunkId, ChunkRegistry, Chonkers, ChonkersConfig, MemoryChunkStore,
-    MemoryTreeStore, TreeStore, VersionId, VersionTimeline,
+    Chonkers, ChonkersConfig, ChunkId, ChunkRegistry, MemoryChunkStore, MemoryTreeStore, TreeStore,
+    VersionId, VersionTimeline,
 };
 
 #[cfg(feature = "blind-dedup")]
@@ -297,17 +297,15 @@ impl ChonkersBackend {
         DedupStats {
             total_chunks: self.chunk_cache.len(),
             unique_chunks: self.chunk_registry.chunk_count(),
-            cache_size_bytes: self
-                .chunk_cache
-                .iter()
-                .map(|e| e.value().len())
-                .sum(),
+            cache_size_bytes: self.chunk_cache.iter().map(|e| e.value().len()).sum(),
         }
     }
 
     /// Run garbage collection on unreferenced chunks
     pub async fn run_gc(&self) -> Result<GcResult> {
-        let stats = self.chunk_registry.collect_garbage()
+        let stats = self
+            .chunk_registry
+            .collect_garbage()
             .map_err(|e| Error::Backend(format!("Garbage collection failed: {}", e)))?;
 
         // Delete unreferenced chunks from disk
@@ -487,12 +485,7 @@ impl StorageBackend for ChonkersBackend {
         Ok(ObjectData::from(data))
     }
 
-    async fn put(
-        &self,
-        key: &ObjectKey,
-        data: ObjectData,
-        opts: PutOptions,
-    ) -> Result<ObjectMeta> {
+    async fn put(&self, key: &ObjectKey, data: ObjectData, opts: PutOptions) -> Result<ObjectMeta> {
         let index_path = self.index_path(key);
         trace!(path = %index_path.display(), size = data.len(), "Writing object");
 
@@ -602,11 +595,7 @@ impl StorageBackend for ChonkersBackend {
             bucket.total_size = bucket.total_size.saturating_sub(index.data_size as u64);
         }
 
-        debug!(
-            bucket = key.bucket(),
-            key = key.key(),
-            "Deleted object"
-        );
+        debug!(bucket = key.bucket(), key = key.key(), "Deleted object");
 
         Ok(())
     }
@@ -779,7 +768,10 @@ impl StorageBackend for ChonkersBackend {
         let now = chrono::Utc::now();
 
         // Create upload directory
-        let upload_dir = self.bucket_path(key.bucket()).join(".uploads").join(&upload_id);
+        let upload_dir = self
+            .bucket_path(key.bucket())
+            .join(".uploads")
+            .join(&upload_id);
         fs::create_dir_all(&upload_dir).await?;
 
         debug!(
@@ -1002,7 +994,11 @@ mod tests {
         let key = ObjectKey::new("test", "large.bin").unwrap();
 
         backend
-            .put(&key, ObjectData::from(large_data.clone()), PutOptions::default())
+            .put(
+                &key,
+                ObjectData::from(large_data.clone()),
+                PutOptions::default(),
+            )
             .await
             .unwrap();
 
@@ -1022,7 +1018,10 @@ mod tests {
         for i in 0..5 {
             let key = ObjectKey::new("test", &format!("data/{}.txt", i)).unwrap();
             let data = ObjectData::from(format!("content {}", i).into_bytes());
-            backend.put(&key, data, PutOptions::default()).await.unwrap();
+            backend
+                .put(&key, data, PutOptions::default())
+                .await
+                .unwrap();
         }
 
         // List all

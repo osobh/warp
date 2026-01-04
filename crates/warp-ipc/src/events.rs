@@ -227,7 +227,10 @@ impl IpcEvent {
     pub fn is_system_event(&self) -> bool {
         matches!(
             self,
-            Self::SystemStarting | Self::SystemReady { .. } | Self::SystemShutdown { .. } | Self::Heartbeat { .. }
+            Self::SystemStarting
+                | Self::SystemReady { .. }
+                | Self::SystemShutdown { .. }
+                | Self::Heartbeat { .. }
         )
     }
 }
@@ -297,7 +300,11 @@ mod tests {
         let json = r#"{"event":"TransferCompleted","data":{"transfer_id":"abc-123","total_bytes":10000000,"duration_seconds":100,"avg_speed_bps":100000}}"#;
         let event: IpcEvent = serde_json::from_str(json).unwrap();
         match event {
-            IpcEvent::TransferCompleted { transfer_id, total_bytes, .. } => {
+            IpcEvent::TransferCompleted {
+                transfer_id,
+                total_bytes,
+                ..
+            } => {
                 assert_eq!(transfer_id, "abc-123");
                 assert_eq!(total_bytes, 10_000_000);
             }
@@ -389,7 +396,9 @@ mod tests {
     fn test_event_batch_serialization() {
         let batch = EventBatch::new(vec![
             IpcEvent::SystemStarting,
-            IpcEvent::SystemReady { version: "1.0.0".to_string() },
+            IpcEvent::SystemReady {
+                version: "1.0.0".to_string(),
+            },
         ]);
 
         let json = serde_json::to_string(&batch).unwrap();

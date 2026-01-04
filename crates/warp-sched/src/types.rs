@@ -522,9 +522,9 @@ impl SchedulerMetrics {
         if self.total_chunks == 0 {
             return 0.0;
         }
-        let completed = self.total_chunks.saturating_sub(
-            self.scheduled_chunks + self.active_transfers + self.failed_chunks,
-        );
+        let completed = self
+            .total_chunks
+            .saturating_sub(self.scheduled_chunks + self.active_transfers + self.failed_chunks);
         completed as f64 / self.total_chunks as f64
     }
 
@@ -557,7 +557,10 @@ mod tests {
         let mut hash = [0u8; 32];
         hash[..8].copy_from_slice(&[0x12, 0x34, 0x56, 0x78, 0x9a, 0xbc, 0xde, 0xf0]);
         let id = ChunkId::from_hash(&hash);
-        assert_eq!(id.get(), u64::from_le_bytes([0x12, 0x34, 0x56, 0x78, 0x9a, 0xbc, 0xde, 0xf0]));
+        assert_eq!(
+            id.get(),
+            u64::from_le_bytes([0x12, 0x34, 0x56, 0x78, 0x9a, 0xbc, 0xde, 0xf0])
+        );
     }
 
     #[test]
@@ -682,7 +685,13 @@ mod tests {
 
     #[test]
     fn test_assignment_validation() {
-        let assignment = Assignment::new([0; 32], 1024, vec![EdgeIdx::new(0), EdgeIdx::new(1)], 100, 50);
+        let assignment = Assignment::new(
+            [0; 32],
+            1024,
+            vec![EdgeIdx::new(0), EdgeIdx::new(1)],
+            100,
+            50,
+        );
         assert_eq!(assignment.edge_count(), 2);
         assert!(assignment.is_valid());
         let invalid = Assignment::new([0; 32], 1024, vec![], 100, 50);
@@ -723,16 +732,40 @@ mod tests {
         assert_eq!(empty_batch.len(), 0);
         let mut batch = AssignmentBatch::empty(1);
         assert_eq!(batch.len(), 0);
-        batch.push(Assignment::new([0; 32], 1024, vec![EdgeIdx::new(0)], 100, 50));
+        batch.push(Assignment::new(
+            [0; 32],
+            1024,
+            vec![EdgeIdx::new(0)],
+            100,
+            50,
+        ));
         assert_eq!(batch.len(), 1);
     }
 
     #[test]
     fn test_assignment_batch_total_duration() {
         let mut batch = AssignmentBatch::empty(1);
-        batch.push(Assignment::new([0; 32], 1024, vec![EdgeIdx::new(0)], 100, 50));
-        batch.push(Assignment::new([1; 32], 2048, vec![EdgeIdx::new(1)], 150, 75));
-        batch.push(Assignment::new([2; 32], 4096, vec![EdgeIdx::new(2)], 200, 100));
+        batch.push(Assignment::new(
+            [0; 32],
+            1024,
+            vec![EdgeIdx::new(0)],
+            100,
+            50,
+        ));
+        batch.push(Assignment::new(
+            [1; 32],
+            2048,
+            vec![EdgeIdx::new(1)],
+            150,
+            75,
+        ));
+        batch.push(Assignment::new(
+            [2; 32],
+            4096,
+            vec![EdgeIdx::new(2)],
+            200,
+            100,
+        ));
 
         assert_eq!(batch.total_estimated_duration_ms(), 225);
     }
@@ -761,7 +794,8 @@ mod tests {
         let future_deadline = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap()
-            .as_millis() as u64 + 10000;
+            .as_millis() as u64
+            + 10000;
         let request = ScheduleRequest::with_deadline(vec![[0; 32]], 100, 2, future_deadline);
         assert!(!request.is_past_deadline());
         let no_deadline = ScheduleRequest::new(vec![[0; 32]], 100, 2);
@@ -769,7 +803,8 @@ mod tests {
         let future_deadline = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap()
-            .as_millis() as u64 + 5000;
+            .as_millis() as u64
+            + 5000;
         let with_deadline = ScheduleRequest::with_deadline(vec![[0; 32]], 100, 2, future_deadline);
         let remaining = with_deadline.time_remaining_ms().unwrap();
         assert!(remaining > 0 && remaining <= 5000);
@@ -788,8 +823,12 @@ mod tests {
         let metrics = SchedulerMetrics::default();
         assert_eq!(metrics.total_chunks, 0);
         let mut metrics = SchedulerMetrics {
-            total_chunks: 100, scheduled_chunks: 50, active_transfers: 25,
-            failed_chunks: 5, avg_schedule_time_us: 1000, avg_failover_time_us: 5000,
+            total_chunks: 100,
+            scheduled_chunks: 50,
+            active_transfers: 25,
+            failed_chunks: 5,
+            avg_schedule_time_us: 1000,
+            avg_failover_time_us: 5000,
             tick_count: 1000,
         };
         metrics.reset();
@@ -831,8 +870,12 @@ mod tests {
     #[test]
     fn test_scheduler_metrics_serialization() {
         let metrics = SchedulerMetrics {
-            total_chunks: 1000, scheduled_chunks: 200, active_transfers: 50,
-            failed_chunks: 10, avg_schedule_time_us: 5000, avg_failover_time_us: 25000,
+            total_chunks: 1000,
+            scheduled_chunks: 200,
+            active_transfers: 50,
+            failed_chunks: 10,
+            avg_schedule_time_us: 5000,
+            avg_failover_time_us: 25000,
             tick_count: 5000,
         };
         let serialized = rmp_serde::to_vec(&metrics).unwrap();

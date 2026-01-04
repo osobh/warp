@@ -18,12 +18,10 @@ pub mod lease;
 pub mod lock;
 pub mod session;
 
-pub use acl::{AclEntry, AclTranslator, AccessType, AclPermissions, PrincipalId, UnifiedAcl};
-pub use delegation::{Delegation, DelegationManager, DelegationType, DelegationState};
+pub use acl::{AccessType, AclEntry, AclPermissions, AclTranslator, PrincipalId, UnifiedAcl};
+pub use delegation::{Delegation, DelegationManager, DelegationState, DelegationType};
 pub use error::{GatewayError, GatewayResult};
 pub use filehandle::{FileHandle, FileHandleVersion};
 pub use lease::{Lease, LeaseManager, LeaseState};
-pub use lock::{
-    ByteRangeLock, InMemoryLockManager, LockError, LockManager, LockMode, LockToken,
-};
+pub use lock::{ByteRangeLock, InMemoryLockManager, LockError, LockManager, LockMode, LockToken};
 pub use session::{ClientId, ClientSession, SessionConfig, SessionId, SessionManager};

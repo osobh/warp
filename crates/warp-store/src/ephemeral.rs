@@ -219,9 +219,9 @@ impl EphemeralToken {
         ip_restrictions: Option<Vec<IpNet>>,
         rate_limit: Option<RateLimit>,
     ) -> Result<Self> {
-        let expires_at = Utc::now() + Duration::from_std(ttl).map_err(|_| {
-            Error::TokenEncoding("invalid TTL duration".to_string())
-        })?;
+        let expires_at = Utc::now()
+            + Duration::from_std(ttl)
+                .map_err(|_| Error::TokenEncoding("invalid TTL duration".to_string()))?;
 
         let payload = TokenPayload {
             scope,
@@ -246,11 +246,7 @@ impl EphemeralToken {
     /// # Arguments
     /// * `verifying_key` - The Ed25519 verifying key
     /// * `request_ip` - Optional IP address of the requester
-    pub fn verify(
-        &self,
-        verifying_key: &VerifyingKey,
-        request_ip: Option<IpAddr>,
-    ) -> Result<()> {
+    pub fn verify(&self, verifying_key: &VerifyingKey, request_ip: Option<IpAddr>) -> Result<()> {
         // Check expiration
         let now = Utc::now().timestamp();
         if now > self.payload.expires_at {
@@ -286,8 +282,7 @@ impl EphemeralToken {
 
     /// Get the expiration time
     pub fn expires_at(&self) -> DateTime<Utc> {
-        DateTime::from_timestamp(self.payload.expires_at, 0)
-            .unwrap_or_else(Utc::now)
+        DateTime::from_timestamp(self.payload.expires_at, 0).unwrap_or_else(Utc::now)
     }
 
     /// Get IP restrictions
@@ -339,7 +334,9 @@ impl EphemeralToken {
         let bytes = base64::engine::general_purpose::URL_SAFE_NO_PAD.decode(s)?;
         let encoded: EncodedToken = rmp_serde::from_slice(&bytes)?;
 
-        let sig_bytes: [u8; 64] = encoded.signature.try_into()
+        let sig_bytes: [u8; 64] = encoded
+            .signature
+            .try_into()
             .map_err(|_| Error::TokenEncoding("invalid signature length".to_string()))?;
         let signature = Signature::from_bytes(&sig_bytes);
 
@@ -404,7 +401,10 @@ mod tests {
 
         // Wait for the token to expire (1 second is enough to guarantee expiration)
         std::thread::sleep(std::time::Duration::from_secs(1));
-        assert!(matches!(token.verify(&verifying_key, None), Err(Error::TokenExpired)));
+        assert!(matches!(
+            token.verify(&verifying_key, None),
+            Err(Error::TokenExpired)
+        ));
     }
 
     #[test]

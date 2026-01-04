@@ -146,6 +146,14 @@ impl ChunkIndex {
             entries.push(ChunkEntry::from_bytes(&entry_bytes)?);
         }
 
+        debug_assert_eq!(
+            entries.len(),
+            num_entries,
+            "parsed entry count {} does not match expected count {}",
+            entries.len(),
+            num_entries
+        );
+
         Ok(Self { entries })
     }
 }
@@ -326,5 +334,66 @@ mod tests {
         let result = ChunkIndex::from_bytes(&bytes);
         assert!(result.is_err());
     }
+}
 
+#[cfg(test)]
+mod proptest_tests {
+    use super::*;
+    use proptest::prelude::*;
+
+    fn arb_chunk_entry() -> impl Strategy<Value = ChunkEntry> {
+        (
+            any::<u64>(),                        // offset
+            any::<u32>(),                        // compressed_size
+            any::<u32>(),                        // original_size
+            prop::array::uniform32(any::<u8>()), // hash
+            any::<u8>(),                         // flags
+        )
+            .prop_map(
+                |(offset, compressed_size, original_size, hash, flags)| ChunkEntry {
+                    offset,
+                    compressed_size,
+                    original_size,
+                    hash,
+                    flags,
+                    _reserved: [0u8; 7],
+                },
+            )
+    }
+
+    proptest! {
+        /// Property: ChunkEntry encode/decode roundtrip
+        #[test]
+        fn chunk_entry_roundtrip(entry in arb_chunk_entry()) {
+            let bytes = entry.to_bytes();
+            let decoded = ChunkEntry::from_bytes(&bytes).unwrap();
+
+            prop_assert_eq!(decoded.offset, entry.offset);
+            prop_assert_eq!(decoded.compressed_size, entry.compressed_size);
+            prop_assert_eq!(decoded.original_size, entry.original_size);
+            prop_assert_eq!(decoded.hash, entry.hash);
+            prop_assert_eq!(decoded.flags, entry.flags);
+        }
+
+        /// Property: ChunkIndex encode/decode roundtrip
+        #[test]
+        fn chunk_index_roundtrip(
+            entries in prop::collection::vec(arb_chunk_entry(), 0..100)
+        ) {
+            let mut index = ChunkIndex::new();
+            for entry in &entries {
+                index.push(*entry);
+            }
+
+            let bytes = index.to_bytes();
+            let decoded = ChunkIndex::from_bytes(&bytes).unwrap();
+
+            prop_assert_eq!(decoded.len(), entries.len());
+            for (i, entry) in entries.iter().enumerate() {
+                let dec = decoded.get(i).unwrap();
+                prop_assert_eq!(dec.offset, entry.offset);
+                prop_assert_eq!(dec.hash, entry.hash);
+            }
+        }
+    }
 }

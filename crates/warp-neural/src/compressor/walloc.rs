@@ -37,7 +37,7 @@ impl Default for QualityConfig {
     fn default() -> Self {
         Self {
             allow_lossy: true,
-            min_psnr: 30.0,     // Good quality
+            min_psnr: 30.0,    // Good quality
             target_ratio: 0.0, // Use model default
             quantization_bits: 8,
         }
@@ -131,7 +131,10 @@ impl WallocCompressor {
         let (encoder, decoder, models_ready) = match Self::load_models(&config, use_cuda) {
             Ok((enc, dec)) => (Some(enc), Some(dec), true),
             Err(e) => {
-                warn!("Failed to load neural models: {}. Using fallback compression.", e);
+                warn!(
+                    "Failed to load neural models: {}. Using fallback compression.",
+                    e
+                );
                 (None, None, false)
             }
         };
@@ -217,10 +220,7 @@ impl WallocCompressor {
         // Step 3: Run encoder inference
         let latent = self.encode(encoder, &transformed)?;
 
-        trace!(
-            latent_size = latent.len(),
-            "Encoded to latent space"
-        );
+        trace!(latent_size = latent.len(), "Encoded to latent space");
 
         // Step 4: Quantize latent space
         let quantized = self.quantize(&latent)?;
@@ -638,7 +638,10 @@ mod tests {
 
         for (a, b) in latent.iter().zip(dequantized.iter()) {
             // Allow some quantization error
-            assert!((a - b).abs() < 0.01, "Quantization roundtrip error too large");
+            assert!(
+                (a - b).abs() < 0.01,
+                "Quantization roundtrip error too large"
+            );
         }
     }
 

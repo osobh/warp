@@ -4,7 +4,7 @@
 //! from overloaded edges to underloaded ones. Uses CPU implementation with
 //! GPU wrapper that delegates to CPU for cudarc 0.18.1 compatibility.
 
-use crate::{ChunkId, EdgeIdx, CpuStateBuffers};
+use crate::{ChunkId, CpuStateBuffers, EdgeIdx};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
@@ -146,7 +146,9 @@ impl RebalancePlan {
     /// Sort operations by estimated benefit (highest first)
     pub fn sort_by_benefit(&mut self) {
         self.operations.sort_by(|a, b| {
-            b.estimated_benefit.partial_cmp(&a.estimated_benefit).unwrap_or(std::cmp::Ordering::Equal)
+            b.estimated_benefit
+                .partial_cmp(&a.estimated_benefit)
+                .unwrap_or(std::cmp::Ordering::Equal)
         });
     }
 }
@@ -339,7 +341,8 @@ impl CpuLoadBalancer {
 
         // Limit to max_migrations_per_tick
         if plan.operations.len() > self.config.max_migrations_per_tick {
-            plan.operations.truncate(self.config.max_migrations_per_tick);
+            plan.operations
+                .truncate(self.config.max_migrations_per_tick);
         }
 
         plan
@@ -686,7 +689,10 @@ mod tests {
         let plan = balancer.plan_rebalance(&state);
         if plan.len() > 1 {
             for i in 0..plan.len() - 1 {
-                assert!(plan.operations[i].estimated_benefit >= plan.operations[i + 1].estimated_benefit);
+                assert!(
+                    plan.operations[i].estimated_benefit
+                        >= plan.operations[i + 1].estimated_benefit
+                );
             }
         }
     }

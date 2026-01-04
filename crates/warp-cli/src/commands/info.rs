@@ -229,7 +229,9 @@ fn detect_gpu_info() -> Option<GpuInfo> {
 
     match GpuContext::new() {
         Ok(ctx) => {
-            let name = ctx.device_name().unwrap_or_else(|_| "Unknown GPU".to_string());
+            let name = ctx
+                .device_name()
+                .unwrap_or_else(|_| "Unknown GPU".to_string());
             let memory = ctx.total_memory().unwrap_or(0);
             let (compute_major, compute_minor) = ctx.compute_capability();
 

@@ -3,15 +3,13 @@
 use std::sync::Arc;
 use std::time::Duration;
 
-use tokio::sync::{broadcast, RwLock};
-use tokio::time::{interval, Instant};
+use tokio::sync::{RwLock, broadcast};
+use tokio::time::{Instant, interval};
 use tracing::{debug, error, info, warn};
 
 use super::{HealerMetrics, RepairJob, RepairPriority, RepairQueue, RepairWorker};
-use crate::replication::{
-    DistributedShardManager, ShardHealth, ShardKey,
-};
 use crate::error::Result;
+use crate::replication::{DistributedShardManager, ShardHealth, ShardKey};
 
 /// Configuration for the healer daemon
 #[derive(Debug, Clone)]
@@ -96,10 +94,7 @@ pub struct HealerDaemon {
 
 impl HealerDaemon {
     /// Create a new healer daemon
-    pub fn new(
-        config: HealerConfig,
-        shard_manager: Arc<DistributedShardManager>,
-    ) -> Self {
+    pub fn new(config: HealerConfig, shard_manager: Arc<DistributedShardManager>) -> Self {
         let (shutdown_tx, _) = broadcast::channel(1);
 
         Self {
@@ -343,11 +338,8 @@ impl HealerDaemon {
                         ShardHealth::Healthy => continue,
                     };
 
-                    let shard_key = ShardKey::new(
-                        &distribution.bucket,
-                        &distribution.key,
-                        *shard_idx,
-                    );
+                    let shard_key =
+                        ShardKey::new(&distribution.bucket, &distribution.key, *shard_idx);
 
                     // Check if already in queue
                     if !queue.contains(&shard_key) {
@@ -373,7 +365,13 @@ impl HealerDaemon {
     }
 
     async fn scan_for_repairs(&self) -> Result<usize> {
-        Self::do_scan(&self.shard_manager, &self.queue, &self.metrics, &self.config).await
+        Self::do_scan(
+            &self.shard_manager,
+            &self.queue,
+            &self.metrics,
+            &self.config,
+        )
+        .await
     }
 }
 

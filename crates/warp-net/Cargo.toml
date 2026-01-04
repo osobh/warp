@@ -21,7 +21,9 @@ serde.workspace = true
 rmp-serde.workspace = true
 rcgen = "0.13"
 rustls-pemfile = "2.2"
+parking_lot.workspace = true
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["test-util"] }
 warp-ec.workspace = true
+proptest.workspace = true

@@ -46,8 +46,8 @@ use tracing::{debug, info, warn};
 
 #[cfg(feature = "hpc-channels")]
 use hpc_channels::{
-    channels, broadcast as hpc_broadcast,
-    StorageEventMessage, StorageEventRecord, StorageBucketInfo, StorageObjectInfo, StorageUserIdentity,
+    StorageBucketInfo, StorageEventMessage, StorageEventRecord, StorageObjectInfo,
+    StorageUserIdentity, broadcast as hpc_broadcast, channels,
 };
 
 use crate::ObjectKey;
@@ -508,9 +508,7 @@ impl NotificationConfiguration {
 
         for config in &self.lambda_function_configurations {
             if config.matches(event_type_str, key) {
-                destinations.push(EventDestination::Lambda(
-                    config.lambda_function_arn.clone(),
-                ));
+                destinations.push(EventDestination::Lambda(config.lambda_function_arn.clone()));
             }
         }
 
@@ -1166,7 +1164,7 @@ mod tests {
         let config = EventConfig {
             enabled: true,
             channel_capacity: 16,
-            hpc_channels_enabled: false,  // HPC-Channels disabled
+            hpc_channels_enabled: false, // HPC-Channels disabled
             region: "test-region".to_string(),
         };
         let emitter = EventEmitter::new(config);

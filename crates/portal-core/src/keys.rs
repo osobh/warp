@@ -162,9 +162,8 @@ impl RecoveryPhrase {
     /// assert_eq!(parsed.to_phrase(), phrase_str);
     /// ```
     pub fn from_phrase(words: &str) -> Result<Self> {
-        let mnemonic = Mnemonic::parse_in_normalized(Language::English, words).map_err(|e| {
-            Error::InvalidRecoveryPhrase(format!("Failed to parse mnemonic: {e}"))
-        })?;
+        let mnemonic = Mnemonic::parse_in_normalized(Language::English, words)
+            .map_err(|e| Error::InvalidRecoveryPhrase(format!("Failed to parse mnemonic: {e}")))?;
 
         // Verify it's 24 words (256 bits of entropy)
         if mnemonic.word_count() != 24 {
@@ -327,8 +326,9 @@ impl KeyHierarchy {
 
         // Derive authentication key
         let mut auth_bytes = [0u8; 32];
-        hkdf.expand(CONTEXT_AUTH, &mut auth_bytes)
-            .map_err(|e| Error::KeyDerivation(format!("Failed to derive authentication key: {e}")))?;
+        hkdf.expand(CONTEXT_AUTH, &mut auth_bytes).map_err(|e| {
+            Error::KeyDerivation(format!("Failed to derive authentication key: {e}"))
+        })?;
         let auth = AuthenticationKey(auth_bytes);
 
         Ok(Self {
@@ -386,9 +386,10 @@ impl KeyHierarchy {
 
         let context = format!("{CONTEXT_DEVICE_PREFIX}{device_index}");
         let mut key_bytes = [0u8; 32];
-        hkdf.expand(context.as_bytes(), &mut key_bytes).map_err(|e| {
-            Error::KeyDerivation(format!("Failed to derive device key {device_index}: {e}"))
-        })?;
+        hkdf.expand(context.as_bytes(), &mut key_bytes)
+            .map_err(|e| {
+                Error::KeyDerivation(format!("Failed to derive device key {device_index}: {e}"))
+            })?;
 
         Ok(DeviceKey {
             index: device_index,
@@ -526,10 +527,7 @@ mod tests {
     fn test_recovery_phrase_invalid() {
         // Empty phrase
         let result = RecoveryPhrase::from_phrase("");
-        assert!(
-            result.is_err(),
-            "Empty phrase should be rejected"
-        );
+        assert!(result.is_err(), "Empty phrase should be rejected");
 
         // Too few words (12 instead of 24)
         let short_phrase = "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about";
@@ -547,10 +545,7 @@ mod tests {
         // Valid words but wrong checksum (23 valid words + 1 wrong)
         let wrong_checksum = "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon";
         let result = RecoveryPhrase::from_phrase(wrong_checksum);
-        assert!(
-            result.is_err(),
-            "Wrong checksum should be rejected"
-        );
+        assert!(result.is_err(), "Wrong checksum should be rejected");
     }
 
     /// Test 4: Same phrase produces same seed (deterministic)
@@ -677,7 +672,10 @@ mod tests {
         let signature = hierarchy.signing().sign(message);
 
         // Verification should succeed
-        let verify_result = hierarchy.signing().verifying_key().verify(message, &signature);
+        let verify_result = hierarchy
+            .signing()
+            .verifying_key()
+            .verify(message, &signature);
         assert!(
             verify_result.is_ok(),
             "Signature verification should succeed for correct message"
@@ -685,7 +683,10 @@ mod tests {
 
         // Verification should fail for different message
         let wrong_message = b"Different message";
-        let verify_result = hierarchy.signing().verifying_key().verify(wrong_message, &signature);
+        let verify_result = hierarchy
+            .signing()
+            .verifying_key()
+            .verify(wrong_message, &signature);
         assert!(
             verify_result.is_err(),
             "Signature verification should fail for wrong message"

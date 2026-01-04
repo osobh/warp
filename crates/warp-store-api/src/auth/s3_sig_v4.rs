@@ -56,9 +56,12 @@ impl SignatureV4 {
             }
         }
 
-        let credential = credential.ok_or_else(|| ApiError::AuthFailed("Missing Credential".into()))?;
-        let signed_headers = signed_headers.ok_or_else(|| ApiError::AuthFailed("Missing SignedHeaders".into()))?;
-        let signature = signature.ok_or_else(|| ApiError::AuthFailed("Missing Signature".into()))?;
+        let credential =
+            credential.ok_or_else(|| ApiError::AuthFailed("Missing Credential".into()))?;
+        let signed_headers =
+            signed_headers.ok_or_else(|| ApiError::AuthFailed("Missing SignedHeaders".into()))?;
+        let signature =
+            signature.ok_or_else(|| ApiError::AuthFailed("Missing Signature".into()))?;
 
         // Parse credential: ACCESS_KEY/DATE/REGION/SERVICE/aws4_request
         let cred_parts: Vec<&str> = credential.split('/').collect();
@@ -156,7 +159,10 @@ fn create_canonical_request(
     let canonical_headers: String = signed_headers
         .iter()
         .map(|h| {
-            let value = header_map.get(&h.to_lowercase()).map(|s| s.as_str()).unwrap_or("");
+            let value = header_map
+                .get(&h.to_lowercase())
+                .map(|s| s.as_str())
+                .unwrap_or("");
             format!("{}:{}\n", h.to_lowercase(), value)
         })
         .collect();
@@ -165,12 +171,7 @@ fn create_canonical_request(
 
     format!(
         "{}\n{}\n{}\n{}\n{}\n{}",
-        method,
-        canonical_uri,
-        canonical_query,
-        canonical_headers,
-        signed_headers_str,
-        payload_hash
+        method, canonical_uri, canonical_query, canonical_headers, signed_headers_str, payload_hash
     )
 }
 
@@ -241,8 +242,14 @@ mod tests {
         assert_eq!(sig.date, "20130524");
         assert_eq!(sig.region, "us-east-1");
         assert_eq!(sig.service, "s3");
-        assert_eq!(sig.signed_headers, vec!["host", "range", "x-amz-content-sha256", "x-amz-date"]);
-        assert_eq!(sig.signature, "fe5f80f77d5fa3beca038a248ff027d0445342fe2855ddc963176630326f1024");
+        assert_eq!(
+            sig.signed_headers,
+            vec!["host", "range", "x-amz-content-sha256", "x-amz-date"]
+        );
+        assert_eq!(
+            sig.signature,
+            "fe5f80f77d5fa3beca038a248ff027d0445342fe2855ddc963176630326f1024"
+        );
     }
 
     #[test]

@@ -139,7 +139,12 @@ pub struct NodeInfo {
 
 impl NodeInfo {
     /// Create a new node
-    pub fn new(node_id: NodeId, domain_id: DomainId, addr: SocketAddr, wg_pubkey: [u8; 32]) -> Self {
+    pub fn new(
+        node_id: NodeId,
+        domain_id: DomainId,
+        addr: SocketAddr,
+        wg_pubkey: [u8; 32],
+    ) -> Self {
         Self {
             node_id,
             domain_id,
@@ -427,10 +432,9 @@ impl DomainRegistry {
         domain.add_node(node);
 
         debug!(domain_id, node_id, "Added node to domain");
-        let _ = self.events.send(DomainEvent::NodeAdded {
-            domain_id,
-            node_id,
-        });
+        let _ = self
+            .events
+            .send(DomainEvent::NodeAdded { domain_id, node_id });
 
         Ok(())
     }
@@ -450,10 +454,9 @@ impl DomainRegistry {
         }
 
         debug!(domain_id, node_id, "Removed node from domain");
-        let _ = self.events.send(DomainEvent::NodeRemoved {
-            domain_id,
-            node_id,
-        });
+        let _ = self
+            .events
+            .send(DomainEvent::NodeRemoved { domain_id, node_id });
 
         Ok(())
     }
@@ -484,7 +487,13 @@ impl DomainRegistry {
         }
 
         if old_status != status {
-            debug!(domain_id, node_id, ?old_status, ?status, "Node status changed");
+            debug!(
+                domain_id,
+                node_id,
+                ?old_status,
+                ?status,
+                "Node status changed"
+            );
             let _ = self.events.send(DomainEvent::NodeStatusChanged {
                 domain_id,
                 node_id,
@@ -582,8 +591,7 @@ mod tests {
 
     #[test]
     fn test_domain_creation() {
-        let domain = Domain::new(1, "us-west")
-            .with_region("us-west-1");
+        let domain = Domain::new(1, "us-west").with_region("us-west-1");
 
         assert_eq!(domain.id, 1);
         assert_eq!(domain.name, "us-west");
@@ -593,12 +601,7 @@ mod tests {
 
     #[test]
     fn test_node_heartbeat() {
-        let mut node = NodeInfo::new(
-            1,
-            1,
-            "127.0.0.1:8080".parse().unwrap(),
-            [0u8; 32],
-        );
+        let mut node = NodeInfo::new(1, 1, "127.0.0.1:8080".parse().unwrap(), [0u8; 32]);
 
         assert!(node.is_heartbeat_stale(Duration::from_secs(1)));
 
@@ -644,16 +647,13 @@ mod tests {
         let registry = DomainRegistry::new(1);
         registry.register_domain(Domain::new(1, "test")).unwrap();
 
-        let node = NodeInfo::new(
-            1,
-            1,
-            "127.0.0.1:8080".parse().unwrap(),
-            [0u8; 32],
-        );
+        let node = NodeInfo::new(1, 1, "127.0.0.1:8080".parse().unwrap(), [0u8; 32]);
         registry.add_node(1, node).unwrap();
 
         // Update status
-        registry.update_node_status(1, 1, NodeStatus::Online).unwrap();
+        registry
+            .update_node_status(1, 1, NodeStatus::Online)
+            .unwrap();
 
         let domain = registry.get_domain(1).unwrap();
         assert_eq!(domain.healthy_nodes().len(), 1);

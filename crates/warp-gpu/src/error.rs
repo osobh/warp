@@ -98,13 +98,19 @@ impl Error {
     #[inline]
     pub fn device_init(device_id: usize, err: cudarc::driver::DriverError) -> Self {
         // DriverError doesn't implement Display in cudarc 0.18, use Debug format
-        Self::DeviceInit { device_id, message: format!("{:?}", err) }
+        Self::DeviceInit {
+            device_id,
+            message: format!("{:?}", err),
+        }
     }
 
     /// Create a device initialization error from a message
     #[inline]
     pub fn device_init_msg(device_id: usize, message: impl Into<String>) -> Self {
-        Self::DeviceInit { device_id, message: message.into() }
+        Self::DeviceInit {
+            device_id,
+            message: message.into(),
+        }
     }
 
     /// Create an out-of-memory error
@@ -116,7 +122,10 @@ impl Error {
     /// Create a pool exhausted error
     #[inline]
     pub fn pool_exhausted(allocated: usize, capacity: usize) -> Self {
-        Self::PoolExhausted { allocated, capacity }
+        Self::PoolExhausted {
+            allocated,
+            capacity,
+        }
     }
 
     /// Create an alignment error
@@ -127,10 +136,7 @@ impl Error {
 
     /// Check if error is recoverable
     pub fn is_recoverable(&self) -> bool {
-        matches!(
-            self,
-            Self::OutOfMemory { .. } | Self::PoolExhausted { .. }
-        )
+        matches!(self, Self::OutOfMemory { .. } | Self::PoolExhausted { .. })
     }
 }
 
@@ -265,10 +271,16 @@ mod tests {
     #[test]
     fn test_all_error_variants_are_non_empty() {
         let errors: Vec<Error> = vec![
-            Error::DeviceInit { device_id: 0, message: "test".into() },
+            Error::DeviceInit {
+                device_id: 0,
+                message: "test".into(),
+            },
             Error::CudaOperation("test".into()),
             Error::out_of_memory(1, 0),
-            Error::InvalidBufferSize { requested: 1, maximum: 0 },
+            Error::InvalidBufferSize {
+                requested: 1,
+                maximum: 0,
+            },
             Error::pool_exhausted(1, 1),
             Error::alignment(1, 1),
             Error::DeviceQuery("test".into()),
@@ -282,7 +294,11 @@ mod tests {
 
         for err in errors {
             let msg = err.to_string();
-            assert!(!msg.is_empty(), "Error message should not be empty: {:?}", err);
+            assert!(
+                !msg.is_empty(),
+                "Error message should not be empty: {:?}",
+                err
+            );
         }
     }
 }

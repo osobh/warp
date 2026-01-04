@@ -5,9 +5,9 @@
 
 use crate::{routes, storage::HubStorage};
 use axum::{
+    Router,
     extract::DefaultBodyLimit,
     routing::{get, post, put},
-    Router,
 };
 use std::{net::SocketAddr, sync::Arc};
 use tower::ServiceBuilder;
@@ -101,21 +101,19 @@ impl HubServer {
             .with_state(storage);
 
         // Main router with middleware
-        Router::new()
-            .nest("/api/v1", api_routes)
-            .layer(
-                ServiceBuilder::new()
-                    // Request tracing
-                    .layer(
-                        TraceLayer::new_for_http()
-                            .make_span_with(DefaultMakeSpan::new().level(Level::INFO))
-                            .on_response(DefaultOnResponse::new().level(Level::INFO)),
-                    )
-                    // CORS
-                    .layer(CorsLayer::permissive())
-                    // Body size limit
-                    .layer(DefaultBodyLimit::max(max_chunk_size)),
-            )
+        Router::new().nest("/api/v1", api_routes).layer(
+            ServiceBuilder::new()
+                // Request tracing
+                .layer(
+                    TraceLayer::new_for_http()
+                        .make_span_with(DefaultMakeSpan::new().level(Level::INFO))
+                        .on_response(DefaultOnResponse::new().level(Level::INFO)),
+                )
+                // CORS
+                .layer(CorsLayer::permissive())
+                // Body size limit
+                .layer(DefaultBodyLimit::max(max_chunk_size)),
+        )
     }
 }
 
@@ -123,13 +121,13 @@ impl HubServer {
 mod tests {
     use super::*;
     use crate::{
-        auth::{serialize_auth_token, AuthToken},
+        auth::{AuthToken, serialize_auth_token},
         routes::{CreatePortalRequest, RegisterEdgeRequest},
         storage::StoredPortal,
     };
     use axum::{
-        body::{to_bytes, Body},
-        http::{header, Request, StatusCode},
+        body::{Body, to_bytes},
+        http::{Request, StatusCode, header},
     };
     use ed25519_dalek::SigningKey;
     use portal_core::{AccessControlList, Portal};

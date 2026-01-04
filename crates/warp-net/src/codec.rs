@@ -3,7 +3,7 @@
 //! This module uses the `Bytes` type for zero-copy buffer sharing.
 //! `Bytes` is reference-counted, enabling efficient data passing without allocation.
 
-use crate::frames::{frame_type, Capabilities, FrameHeader};
+use crate::frames::{Capabilities, FrameHeader, frame_type};
 use crate::{Error, Result};
 use bytes::{Buf, BufMut, Bytes, BytesMut};
 
@@ -316,8 +316,9 @@ impl Frame {
                 buf.put_u32_le(*version);
             }
             Self::Capabilities(caps) => {
-                let encoded = rmp_serde::to_vec(caps)
-                    .map_err(|e| Error::Protocol(format!("Failed to encode capabilities: {}", e)))?;
+                let encoded = rmp_serde::to_vec(caps).map_err(|e| {
+                    Error::Protocol(format!("Failed to encode capabilities: {}", e))
+                })?;
                 buf.put_slice(&encoded);
             }
             Self::Plan {
@@ -462,8 +463,9 @@ impl Frame {
             }
             frame_type::CAPABILITIES => {
                 let payload = buf.split_to(header.length as usize);
-                let caps = rmp_serde::from_slice(&payload)
-                    .map_err(|e| Error::Protocol(format!("Failed to decode capabilities: {}", e)))?;
+                let caps = rmp_serde::from_slice(&payload).map_err(|e| {
+                    Error::Protocol(format!("Failed to decode capabilities: {}", e))
+                })?;
                 Self::Capabilities(caps)
             }
             frame_type::PLAN => {
@@ -726,7 +728,10 @@ mod tests {
 
         let decoded = Frame::decode(&mut buf).unwrap().unwrap();
         match decoded {
-            Frame::Chunk { chunk_id, data: decoded_data } => {
+            Frame::Chunk {
+                chunk_id,
+                data: decoded_data,
+            } => {
                 assert_eq!(chunk_id, 42);
                 assert_eq!(decoded_data, data);
             }
@@ -836,9 +841,15 @@ mod tests {
                 chunk_id: 42,
                 data: Bytes::from(vec![1u8, 2, 3, 4, 5]),
             },
-            Frame::Ack { chunk_ids: vec![1, 2, 3] },
-            Frame::Have { chunk_ids: vec![10, 20] },
-            Frame::Want { chunk_ids: vec![100] },
+            Frame::Ack {
+                chunk_ids: vec![1, 2, 3],
+            },
+            Frame::Have {
+                chunk_ids: vec![10, 20],
+            },
+            Frame::Want {
+                chunk_ids: vec![100],
+            },
             Frame::Nack {
                 chunk_ids: vec![5],
                 reason: "test error".to_string(),
@@ -847,7 +858,9 @@ mod tests {
                 code: 500,
                 message: "internal error".to_string(),
             },
-            Frame::Verify { merkle_root: [0xAB; 32] },
+            Frame::Verify {
+                merkle_root: [0xAB; 32],
+            },
             Frame::Shard {
                 chunk_id: 1,
                 shard_idx: 2,
@@ -863,9 +876,12 @@ mod tests {
             let actual_size = buf.len();
 
             assert_eq!(
-                predicted_size, actual_size,
+                predicted_size,
+                actual_size,
                 "Size mismatch for {:?}: predicted {}, actual {}",
-                frame.frame_type(), predicted_size, actual_size
+                frame.frame_type(),
+                predicted_size,
+                actual_size
             );
         }
     }
@@ -885,7 +901,10 @@ mod tests {
         let mut buf_clone = buf.clone();
         let decoded = Frame::decode(&mut buf_clone).unwrap().unwrap();
         match decoded {
-            Frame::Chunk { chunk_id, data: decoded_data } => {
+            Frame::Chunk {
+                chunk_id,
+                data: decoded_data,
+            } => {
                 assert_eq!(chunk_id, 42);
                 assert_eq!(decoded_data, data);
             }
@@ -914,12 +933,18 @@ mod tests {
         frame.encode(&mut generic_buf).unwrap();
 
         // Should produce identical output
-        assert_eq!(fast_buf, generic_buf, "Fast and generic encode should match");
+        assert_eq!(
+            fast_buf, generic_buf,
+            "Fast and generic encode should match"
+        );
 
         // Verify it decodes correctly
         let decoded = Frame::decode(&mut fast_buf).unwrap().unwrap();
         match decoded {
-            Frame::Chunk { chunk_id: id, data: decoded_data } => {
+            Frame::Chunk {
+                chunk_id: id,
+                data: decoded_data,
+            } => {
                 assert_eq!(id, 42);
                 assert_eq!(&decoded_data[..], &data[..]);
             }
@@ -936,17 +961,24 @@ mod tests {
         Frame::encode_ack_fast(&mut fast_buf, &chunk_ids);
 
         // Encode with generic path
-        let frame = Frame::Ack { chunk_ids: chunk_ids.clone() };
+        let frame = Frame::Ack {
+            chunk_ids: chunk_ids.clone(),
+        };
         let mut generic_buf = BytesMut::new();
         frame.encode(&mut generic_buf).unwrap();
 
         // Should produce identical output
-        assert_eq!(fast_buf, generic_buf, "Fast and generic encode should match");
+        assert_eq!(
+            fast_buf, generic_buf,
+            "Fast and generic encode should match"
+        );
 
         // Verify it decodes correctly
         let decoded = Frame::decode(&mut fast_buf).unwrap().unwrap();
         match decoded {
-            Frame::Ack { chunk_ids: decoded_ids } => {
+            Frame::Ack {
+                chunk_ids: decoded_ids,
+            } => {
                 assert_eq!(decoded_ids, chunk_ids);
             }
             _ => panic!("Wrong frame type"),
@@ -975,7 +1007,10 @@ mod tests {
         frame.encode(&mut generic_buf).unwrap();
 
         // Should produce identical output
-        assert_eq!(fast_buf, generic_buf, "Fast and generic encode should match");
+        assert_eq!(
+            fast_buf, generic_buf,
+            "Fast and generic encode should match"
+        );
 
         // Verify it decodes correctly
         let decoded = Frame::decode(&mut fast_buf).unwrap().unwrap();
@@ -997,11 +1032,7 @@ mod tests {
 
     #[test]
     fn test_encode_chunk_batch_fast() {
-        let chunks: Vec<(u32, &[u8])> = vec![
-            (1, &[1u8, 2, 3]),
-            (2, &[4, 5, 6, 7]),
-            (3, &[8, 9]),
-        ];
+        let chunks: Vec<(u32, &[u8])> = vec![(1, &[1u8, 2, 3]), (2, &[4, 5, 6, 7]), (3, &[8, 9])];
 
         // Encode with fast path
         let mut fast_buf = BytesMut::new();
@@ -1009,18 +1040,26 @@ mod tests {
 
         // Encode with generic path
         let frame = Frame::ChunkBatch {
-            chunks: chunks.iter().map(|(id, d)| (*id, Bytes::copy_from_slice(d))).collect(),
+            chunks: chunks
+                .iter()
+                .map(|(id, d)| (*id, Bytes::copy_from_slice(d)))
+                .collect(),
         };
         let mut generic_buf = BytesMut::new();
         frame.encode(&mut generic_buf).unwrap();
 
         // Should produce identical output
-        assert_eq!(fast_buf, generic_buf, "Fast and generic encode should match");
+        assert_eq!(
+            fast_buf, generic_buf,
+            "Fast and generic encode should match"
+        );
 
         // Verify it decodes correctly
         let decoded = Frame::decode(&mut fast_buf).unwrap().unwrap();
         match decoded {
-            Frame::ChunkBatch { chunks: decoded_chunks } => {
+            Frame::ChunkBatch {
+                chunks: decoded_chunks,
+            } => {
                 assert_eq!(decoded_chunks.len(), 3);
                 assert_eq!(decoded_chunks[0].0, 1);
                 assert_eq!(&decoded_chunks[0].1[..], &[1u8, 2, 3]);
@@ -1030,6 +1069,83 @@ mod tests {
                 assert_eq!(&decoded_chunks[2].1[..], &[8, 9]);
             }
             _ => panic!("Wrong frame type"),
+        }
+    }
+}
+
+#[cfg(test)]
+mod proptest_tests {
+    use super::*;
+    use proptest::prelude::*;
+
+    fn arb_simple_frame() -> impl Strategy<Value = Frame> {
+        prop_oneof![
+            // Simple frames
+            any::<u32>().prop_map(|version| Frame::Hello { version }),
+            Just(Frame::Accept),
+            Just(Frame::Done),
+            Just(Frame::Cancel),
+            Just(Frame::Pause),
+            // Frames with data
+            (any::<u32>(), prop::collection::vec(any::<u8>(), 0..1024)).prop_map(
+                |(chunk_id, data)| Frame::Chunk {
+                    chunk_id,
+                    data: Bytes::from(data),
+                }
+            ),
+            prop::collection::vec(any::<u32>(), 0..100)
+                .prop_map(|chunk_ids| Frame::Ack { chunk_ids }),
+            prop::collection::vec(any::<u32>(), 0..100)
+                .prop_map(|chunk_ids| Frame::Have { chunk_ids }),
+            prop::collection::vec(any::<u32>(), 0..100)
+                .prop_map(|chunk_ids| Frame::Want { chunk_ids }),
+            prop::array::uniform32(any::<u8>())
+                .prop_map(|merkle_root| Frame::Verify { merkle_root }),
+            (any::<u32>(), "[a-zA-Z0-9 ]{0,50}")
+                .prop_map(|(code, message)| Frame::Error { code, message }),
+            (
+                any::<u32>(),
+                1u16..100,
+                prop::collection::vec(any::<u8>(), 0..512),
+            )
+                .prop_map(|(chunk_id, total_shards, data)| {
+                    let shard_idx = 0; // Keep it simple - always first shard
+                    Frame::Shard {
+                        chunk_id,
+                        shard_idx,
+                        total_shards,
+                        data: Bytes::from(data),
+                    }
+                }),
+        ]
+    }
+
+    proptest! {
+        /// Property: Frame encode/decode roundtrip
+        #[test]
+        fn frame_roundtrip(frame in arb_simple_frame()) {
+            let mut buf = BytesMut::new();
+            frame.encode(&mut buf).unwrap();
+
+            let decoded = Frame::decode(&mut buf).unwrap().unwrap();
+
+            // Compare frame types
+            prop_assert_eq!(frame.frame_type(), decoded.frame_type());
+        }
+
+        /// Property: encoded_size() matches actual encoded length
+        #[test]
+        fn encoded_size_matches_actual(frame in arb_simple_frame()) {
+            let predicted = frame.encoded_size();
+            let mut buf = BytesMut::new();
+            frame.encode(&mut buf).unwrap();
+            let actual = buf.len();
+
+            prop_assert_eq!(
+                predicted, actual,
+                "Mismatch for frame type {}: predicted {}, actual {}",
+                frame.frame_type(), predicted, actual
+            );
         }
     }
 }

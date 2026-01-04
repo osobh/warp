@@ -10,7 +10,7 @@ use std::io::Cursor;
 #[cfg(feature = "s3-select")]
 use axum::{
     extract::{Path, Query, State},
-    http::{header, StatusCode},
+    http::{StatusCode, header},
     response::{IntoResponse, Response},
 };
 #[cfg(feature = "s3-select")]
@@ -19,14 +19,14 @@ use bytes::Bytes;
 use serde::Deserialize;
 
 #[cfg(feature = "s3-select")]
-use warp_store::backend::StorageBackend;
-#[cfg(feature = "s3-select")]
 use warp_store::ObjectKey;
+#[cfg(feature = "s3-select")]
+use warp_store::backend::StorageBackend;
 
 #[cfg(feature = "s3-select")]
-use crate::error::{ApiError, ApiResult};
-#[cfg(feature = "s3-select")]
 use crate::AppState;
+#[cfg(feature = "s3-select")]
+use crate::error::{ApiError, ApiResult};
 
 // =============================================================================
 // Request/Response Types
@@ -225,9 +225,7 @@ pub struct ScanRange {
 
 #[cfg(feature = "s3-select")]
 mod evaluator {
-    use sqlparser::ast::{
-        BinaryOperator, Expr, SelectItem, SetExpr, Statement, Value,
-    };
+    use sqlparser::ast::{BinaryOperator, Expr, SelectItem, SetExpr, Statement, Value};
     use sqlparser::dialect::GenericDialect;
     use sqlparser::parser::Parser;
     use std::collections::HashMap;
@@ -246,8 +244,8 @@ mod evaluator {
     /// Parse an S3 Select SQL expression
     pub fn parse_sql(sql: &str) -> Result<ParsedQuery, String> {
         let dialect = GenericDialect {};
-        let statements = Parser::parse_sql(&dialect, sql)
-            .map_err(|e| format!("SQL parse error: {}", e))?;
+        let statements =
+            Parser::parse_sql(&dialect, sql).map_err(|e| format!("SQL parse error: {}", e))?;
 
         if statements.is_empty() {
             return Err("Empty SQL expression".to_string());
@@ -296,7 +294,10 @@ mod evaluator {
                 SelectItem::UnnamedExpr(Expr::Identifier(ident)) => {
                     columns.push(ident.value.clone());
                 }
-                SelectItem::ExprWithAlias { expr: Expr::Identifier(ident), alias } => {
+                SelectItem::ExprWithAlias {
+                    expr: Expr::Identifier(ident),
+                    alias,
+                } => {
                     // Use alias if provided, otherwise column name
                     columns.push(alias.value.clone());
                     let _ = ident; // Original column name used for lookup
@@ -312,10 +313,7 @@ mod evaluator {
     }
 
     /// Evaluate a row against a WHERE predicate
-    pub fn evaluate_predicate(
-        row: &HashMap<String, serde_json::Value>,
-        predicate: &Expr,
-    ) -> bool {
+    pub fn evaluate_predicate(row: &HashMap<String, serde_json::Value>, predicate: &Expr) -> bool {
         match evaluate_expr(row, predicate) {
             Some(serde_json::Value::Bool(b)) => b,
             _ => false,
@@ -338,8 +336,7 @@ mod evaluator {
                         if let Ok(i) = n.parse::<i64>() {
                             Some(serde_json::Value::Number(i.into()))
                         } else if let Ok(f) = n.parse::<f64>() {
-                            serde_json::Number::from_f64(f)
-                                .map(serde_json::Value::Number)
+                            serde_json::Number::from_f64(f).map(serde_json::Value::Number)
                         } else {
                             None
                         }
@@ -366,22 +363,44 @@ mod evaluator {
                 let val = evaluate_expr(row, inner);
                 Some(serde_json::Value::Bool(val.map_or(false, |v| !v.is_null())))
             }
-            Expr::InList { expr, list, negated } => {
+            Expr::InList {
+                expr,
+                list,
+                negated,
+            } => {
                 let val = evaluate_expr(row, expr)?;
-                let in_list = list.iter().any(|item| {
-                    evaluate_expr(row, item).map_or(false, |v| values_equal(&val, &v))
-                });
-                Some(serde_json::Value::Bool(if *negated { !in_list } else { in_list }))
+                let in_list = list
+                    .iter()
+                    .any(|item| evaluate_expr(row, item).map_or(false, |v| values_equal(&val, &v)));
+                Some(serde_json::Value::Bool(if *negated {
+                    !in_list
+                } else {
+                    in_list
+                }))
             }
-            Expr::Between { expr, negated, low, high } => {
+            Expr::Between {
+                expr,
+                negated,
+                low,
+                high,
+            } => {
                 let val = evaluate_expr(row, expr)?;
                 let low_val = evaluate_expr(row, low)?;
                 let high_val = evaluate_expr(row, high)?;
                 let in_range = compare_values(&val, &low_val).map_or(false, |c| c >= 0)
                     && compare_values(&val, &high_val).map_or(false, |c| c <= 0);
-                Some(serde_json::Value::Bool(if *negated { !in_range } else { in_range }))
+                Some(serde_json::Value::Bool(if *negated {
+                    !in_range
+                } else {
+                    in_range
+                }))
             }
-            Expr::Like { expr, pattern, negated, .. } => {
+            Expr::Like {
+                expr,
+                pattern,
+                negated,
+                ..
+            } => {
                 let val = evaluate_expr(row, expr)?;
                 let pattern_val = evaluate_expr(row, pattern)?;
 
@@ -389,7 +408,11 @@ mod evaluator {
                     (&val, &pattern_val)
                 {
                     let matches = like_match(s, p);
-                    Some(serde_json::Value::Bool(if *negated { !matches } else { matches }))
+                    Some(serde_json::Value::Bool(if *negated {
+                        !matches
+                    } else {
+                        matches
+                    }))
                 } else {
                     Some(serde_json::Value::Bool(false))
                 }
@@ -407,15 +430,11 @@ mod evaluator {
             // Comparison operators
             BinaryOperator::Eq => Some(serde_json::Value::Bool(values_equal(left, right))),
             BinaryOperator::NotEq => Some(serde_json::Value::Bool(!values_equal(left, right))),
-            BinaryOperator::Lt => {
-                Some(serde_json::Value::Bool(compare_values(left, right)? < 0))
-            }
+            BinaryOperator::Lt => Some(serde_json::Value::Bool(compare_values(left, right)? < 0)),
             BinaryOperator::LtEq => {
                 Some(serde_json::Value::Bool(compare_values(left, right)? <= 0))
             }
-            BinaryOperator::Gt => {
-                Some(serde_json::Value::Bool(compare_values(left, right)? > 0))
-            }
+            BinaryOperator::Gt => Some(serde_json::Value::Bool(compare_values(left, right)? > 0)),
             BinaryOperator::GtEq => {
                 Some(serde_json::Value::Bool(compare_values(left, right)? >= 0))
             }
@@ -434,8 +453,12 @@ mod evaluator {
             BinaryOperator::Plus => arithmetic_op(left, right, |a, b| a + b),
             BinaryOperator::Minus => arithmetic_op(left, right, |a, b| a - b),
             BinaryOperator::Multiply => arithmetic_op(left, right, |a, b| a * b),
-            BinaryOperator::Divide => arithmetic_op(left, right, |a, b| if b != 0.0 { a / b } else { f64::NAN }),
-            BinaryOperator::Modulo => arithmetic_op(left, right, |a, b| if b != 0.0 { a % b } else { f64::NAN }),
+            BinaryOperator::Divide => {
+                arithmetic_op(left, right, |a, b| if b != 0.0 { a / b } else { f64::NAN })
+            }
+            BinaryOperator::Modulo => {
+                arithmetic_op(left, right, |a, b| if b != 0.0 { a % b } else { f64::NAN })
+            }
             // String operators
             BinaryOperator::StringConcat => {
                 let l = left.as_str()?;
@@ -463,11 +486,15 @@ mod evaluator {
             (serde_json::Value::Number(l), serde_json::Value::Number(r)) => {
                 let lf = l.as_f64()?;
                 let rf = r.as_f64()?;
-                Some(if lf < rf { -1 } else if lf > rf { 1 } else { 0 })
+                Some(if lf < rf {
+                    -1
+                } else if lf > rf {
+                    1
+                } else {
+                    0
+                })
             }
-            (serde_json::Value::String(l), serde_json::Value::String(r)) => {
-                Some(l.cmp(r) as i8)
-            }
+            (serde_json::Value::String(l), serde_json::Value::String(r)) => Some(l.cmp(r) as i8),
             _ => None,
         }
     }
@@ -488,9 +515,7 @@ mod evaluator {
 
     fn like_match(s: &str, pattern: &str) -> bool {
         // Simple LIKE pattern matching (% = any chars, _ = single char)
-        let regex_pattern = pattern
-            .replace('%', ".*")
-            .replace('_', ".");
+        let regex_pattern = pattern.replace('%', ".*").replace('_', ".");
         regex::Regex::new(&format!("^{}$", regex_pattern))
             .map(|re| re.is_match(s))
             .unwrap_or(false)
@@ -530,7 +555,12 @@ mod readers {
         data: &[u8],
         config: &CsvInput,
     ) -> Result<Vec<HashMap<String, serde_json::Value>>, String> {
-        let delimiter = config.field_delimiter.as_bytes().first().copied().unwrap_or(b',');
+        let delimiter = config
+            .field_delimiter
+            .as_bytes()
+            .first()
+            .copied()
+            .unwrap_or(b',');
 
         let mut reader = csv::ReaderBuilder::new()
             .delimiter(delimiter)
@@ -655,9 +685,7 @@ mod readers {
     /// Note: Full Parquet support requires additional integration with arrow2.
     /// For now, we return an error suggesting to use CSV or JSON format.
     /// This will be enhanced with RustySpark integration for GPU-accelerated Parquet reading.
-    pub fn read_parquet(
-        _data: &[u8],
-    ) -> Result<Vec<HashMap<String, serde_json::Value>>, String> {
+    pub fn read_parquet(_data: &[u8]) -> Result<Vec<HashMap<String, serde_json::Value>>, String> {
         // TODO: Integrate with RustySpark for full Parquet support
         // For now, suggest using CSV or JSON which are fully supported
         Err("Parquet input is not yet fully supported. Please use CSV or JSON format, or wait for RustySpark integration.".to_string())
@@ -682,7 +710,12 @@ mod writers {
             return Ok(Vec::new());
         }
 
-        let delimiter = config.field_delimiter.as_bytes().first().copied().unwrap_or(b',');
+        let delimiter = config
+            .field_delimiter
+            .as_bytes()
+            .first()
+            .copied()
+            .unwrap_or(b',');
         let record_delimiter = &config.record_delimiter;
 
         // Get column names from first row
@@ -700,7 +733,11 @@ mod writers {
                 })
                 .collect();
 
-            output.extend_from_slice(fields.join(&String::from_utf8(vec![delimiter]).unwrap()).as_bytes());
+            output.extend_from_slice(
+                fields
+                    .join(&String::from_utf8(vec![delimiter]).unwrap())
+                    .as_bytes(),
+            );
             output.extend_from_slice(record_delimiter.as_bytes());
         }
 
@@ -735,7 +772,8 @@ mod writers {
         let mut output = Vec::new();
 
         for row in rows {
-            let json = serde_json::to_string(row).map_err(|e| format!("JSON write error: {}", e))?;
+            let json =
+                serde_json::to_string(row).map_err(|e| format!("JSON write error: {}", e))?;
             output.extend_from_slice(json.as_bytes());
             output.extend_from_slice(record_delimiter.as_bytes());
         }
@@ -767,8 +805,8 @@ pub async fn select_object_content<B: StorageBackend>(
     }
 
     // Parse the SQL expression
-    let parsed_query = evaluator::parse_sql(&request.expression)
-        .map_err(ApiError::InvalidRequest)?;
+    let parsed_query =
+        evaluator::parse_sql(&request.expression).map_err(ApiError::InvalidRequest)?;
 
     // Get the object data
     let object_key = ObjectKey::new(&bucket, &key)?;
@@ -778,7 +816,10 @@ pub async fn select_object_content<B: StorageBackend>(
     // Apply scan range if specified
     let data_slice = if let Some(ref scan_range) = request.scan_range {
         let start = scan_range.start.unwrap_or(0) as usize;
-        let end = scan_range.end.map(|e| e as usize).unwrap_or(data_bytes.len());
+        let end = scan_range
+            .end
+            .map(|e| e as usize)
+            .unwrap_or(data_bytes.len());
         &data_bytes[start.min(data_bytes.len())..end.min(data_bytes.len())]
     } else {
         data_bytes
@@ -874,7 +915,6 @@ fn parse_select_request(body: &[u8]) -> ApiResult<SelectObjectContentRequest> {
     quick_xml::de::from_str(text)
         .map_err(|e| ApiError::InvalidRequest(format!("Invalid request: {}", e)))
 }
-
 
 #[cfg(test)]
 #[cfg(feature = "s3-select")]

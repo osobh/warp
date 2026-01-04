@@ -168,8 +168,7 @@ impl HubStorage {
             ));
         }
 
-        self.portals
-            .insert(stored_portal.portal.id, stored_portal);
+        self.portals.insert(stored_portal.portal.id, stored_portal);
         Ok(())
     }
 
@@ -609,9 +608,7 @@ mod tests {
 
         storage.store_chunk(content_id, data.clone());
 
-        let retrieved = storage
-            .get_chunk(&content_id)
-            .expect("Failed to get chunk");
+        let retrieved = storage.get_chunk(&content_id).expect("Failed to get chunk");
         assert_eq!(retrieved, data);
     }
 

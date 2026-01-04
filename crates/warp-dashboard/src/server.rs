@@ -3,24 +3,18 @@
 //! This module provides the main DashboardServer implementation with routing,
 //! static file serving, and middleware configuration.
 
+use crate::DashboardError;
 use crate::handlers::{
-    api_edges_handler, api_metrics_handler, api_state_handler, api_transfers_handler,
+    AppState, api_edges_handler, api_metrics_handler, api_state_handler, api_transfers_handler,
     edges_handler, index_handler, metrics_handler, sse_handler, transfer_detail_handler,
-    transfers_handler, AppState,
+    transfers_handler,
 };
 use crate::types::DashboardState;
-use crate::DashboardError;
-use axum::{
-    routing::get,
-    Router,
-};
+use axum::{Router, routing::get};
 use std::net::SocketAddr;
 use std::path::PathBuf;
 use tower_http::{
-    compression::CompressionLayer,
-    cors::CorsLayer,
-    services::ServeDir,
-    trace::TraceLayer,
+    compression::CompressionLayer, cors::CorsLayer, services::ServeDir, trace::TraceLayer,
 };
 
 /// Dashboard server configuration
@@ -264,12 +258,7 @@ mod tests {
         let app = server.router();
 
         let response = app
-            .oneshot(
-                Request::builder()
-                    .uri("/")
-                    .body(Body::empty())
-                    .unwrap(),
-            )
+            .oneshot(Request::builder().uri("/").body(Body::empty()).unwrap())
             .await
             .unwrap();
 

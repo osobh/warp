@@ -43,9 +43,18 @@ impl ShardKey {
 
     /// Get all shard keys for an object
     pub fn all_for_object(bucket: &str, key: &str, total_shards: usize) -> Vec<ShardKey> {
-        (0..total_shards as ShardIndex)
+        debug_assert!(total_shards > 0, "total_shards must be positive");
+        let keys: Vec<ShardKey> = (0..total_shards as ShardIndex)
             .map(|i| ShardKey::new(bucket, key, i))
-            .collect()
+            .collect();
+        debug_assert_eq!(
+            keys.len(),
+            total_shards,
+            "generated shard count {} must match total_shards {}",
+            keys.len(),
+            total_shards
+        );
+        keys
     }
 }
 
@@ -318,15 +327,21 @@ impl DistributedShardManager {
             info.add_location(shard_idx, location);
         }
 
-        self.distributions
-            .insert((bucket.to_string(), key.to_string()), Arc::new(RwLock::new(info)));
+        self.distributions.insert(
+            (bucket.to_string(), key.to_string()),
+            Arc::new(RwLock::new(info)),
+        );
 
         info!(bucket, key, "Registered shard distribution");
         Ok(())
     }
 
     /// Get shard distribution for an object
-    pub fn get_distribution(&self, bucket: &str, key: &str) -> Option<Arc<RwLock<ShardDistributionInfo>>> {
+    pub fn get_distribution(
+        &self,
+        bucket: &str,
+        key: &str,
+    ) -> Option<Arc<RwLock<ShardDistributionInfo>>> {
         self.distributions
             .get(&(bucket.to_string(), key.to_string()))
             .map(|r| r.clone())
@@ -381,7 +396,8 @@ impl DistributedShardManager {
 
     /// Remove distribution (when object is deleted)
     pub fn remove_distribution(&self, bucket: &str, key: &str) {
-        self.distributions.remove(&(bucket.to_string(), key.to_string()));
+        self.distributions
+            .remove(&(bucket.to_string(), key.to_string()));
         debug!(bucket, key, "Removed shard distribution");
     }
 
@@ -429,10 +445,16 @@ impl DistributedShardManager {
     }
 
     /// Read a shard from a location
-    pub async fn read_shard(&self, _shard_key: &ShardKey, _location: &ShardLocation) -> Result<Vec<u8>> {
+    pub async fn read_shard(
+        &self,
+        _shard_key: &ShardKey,
+        _location: &ShardLocation,
+    ) -> Result<Vec<u8>> {
         // In a real implementation, this would read from the actual storage node
         // For now, return an error indicating this needs implementation
-        Err(Error::Replication("read_shard not yet implemented".to_string()))
+        Err(Error::Replication(
+            "read_shard not yet implemented".to_string(),
+        ))
     }
 
     /// Reconstruct a shard using erasure coding
@@ -444,7 +466,9 @@ impl DistributedShardManager {
     ) -> Result<Vec<u8>> {
         // In a real implementation, this would use warp-ec to reconstruct
         // For now, return an error indicating this needs implementation
-        Err(Error::Replication("reconstruct_shard not yet implemented".to_string()))
+        Err(Error::Replication(
+            "reconstruct_shard not yet implemented".to_string(),
+        ))
     }
 
     /// Select a target node for repair

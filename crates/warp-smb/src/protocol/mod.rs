@@ -177,7 +177,12 @@ pub struct Smb2Header {
 
 impl Smb2Header {
     /// Create a new request header
-    pub fn new_request(command: SmbCommand, message_id: u64, session_id: u64, tree_id: u32) -> Self {
+    pub fn new_request(
+        command: SmbCommand,
+        message_id: u64,
+        session_id: u64,
+        tree_id: u32,
+    ) -> Self {
         Self {
             structure_size: 64,
             credit_charge: 1,

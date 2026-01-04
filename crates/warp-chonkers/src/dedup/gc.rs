@@ -4,9 +4,9 @@
 //! unreferenced chunks from storage.
 
 use super::registry::{ChunkRegistry, GcStats};
+use crate::Result;
 use crate::chunk::ChunkId;
 use crate::tree::VersionId;
-use crate::Result;
 use std::collections::HashSet;
 use std::sync::Arc;
 use std::time::{Duration, Instant};

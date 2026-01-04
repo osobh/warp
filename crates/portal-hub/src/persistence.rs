@@ -518,8 +518,7 @@ impl PersistentStorage {
             .iter()
             .filter(|result| {
                 result.as_ref().ok().map_or(false, |(_, data)| {
-                    rmp_serde::from_slice::<ChunkRef>(data)
-                        .map_or(false, |r| r.ref_count == 0)
+                    rmp_serde::from_slice::<ChunkRef>(data).map_or(false, |r| r.ref_count == 0)
                 })
             })
             .count()

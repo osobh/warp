@@ -1,18 +1,14 @@
 //! Reader implementation for .warp archives
 
 use crate::{
+    Error, Result,
     file_table::{FileEntry, FileTable},
-    header::{Compression, Encryption, Header, HEADER_SIZE},
+    header::{Compression, Encryption, HEADER_SIZE, Header},
     index::ChunkIndex,
     merkle::{MerkleTree, SparseMerkleTree},
-    Error, Result,
 };
 use memmap2::Mmap;
-use std::{
-    fs::File,
-    path::Path,
-    sync::Arc,
-};
+use std::{fs::File, path::Path, sync::Arc};
 use warp_compress::{Compressor, Lz4Compressor, ZstdCompressor};
 use warp_crypto::encrypt::Key;
 
@@ -274,6 +270,10 @@ impl WarpReader {
     fn open_internal(path: &Path, decryption_key: Option<Key>) -> Result<Self> {
         // Open and memory-map the file
         let file = File::open(path)?;
+        // SAFETY: The File handle is valid (just opened successfully). The mmap remains
+        // valid for the lifetime of WarpReader because we store both file and mmap.
+        // Read-only mapping is safe even if file is modified externally (we may see
+        // stale data but no UB).
         let mmap = unsafe { Mmap::map(&file)? };
 
         // Validate minimum size for header
@@ -294,7 +294,7 @@ impl WarpReader {
         // Check if archive is encrypted and key was provided
         if header.encryption != Encryption::None && decryption_key.is_none() {
             return Err(Error::Corrupted(
-                "Archive is encrypted but no decryption key provided. Use open_encrypted()".into()
+                "Archive is encrypted but no decryption key provided. Use open_encrypted()".into(),
             ));
         }
 
@@ -436,8 +436,9 @@ impl WarpReader {
 
         // Decrypt if needed (BEFORE decompression)
         if let Some(ref key) = self.decryption_key {
-            chunk_data = warp_crypto::decrypt(key, &chunk_data)
-                .map_err(|e| Error::Corrupted(format!("Decryption failed for chunk {}: {}", index, e)))?;
+            chunk_data = warp_crypto::decrypt(key, &chunk_data).map_err(|e| {
+                Error::Corrupted(format!("Decryption failed for chunk {}: {}", index, e))
+            })?;
         }
 
         // Decompress if needed (AFTER decryption)
@@ -488,12 +489,9 @@ impl WarpReader {
     /// - Cannot set file permissions or timestamps (non-fatal on Windows)
     pub fn extract_file(&self, archive_path: &str, dest: &Path) -> Result<()> {
         // Find file in file table
-        let file_entry = self
-            .file_table
-            .get_by_path(archive_path)
-            .ok_or_else(|| {
-                Error::Corrupted(format!("File not found in archive: {}", archive_path))
-            })?;
+        let file_entry = self.file_table.get_by_path(archive_path).ok_or_else(|| {
+            Error::Corrupted(format!("File not found in archive: {}", archive_path))
+        })?;
 
         // Create parent directories
         if let Some(parent) = dest.parent() {
@@ -541,7 +539,8 @@ impl WarpReader {
         // Set modification time
         use std::time::UNIX_EPOCH;
         let mtime = UNIX_EPOCH + std::time::Duration::from_secs(file_entry.mtime as u64);
-        if let Err(e) = filetime::set_file_mtime(dest, filetime::FileTime::from_system_time(mtime)) {
+        if let Err(e) = filetime::set_file_mtime(dest, filetime::FileTime::from_system_time(mtime))
+        {
             // Non-fatal: log but continue
             eprintln!("Warning: failed to set mtime for {}: {}", dest.display(), e);
         }
@@ -610,12 +609,9 @@ impl WarpReader {
     /// or chunk reading fails.
     pub fn verify_file(&self, archive_path: &str) -> Result<bool> {
         // Find file in file table
-        let file_entry = self
-            .file_table
-            .get_by_path(archive_path)
-            .ok_or_else(|| {
-                Error::Corrupted(format!("File not found in archive: {}", archive_path))
-            })?;
+        let file_entry = self.file_table.get_by_path(archive_path).ok_or_else(|| {
+            Error::Corrupted(format!("File not found in archive: {}", archive_path))
+        })?;
 
         // Read all chunks for this file
         let mut file_data = Vec::with_capacity(file_entry.size as usize);
@@ -689,15 +685,19 @@ impl WarpReader {
 // Thread-safety guarantee: After construction, WarpReader only performs
 // read operations on its fields. No method takes &mut self except
 // build_verification_tree(), which should be called before sharing.
+// SAFETY: All fields are either Send (File, Option<Key>) or read-only (Mmap, header structs).
+// The Mmap is read-only and the underlying File is never modified after construction.
 unsafe impl Send for WarpReader {}
+// SAFETY: All read operations on WarpReader use &self and don't mutate any fields.
+// The Mmap provides read-only access to file contents, which is inherently Sync.
 unsafe impl Sync for WarpReader {}
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::writer::{WarpWriter, WarpWriterConfig};
-    use tempfile::TempDir;
     use std::io::Write;
+    use tempfile::TempDir;
 
     fn create_test_archive(temp_dir: &Path) -> Result<std::path::PathBuf> {
         let archive_path = temp_dir.join("test.warp");
@@ -1232,7 +1232,10 @@ mod tests {
         assert!(reader.sparse_tree_root().is_some());
 
         // The sparse tree root should match the header merkle root
-        assert_eq!(reader.sparse_tree_root().unwrap(), reader.header().merkle_root);
+        assert_eq!(
+            reader.sparse_tree_root().unwrap(),
+            reader.header().merkle_root
+        );
 
         Ok(())
     }
@@ -1252,7 +1255,10 @@ mod tests {
 
         // Now we have a tree
         assert!(reader.has_verification_tree());
-        assert_eq!(reader.sparse_tree_root().unwrap(), reader.header().merkle_root);
+        assert_eq!(
+            reader.sparse_tree_root().unwrap(),
+            reader.header().merkle_root
+        );
 
         Ok(())
     }

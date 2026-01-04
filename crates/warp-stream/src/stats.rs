@@ -3,8 +3,8 @@
 //! This module provides real-time statistics collection for monitoring
 //! pipeline performance, latency, and throughput.
 
-use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Duration, Instant};
 
 /// Statistics for a single pipeline stage
@@ -38,8 +38,10 @@ impl StageStats {
         let latency_us = latency.as_micros() as u64;
 
         self.chunks_processed.fetch_add(1, Ordering::Relaxed);
-        self.bytes_processed.fetch_add(bytes as u64, Ordering::Relaxed);
-        self.total_latency_us.fetch_add(latency_us, Ordering::Relaxed);
+        self.bytes_processed
+            .fetch_add(bytes as u64, Ordering::Relaxed);
+        self.total_latency_us
+            .fetch_add(latency_us, Ordering::Relaxed);
 
         // Update max latency
         self.max_latency_us.fetch_max(latency_us, Ordering::Relaxed);
@@ -230,8 +232,12 @@ impl std::fmt::Display for StatsSummary {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         writeln!(f, "Pipeline Statistics:")?;
         writeln!(f, "  Elapsed: {:?}", self.elapsed)?;
-        writeln!(f, "  Total bytes: {} ({:.2} GB)",
-                 self.total_bytes, self.total_bytes as f64 / (1024.0 * 1024.0 * 1024.0))?;
+        writeln!(
+            f,
+            "  Total bytes: {} ({:.2} GB)",
+            self.total_bytes,
+            self.total_bytes as f64 / (1024.0 * 1024.0 * 1024.0)
+        )?;
         writeln!(f, "  Throughput: {:.2} GB/s", self.throughput_gbps)?;
         writeln!(f, "  Completed chunks: {}", self.completed_chunks)?;
         writeln!(f, "  Latency (avg):")?;

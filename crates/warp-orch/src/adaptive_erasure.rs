@@ -304,12 +304,12 @@ impl AdaptiveErasure {
     pub fn recommend_for_loss_rate(loss_rate: f64) -> ErasureParameters {
         // Higher loss = more parity shards
         let parity = match loss_rate {
-            l if l < 0.01 => 1,   // < 1% loss: minimal parity
-            l if l < 0.05 => 2,   // < 5% loss: standard parity
-            l if l < 0.10 => 3,   // < 10% loss: increased parity
-            l if l < 0.20 => 4,   // < 20% loss: high parity
-            l if l < 0.30 => 6,   // < 30% loss: very high parity
-            _ => 8,               // >= 30% loss: maximum parity
+            l if l < 0.01 => 1, // < 1% loss: minimal parity
+            l if l < 0.05 => 2, // < 5% loss: standard parity
+            l if l < 0.10 => 3, // < 10% loss: increased parity
+            l if l < 0.20 => 4, // < 20% loss: high parity
+            l if l < 0.30 => 6, // < 30% loss: very high parity
+            _ => 8,             // >= 30% loss: maximum parity
         };
 
         // Data shards scale with parity to maintain efficiency

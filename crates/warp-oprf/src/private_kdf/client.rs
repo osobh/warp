@@ -61,10 +61,8 @@ impl PrivateKdfClient {
     /// Finalize key derivation after receiving server response
     pub fn derive_key(&self, state: KdfState, response: &KdfResponse) -> Result<DerivedKey> {
         // Reconstruct evaluation
-        let evaluation = crate::oprf::Evaluation::with_proof(
-            response.evaluated.clone(),
-            response.proof.clone(),
-        );
+        let evaluation =
+            crate::oprf::Evaluation::with_proof(response.evaluated.clone(), response.proof.clone());
 
         // Finalize OPRF
         let output = self.oprf_client.finalize(state.oprf_state, &evaluation)?;
@@ -100,7 +98,9 @@ mod tests {
         let server = PrivateKdfServer::new("test-key").unwrap();
         let client = PrivateKdfClient::new(&server.public_key()).unwrap();
 
-        let (request, _state) = client.derive_request(b"password", "encryption", None).unwrap();
+        let (request, _state) = client
+            .derive_request(b"password", "encryption", None)
+            .unwrap();
         assert!(!request.blinded.is_empty());
         assert_eq!(request.context, "encryption");
     }
@@ -111,14 +111,20 @@ mod tests {
         let server = PrivateKdfServer::new("kdf-key").unwrap();
         let client = PrivateKdfClient::new(&server.public_key()).unwrap();
 
-        let key1 = client.derive_with_server(b"password", "encryption", &server).unwrap();
-        let key2 = client.derive_with_server(b"password", "encryption", &server).unwrap();
+        let key1 = client
+            .derive_with_server(b"password", "encryption", &server)
+            .unwrap();
+        let key2 = client
+            .derive_with_server(b"password", "encryption", &server)
+            .unwrap();
 
         // Same input produces same key
         assert_eq!(key1.as_bytes(), key2.as_bytes());
 
         // Different context produces different key
-        let key3 = client.derive_with_server(b"password", "signing", &server).unwrap();
+        let key3 = client
+            .derive_with_server(b"password", "signing", &server)
+            .unwrap();
         assert_ne!(key1.as_bytes(), key3.as_bytes());
     }
 
@@ -128,8 +134,12 @@ mod tests {
         let server = PrivateKdfServer::new("kdf-key").unwrap();
         let client = PrivateKdfClient::new(&server.public_key()).unwrap();
 
-        let key1 = client.derive_with_server(b"password1", "encryption", &server).unwrap();
-        let key2 = client.derive_with_server(b"password2", "encryption", &server).unwrap();
+        let key1 = client
+            .derive_with_server(b"password1", "encryption", &server)
+            .unwrap();
+        let key2 = client
+            .derive_with_server(b"password2", "encryption", &server)
+            .unwrap();
 
         // Different inputs produce different keys
         assert_ne!(key1.as_bytes(), key2.as_bytes());

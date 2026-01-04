@@ -1,15 +1,15 @@
 //! Clone management for instant, space-efficient copies
 
 use std::collections::{HashMap, HashSet};
-use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Duration, Instant, SystemTime};
 
 use dashmap::DashMap;
 use parking_lot::RwLock;
 use tracing::{debug, info, warn};
 
-use super::cow::{CowManager, BlockRef};
+use super::cow::{BlockRef, CowManager};
 use super::manager::{Snapshot, SnapshotId};
 
 /// Unique identifier for a clone
@@ -219,7 +219,8 @@ impl CloneManager {
         name: &str,
     ) -> Result<CloneHandle, String> {
         // Check limits
-        let current_clones = self.snapshot_clones
+        let current_clones = self
+            .snapshot_clones
             .get(&snapshot.id)
             .map(|s| s.len())
             .unwrap_or(0);
@@ -245,9 +246,7 @@ impl CloneManager {
 
         info!(
             snapshot_id = snapshot.id,
-            target_bucket,
-            name,
-            "Creating clone"
+            target_bucket, name, "Creating clone"
         );
 
         let clone_id = self.next_id.fetch_add(1, Ordering::SeqCst);
@@ -278,7 +277,8 @@ impl CloneManager {
             .insert(clone_id);
 
         // Index by bucket
-        self.bucket_clones.insert(target_bucket.to_string(), clone_id);
+        self.bucket_clones
+            .insert(target_bucket.to_string(), clone_id);
 
         // Initialize override tracking
         self.object_overrides.insert(clone_id, HashMap::new());
@@ -418,7 +418,9 @@ impl CloneManager {
     pub async fn promote_clone(&self, clone_id: CloneId) -> Result<(), String> {
         // Update state
         {
-            let mut clone = self.clones.get_mut(&clone_id)
+            let mut clone = self
+                .clones
+                .get_mut(&clone_id)
                 .ok_or_else(|| format!("Clone {} not found", clone_id))?;
 
             if clone.state != CloneState::Active {
@@ -457,7 +459,9 @@ impl CloneManager {
 
     /// Delete a clone
     pub async fn delete_clone(&self, clone_id: CloneId) -> Result<(), String> {
-        let clone = self.clones.get(&clone_id)
+        let clone = self
+            .clones
+            .get(&clone_id)
             .ok_or_else(|| format!("Clone {} not found", clone_id))?;
 
         if clone.state == CloneState::Deleting {
@@ -583,8 +587,8 @@ impl CloneManager {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::snapshot::cow::CowConfig;
     use crate::snapshot::SnapshotGranularity;
+    use crate::snapshot::cow::CowConfig;
 
     fn create_test_snapshot(id: SnapshotId) -> Snapshot {
         Snapshot {
@@ -613,8 +617,10 @@ mod tests {
         let clone_manager = CloneManager::new(CloneConfig::default(), cow_manager);
 
         let snapshot = create_test_snapshot(1);
-        let handle = clone_manager.create_clone(&snapshot, "clone-bucket", "test-clone")
-            .await.unwrap();
+        let handle = clone_manager
+            .create_clone(&snapshot, "clone-bucket", "test-clone")
+            .await
+            .unwrap();
 
         assert_eq!(handle.bucket, "clone-bucket");
 
@@ -630,18 +636,24 @@ mod tests {
         let clone_manager = CloneManager::new(CloneConfig::default(), cow_manager);
 
         let snapshot = create_test_snapshot(1);
-        let handle = clone_manager.create_clone(&snapshot, "clone-bucket", "test-clone")
-            .await.unwrap();
+        let handle = clone_manager
+            .create_clone(&snapshot, "clone-bucket", "test-clone")
+            .await
+            .unwrap();
 
         // Record a new object
-        clone_manager.record_write(handle.id, "new-object.txt", vec![], 100, true).unwrap();
+        clone_manager
+            .record_write(handle.id, "new-object.txt", vec![], 100, true)
+            .unwrap();
 
         let clone = clone_manager.get_clone(handle.id).unwrap();
         assert_eq!(clone.added_objects, 1);
         assert_eq!(clone.unique_bytes, 100);
 
         // Record a modification
-        clone_manager.record_write(handle.id, "existing.txt", vec![], 50, false).unwrap();
+        clone_manager
+            .record_write(handle.id, "existing.txt", vec![], 50, false)
+            .unwrap();
 
         let clone = clone_manager.get_clone(handle.id).unwrap();
         assert_eq!(clone.modified_objects, 1);
@@ -653,8 +665,10 @@ mod tests {
         let clone_manager = CloneManager::new(CloneConfig::default(), cow_manager);
 
         let snapshot = create_test_snapshot(1);
-        let handle = clone_manager.create_clone(&snapshot, "clone-bucket", "test-clone")
-            .await.unwrap();
+        let handle = clone_manager
+            .create_clone(&snapshot, "clone-bucket", "test-clone")
+            .await
+            .unwrap();
 
         assert!(clone_manager.is_clone("clone-bucket"));
 
@@ -670,8 +684,10 @@ mod tests {
         let clone_manager = CloneManager::new(CloneConfig::default(), cow_manager);
 
         let snapshot = create_test_snapshot(1);
-        let handle = clone_manager.create_clone(&snapshot, "clone-bucket", "test-clone")
-            .await.unwrap();
+        let handle = clone_manager
+            .create_clone(&snapshot, "clone-bucket", "test-clone")
+            .await
+            .unwrap();
 
         clone_manager.promote_clone(handle.id).await.unwrap();
 
@@ -706,8 +722,10 @@ mod tests {
         let clone_manager = CloneManager::new(CloneConfig::default(), cow_manager);
 
         let snapshot = create_test_snapshot(1);
-        let handle = clone_manager.create_clone(&snapshot, "clone-bucket", "test-clone")
-            .await.unwrap();
+        let handle = clone_manager
+            .create_clone(&snapshot, "clone-bucket", "test-clone")
+            .await
+            .unwrap();
 
         clone_manager.set_readonly(handle.id).unwrap();
 

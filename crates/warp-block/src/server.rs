@@ -3,8 +3,8 @@
 //! Main NBD server that handles client connections.
 
 use std::net::SocketAddr;
-use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
 
 use dashmap::DashMap;
 use tokio::net::TcpListener;
@@ -62,7 +62,10 @@ impl NbdServer {
     pub fn create_pool(&self, config: ThinPoolConfig) -> BlockResult<()> {
         let name = config.name.clone();
         if self.pools.contains_key(&name) {
-            return Err(BlockError::Protocol(format!("Pool {} already exists", name)));
+            return Err(BlockError::Protocol(format!(
+                "Pool {} already exists",
+                name
+            )));
         }
 
         let pool = Arc::new(ThinPool::new(config));
@@ -103,12 +106,11 @@ impl NbdServer {
 
         // Register export
         let volume = pool.get_volume(&volume_id).unwrap();
-        let export = ExportInfo::new(&volume.name, volume.size())
-            .block_sizes(
-                1,
-                volume.block_size,
-                32 * 1024 * 1024,
-            );
+        let export = ExportInfo::new(&volume.name, volume.size()).block_sizes(
+            1,
+            volume.block_size,
+            32 * 1024 * 1024,
+        );
 
         let export = if volume.is_read_only() {
             ExportInfo {

@@ -6,11 +6,11 @@
 use crate::backend::{DpuBuffer, DpuType};
 use crate::error::{Error, Result};
 use crate::traits::{
-    CompressionAlgorithm, DpuCipher, DpuCompressor, DpuErasureCoder, DpuHasher, DpuOp,
-    DpuOpStats, IncrementalHasher,
+    CompressionAlgorithm, DpuCipher, DpuCompressor, DpuErasureCoder, DpuHasher, DpuOp, DpuOpStats,
+    IncrementalHasher,
 };
-use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
 
 // ============================================================================
 // CPU Hasher (BLAKE3)
@@ -190,8 +190,8 @@ impl DpuCipher for CpuCipher {
         aad: Option<&[u8]>,
     ) -> Result<Vec<u8>> {
         use chacha20poly1305::{
-            aead::{Aead, KeyInit, Payload},
             ChaCha20Poly1305, Nonce,
+            aead::{Aead, KeyInit, Payload},
         };
 
         self.stats.encrypt_ops.fetch_add(1, Ordering::Relaxed);
@@ -203,7 +203,13 @@ impl DpuCipher for CpuCipher {
         let nonce = Nonce::from_slice(nonce);
 
         let ciphertext = if let Some(aad) = aad {
-            cipher.encrypt(nonce, Payload { msg: plaintext, aad })
+            cipher.encrypt(
+                nonce,
+                Payload {
+                    msg: plaintext,
+                    aad,
+                },
+            )
         } else {
             cipher.encrypt(nonce, plaintext)
         }
@@ -220,8 +226,8 @@ impl DpuCipher for CpuCipher {
         aad: Option<&[u8]>,
     ) -> Result<Vec<u8>> {
         use chacha20poly1305::{
-            aead::{Aead, KeyInit, Payload},
             ChaCha20Poly1305, Nonce,
+            aead::{Aead, KeyInit, Payload},
         };
 
         self.stats.decrypt_ops.fetch_add(1, Ordering::Relaxed);
@@ -605,12 +611,9 @@ impl DpuErasureCoder for CpuErasureCoder {
 
         // Use the simple encode API
         let original_refs: Vec<&[u8]> = original_shards.iter().map(|s| s.as_slice()).collect();
-        let recovery = reed_solomon_simd::encode(
-            self.data_shards,
-            self.parity_shards,
-            &original_refs,
-        )
-        .map_err(|e| Error::ErasureCoding(format!("Encoding failed: {}", e)))?;
+        let recovery =
+            reed_solomon_simd::encode(self.data_shards, self.parity_shards, &original_refs)
+                .map_err(|e| Error::ErasureCoding(format!("Encoding failed: {}", e)))?;
 
         // Combine original and recovery shards
         let mut all_shards = original_shards;
@@ -662,13 +665,9 @@ impl DpuErasureCoder for CpuErasureCoder {
         }
 
         // Use the simple decode API
-        let restored = reed_solomon_simd::decode(
-            self.data_shards,
-            self.parity_shards,
-            original,
-            recovery,
-        )
-        .map_err(|e| Error::ErasureCoding(format!("Decoding failed: {}", e)))?;
+        let restored =
+            reed_solomon_simd::decode(self.data_shards, self.parity_shards, original, recovery)
+                .map_err(|e| Error::ErasureCoding(format!("Decoding failed: {}", e)))?;
 
         // Reconstruct original data from restored shards
         // The restored map contains only the shards that were missing
@@ -781,9 +780,7 @@ mod tests {
         let plaintext = b"Secret data";
         let aad = b"additional authenticated data";
 
-        let ciphertext = cipher
-            .encrypt(plaintext, &key, &nonce, Some(aad))
-            .unwrap();
+        let ciphertext = cipher.encrypt(plaintext, &key, &nonce, Some(aad)).unwrap();
         let decrypted = cipher
             .decrypt(&ciphertext, &key, &nonce, Some(aad))
             .unwrap();

@@ -112,7 +112,7 @@ impl DpuInfo {
             device_index: 0,
             generation: 3,
             arm_cores: 16,
-            sram_bytes: 64 * 1024 * 1024,        // 64MB
+            sram_bytes: 64 * 1024 * 1024,               // 64MB
             host_memory_bytes: 32 * 1024 * 1024 * 1024, // 32GB
             network_bandwidth_gbps: 400,
             has_crypto_accel: true,
@@ -278,7 +278,14 @@ pub fn is_dpu_available() -> bool {
 /// Get the best available DPU backend
 ///
 /// Returns BlueField if available, otherwise returns a stub or CPU fallback.
-pub fn get_best_backend() -> Result<Arc<dyn DpuBackend<Buffer = crate::backends::stub::StubBuffer, WorkQueue = crate::backends::stub::StubWorkQueue>>> {
+pub fn get_best_backend() -> Result<
+    Arc<
+        dyn DpuBackend<
+                Buffer = crate::backends::stub::StubBuffer,
+                WorkQueue = crate::backends::stub::StubWorkQueue,
+            >,
+    >,
+> {
     // For now, return stub backend
     // When BlueField is implemented, check for it first
     Ok(Arc::new(crate::backends::stub::StubBackend::new()))

@@ -8,17 +8,19 @@
 
 #![warn(missing_docs)]
 
+pub mod adaptive;
 pub mod cpu;
+pub mod dictionary;
 #[cfg(feature = "gpu")]
 pub mod gpu;
-pub mod adaptive;
-pub mod dictionary;
 
-pub use cpu::{ZstdCompressor, Lz4Compressor};
-pub use dictionary::{Dictionary, DictZstdCompressor};
+pub use cpu::{Lz4Compressor, ZstdCompressor};
+pub use dictionary::{DictZstdCompressor, Dictionary};
 
 #[cfg(feature = "gpu")]
-pub use gpu::{GpuContext, GpuLz4Compressor, GpuZstdCompressor, BatchCompressor, CompressionAlgorithm};
+pub use gpu::{
+    BatchCompressor, CompressionAlgorithm, GpuContext, GpuLz4Compressor, GpuZstdCompressor,
+};
 
 /// Compression error types
 #[derive(Debug, thiserror::Error)]
@@ -26,15 +28,15 @@ pub enum Error {
     /// Compression failed
     #[error("Compression error: {0}")]
     Compression(String),
-    
+
     /// Decompression failed
     #[error("Decompression error: {0}")]
     Decompression(String),
-    
+
     /// Invalid compression level
     #[error("Invalid compression level: {0}")]
     InvalidLevel(i32),
-    
+
     /// GPU error
     #[error("GPU error: {0}")]
     Gpu(String),
@@ -47,10 +49,10 @@ pub type Result<T> = std::result::Result<T, Error>;
 pub trait Compressor: Send + Sync {
     /// Compress data
     fn compress(&self, input: &[u8]) -> Result<Vec<u8>>;
-    
+
     /// Decompress data
     fn decompress(&self, input: &[u8]) -> Result<Vec<u8>>;
-    
+
     /// Algorithm name
     fn name(&self) -> &'static str;
 }

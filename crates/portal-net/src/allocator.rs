@@ -220,7 +220,11 @@ impl IpAllocator for BitmapAllocator {
         self.allocated.insert(host);
 
         // Update hint to next position for optimization
-        self.next_hint = if host < MAX_HOST { host + 1 } else { FIRST_ALLOCATABLE };
+        self.next_hint = if host < MAX_HOST {
+            host + 1
+        } else {
+            FIRST_ALLOCATABLE
+        };
 
         Some(VirtualIp::new(host))
     }
@@ -495,11 +499,7 @@ mod tests {
 
     #[test]
     fn test_with_reserved() {
-        let reserved = vec![
-            VirtualIp::new(10),
-            VirtualIp::new(20),
-            VirtualIp::new(30),
-        ];
+        let reserved = vec![VirtualIp::new(10), VirtualIp::new(20), VirtualIp::new(30)];
 
         let allocator = BitmapAllocator::with_reserved(&reserved);
 

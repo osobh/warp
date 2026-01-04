@@ -42,11 +42,7 @@ impl DelegationType {
 
     /// Convert NFS delegation type
     pub fn from_nfs(is_write: bool) -> Self {
-        if is_write {
-            Self::Write
-        } else {
-            Self::Read
-        }
+        if is_write { Self::Write } else { Self::Read }
     }
 
     /// Convert to NFS style (read or write only)
@@ -267,16 +263,11 @@ impl DelegationManager {
         let delegation = Delegation::new(stateid, file_id, client_id, deleg_type);
 
         // Store
-        self.by_file.insert(file_id, Delegation::new(
-            stateid,
+        self.by_file.insert(
             file_id,
-            client_id,
-            deleg_type,
-        ));
-        self.by_client
-            .entry(client_id)
-            .or_default()
-            .push(file_id);
+            Delegation::new(stateid, file_id, client_id, deleg_type),
+        );
+        self.by_client.entry(client_id).or_default().push(file_id);
 
         Ok(delegation)
     }
@@ -332,7 +323,10 @@ impl DelegationManager {
     }
 
     /// Get delegation for a file
-    pub fn get(&self, file_id: FileId) -> Option<dashmap::mapref::one::Ref<'_, FileId, Delegation>> {
+    pub fn get(
+        &self,
+        file_id: FileId,
+    ) -> Option<dashmap::mapref::one::Ref<'_, FileId, Delegation>> {
         self.by_file.get(&file_id)
     }
 
@@ -417,10 +411,16 @@ mod tests {
     fn test_delegation_conflict() {
         let manager = DelegationManager::new();
 
-        manager.grant(1, ClientId::new(1), DelegationType::Write).unwrap();
+        manager
+            .grant(1, ClientId::new(1), DelegationType::Write)
+            .unwrap();
 
         // Different client should fail
-        assert!(manager.grant(1, ClientId::new(2), DelegationType::Read).is_err());
+        assert!(
+            manager
+                .grant(1, ClientId::new(2), DelegationType::Read)
+                .is_err()
+        );
     }
 
     #[test]

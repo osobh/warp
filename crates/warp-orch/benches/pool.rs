@@ -6,10 +6,10 @@
 //! - Concurrent access patterns
 //! - Per-edge connection management
 
-use criterion::{black_box, criterion_group, criterion_main, Criterion, Throughput, BenchmarkId};
+use criterion::{BenchmarkId, Criterion, Throughput, black_box, criterion_group, criterion_main};
+use tokio::runtime::Runtime;
 use warp_orch::pool::{ConnectionPool, PoolConfig};
 use warp_sched::EdgeIdx;
-use tokio::runtime::Runtime;
 
 // ============================================================================
 // ACQUIRE/RELEASE BENCHMARKS (O(1) via idle index)
@@ -202,9 +202,7 @@ fn bench_pool_stats(c: &mut Criterion) {
         group.bench_with_input(
             BenchmarkId::new("collect-stats", num_connections),
             &num_connections,
-            |b, _| {
-                b.iter(|| black_box(pool.stats()))
-            },
+            |b, _| b.iter(|| black_box(pool.stats())),
         );
     }
 

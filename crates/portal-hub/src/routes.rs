@@ -8,15 +8,15 @@
 //! - Chunk existence checking
 
 use crate::{
+    Error, Result,
     auth::AuthenticatedEdge,
     storage::{EdgeInfo, HubStorage, StoredPortal},
-    Error, Result,
 };
 use axum::{
+    Json,
     extract::{Path, State},
     http::StatusCode,
     response::{IntoResponse, Response},
-    Json,
 };
 use bytes::Bytes;
 use ed25519_dalek::VerifyingKey;
@@ -166,8 +166,8 @@ pub async fn create_portal(
     storage.store_portal(stored_portal)?;
 
     // Serialize portal to JSON
-    let portal_json = serde_json::to_value(&portal)
-        .map_err(|e| Error::Serialization(e.to_string()))?;
+    let portal_json =
+        serde_json::to_value(&portal).map_err(|e| Error::Serialization(e.to_string()))?;
 
     Ok(Json(PortalResponse {
         portal: portal_json,
@@ -208,8 +208,8 @@ pub async fn update_portal(
     }
 
     // Deserialize updated portal
-    let updated_portal: Portal = serde_json::from_value(req.portal)
-        .map_err(|e| Error::Serialization(e.to_string()))?;
+    let updated_portal: Portal =
+        serde_json::from_value(req.portal).map_err(|e| Error::Serialization(e.to_string()))?;
 
     // Ensure portal ID hasn't changed
     if updated_portal.id != portal_id {
@@ -224,8 +224,8 @@ pub async fn update_portal(
     );
     storage.update_portal(&portal_id, updated_stored)?;
 
-    let portal_json = serde_json::to_value(&updated_portal)
-        .map_err(|e| Error::Serialization(e.to_string()))?;
+    let portal_json =
+        serde_json::to_value(&updated_portal).map_err(|e| Error::Serialization(e.to_string()))?;
 
     Ok(Json(PortalResponse {
         portal: portal_json,
@@ -329,8 +329,8 @@ pub async fn check_chunks(
 
 /// Parse hex-encoded public key
 fn parse_public_key(hex: &str) -> Result<VerifyingKey> {
-    let bytes = hex::decode(hex)
-        .map_err(|_| Error::Serialization("Invalid hex encoding".into()))?;
+    let bytes =
+        hex::decode(hex).map_err(|_| Error::Serialization("Invalid hex encoding".into()))?;
 
     if bytes.len() != 32 {
         return Err(Error::Serialization(format!(
@@ -348,8 +348,8 @@ fn parse_public_key(hex: &str) -> Result<VerifyingKey> {
 
 /// Parse hex-encoded content ID
 fn parse_content_id(hex: &str) -> Result<ContentId> {
-    let bytes = hex::decode(hex)
-        .map_err(|_| Error::Serialization("Invalid hex encoding".into()))?;
+    let bytes =
+        hex::decode(hex).map_err(|_| Error::Serialization("Invalid hex encoding".into()))?;
 
     if bytes.len() != 32 {
         return Err(Error::InvalidContentId);
@@ -657,9 +657,7 @@ mod tests {
             content_ids: vec![hex::encode(cid1), hex::encode(cid2), hex::encode(cid3)],
         };
 
-        let response = check_chunks(State(storage), auth, Json(req))
-            .await
-            .unwrap();
+        let response = check_chunks(State(storage), auth, Json(req)).await.unwrap();
 
         assert_eq!(response.existing.len(), 2);
         assert!(response.existing.contains(&hex::encode(cid1)));

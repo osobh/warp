@@ -257,7 +257,10 @@ mod tests {
         assert!(handle.validate_generation(1).is_ok());
         assert!(matches!(
             handle.validate_generation(2),
-            Err(GatewayError::StaleHandle { expected: 2, actual: 1 })
+            Err(GatewayError::StaleHandle {
+                expected: 2,
+                actual: 1
+            })
         ));
     }
 

@@ -159,7 +159,10 @@ impl Election {
     }
 
     fn count_votes_for(&self, candidate: NodeId) -> usize {
-        self.votes.values().filter(|v| v.candidate == candidate).count()
+        self.votes
+            .values()
+            .filter(|v| v.candidate == candidate)
+            .count()
     }
 
     fn get_winner(&self, quorum_size: usize) -> Option<NodeId> {
@@ -243,13 +246,16 @@ impl VoteTracker {
 
     /// Register a node in the cluster
     pub fn register_node(&self, id: NodeId, domain_id: DomainId, is_witness: bool) {
-        self.cluster_nodes.insert(id, NodeInfo {
+        self.cluster_nodes.insert(
             id,
-            last_seen: Instant::now(),
-            domain_id,
-            is_witness,
-            reachable: true,
-        });
+            NodeInfo {
+                id,
+                last_seen: Instant::now(),
+                domain_id,
+                is_witness,
+                reachable: true,
+            },
+        );
     }
 
     /// Remove a node from the cluster
@@ -283,13 +289,11 @@ impl VoteTracker {
     /// Get current quorum status
     pub fn quorum_status(&self) -> QuorumStatus {
         let total_nodes = self.cluster_nodes.len();
-        let reachable_nodes = self.cluster_nodes
-            .iter()
-            .filter(|n| n.reachable)
-            .count();
+        let reachable_nodes = self.cluster_nodes.iter().filter(|n| n.reachable).count();
         let quorum_size = self.quorum_size();
 
-        let voted_nodes = self.current_election
+        let voted_nodes = self
+            .current_election
             .read()
             .as_ref()
             .map(|e| e.votes.keys().cloned().collect())
@@ -410,7 +414,10 @@ impl VoteTracker {
 
     /// Get all registered nodes
     pub fn nodes(&self) -> Vec<NodeInfo> {
-        self.cluster_nodes.iter().map(|r| r.value().clone()).collect()
+        self.cluster_nodes
+            .iter()
+            .map(|r| r.value().clone())
+            .collect()
     }
 
     /// Get reachable node count

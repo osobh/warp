@@ -2,15 +2,15 @@
 //!
 //! Compares GPU vs CPU encryption performance at various data sizes.
 
-use criterion::{black_box, criterion_group, criterion_main, Criterion, BenchmarkId, Throughput};
+use criterion::{BenchmarkId, Criterion, Throughput, black_box, criterion_group, criterion_main};
 use warp_stream::{StreamConfig, create_crypto_context};
 
 /// Benchmark data sizes to test
 const SIZES: &[usize] = &[
-    64 * 1024,       // 64 KB
-    256 * 1024,      // 256 KB
-    1024 * 1024,     // 1 MB
-    4 * 1024 * 1024, // 4 MB
+    64 * 1024,        // 64 KB
+    256 * 1024,       // 256 KB
+    1024 * 1024,      // 1 MB
+    4 * 1024 * 1024,  // 4 MB
     16 * 1024 * 1024, // 16 MB
 ];
 
@@ -32,11 +32,7 @@ fn bench_cpu_encryption(c: &mut Criterion) {
         group.bench_with_input(
             BenchmarkId::new("encrypt", format!("{}KB", size / 1024)),
             &data,
-            |b, data| {
-                b.iter(|| {
-                    black_box(ctx.encrypt(data, &key, &nonce).unwrap())
-                })
-            },
+            |b, data| b.iter(|| black_box(ctx.encrypt(data, &key, &nonce).unwrap())),
         );
     }
 
@@ -70,11 +66,7 @@ fn bench_gpu_encryption(c: &mut Criterion) {
         group.bench_with_input(
             BenchmarkId::new("encrypt", format!("{}KB", size / 1024)),
             &data,
-            |b, data| {
-                b.iter(|| {
-                    black_box(ctx.encrypt(data, &key, &nonce).unwrap())
-                })
-            },
+            |b, data| b.iter(|| black_box(ctx.encrypt(data, &key, &nonce).unwrap())),
         );
     }
 
@@ -135,9 +127,7 @@ fn bench_streaming_chunks(c: &mut Criterion) {
     let chunk_size = 64 * 1024;
     let total_size = chunk_count * chunk_size;
 
-    let chunks: Vec<Vec<u8>> = (0..chunk_count)
-        .map(|_| vec![0xABu8; chunk_size])
-        .collect();
+    let chunks: Vec<Vec<u8>> = (0..chunk_count).map(|_| vec![0xABu8; chunk_size]).collect();
 
     group.throughput(Throughput::Bytes(total_size as u64));
 

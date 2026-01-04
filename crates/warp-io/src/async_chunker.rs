@@ -9,7 +9,7 @@
 //! monotonically increasing/decreasing byte sequences. This is significantly
 //! faster than traditional rolling hash approaches.
 
-use crate::{SeqCdcConfig, SeqMode, Result};
+use crate::{Result, SeqCdcConfig, SeqMode};
 use std::collections::VecDeque;
 use std::path::Path;
 use tokio::io::AsyncReadExt;
@@ -149,7 +149,8 @@ async fn stream_chunks_to_channel(
 
             // Check for boundary after minimum size
             if size >= config.min_size {
-                let at_boundary = is_monotonic_boundary(&window, &config) || size >= config.max_size;
+                let at_boundary =
+                    is_monotonic_boundary(&window, &config) || size >= config.max_size;
 
                 if at_boundary {
                     let chunk = std::mem::take(&mut current_chunk);
@@ -280,7 +281,8 @@ where
 
             // Check for boundary after minimum size
             if size >= config.min_size {
-                let at_boundary = is_monotonic_boundary(&window, &config) || size >= config.max_size;
+                let at_boundary =
+                    is_monotonic_boundary(&window, &config) || size >= config.max_size;
 
                 if at_boundary {
                     chunks.push(std::mem::take(&mut current_chunk));
@@ -536,11 +538,8 @@ mod tests {
     /// Test 10: stream handles file not found
     #[tokio::test]
     async fn test_stream_file_not_found() {
-        let mut rx = chunk_file_stream(
-            "/nonexistent/path".to_string(),
-            SeqCdcConfig::default(),
-            16,
-        );
+        let mut rx =
+            chunk_file_stream("/nonexistent/path".to_string(), SeqCdcConfig::default(), 16);
 
         let result = rx.recv().await;
         assert!(result.is_some());

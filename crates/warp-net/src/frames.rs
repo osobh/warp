@@ -72,7 +72,7 @@ pub struct FrameHeader {
 impl FrameHeader {
     /// Header size in bytes
     pub const SIZE: usize = 8;
-    
+
     /// Encode header to bytes
     pub fn encode(&self, buf: &mut BytesMut) {
         buf.put_u8(self.frame_type);
@@ -80,13 +80,13 @@ impl FrameHeader {
         buf.put_u16_le(self.stream_id);
         buf.put_u32_le(self.length);
     }
-    
+
     /// Decode header from bytes
     pub fn decode(buf: &mut impl Buf) -> Result<Self> {
         if buf.remaining() < Self::SIZE {
             return Err(crate::Error::Protocol("Incomplete header".into()));
         }
-        
+
         Ok(Self {
             frame_type: buf.get_u8(),
             flags: buf.get_u8(),

@@ -55,7 +55,10 @@ impl IntoResponse for ApiError {
             ApiError::AuthFailed(msg) => (StatusCode::UNAUTHORIZED, msg.clone()),
             ApiError::AccessDenied(msg) => (StatusCode::FORBIDDEN, msg.clone()),
             ApiError::NotFound(msg) => (StatusCode::NOT_FOUND, msg.clone()),
-            ApiError::MethodNotAllowed => (StatusCode::METHOD_NOT_ALLOWED, "Method not allowed".to_string()),
+            ApiError::MethodNotAllowed => (
+                StatusCode::METHOD_NOT_ALLOWED,
+                "Method not allowed".to_string(),
+            ),
             ApiError::Internal(msg) => (StatusCode::INTERNAL_SERVER_ERROR, msg.clone()),
         };
 

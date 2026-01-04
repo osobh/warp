@@ -80,10 +80,10 @@ pub mod store;
 pub mod tensor;
 
 pub use checkpoint::{Checkpoint, CheckpointBuilder, CheckpointManager};
-pub use config::{TensorConfig, ChunkConfig, CompressionConfig};
+pub use config::{ChunkConfig, CompressionConfig, TensorConfig};
 pub use error::{TensorError, TensorResult};
-pub use format::{TensorFormat, FormatReader, FormatWriter};
-pub use model::{ModelStore, ModelVersion, ModelMetadata};
-pub use shard::{ShardStrategy, TensorShard, ShardedTensor};
-pub use store::{TensorStore, TensorHandle, TensorQuery};
-pub use tensor::{TensorData, TensorDtype, TensorMeta, TensorLayout};
+pub use format::{FormatReader, FormatWriter, TensorFormat};
+pub use model::{ModelMetadata, ModelStore, ModelVersion};
+pub use shard::{ShardStrategy, ShardedTensor, TensorShard};
+pub use store::{TensorHandle, TensorQuery, TensorStore};
+pub use tensor::{TensorData, TensorDtype, TensorLayout, TensorMeta};

@@ -62,12 +62,12 @@ use tower_http::cors::CorsLayer;
 use tower_http::trace::TraceLayer;
 use tracing::info;
 
-use warp_store::{Store, MetricsCollector};
-use warp_store::backend::{StorageBackend, MultipartUpload, PartInfo};
+use warp_store::backend::{MultipartUpload, PartInfo, StorageBackend};
 use warp_store::bucket::{CorsConfig, EncryptionConfig, LifecycleRule, ReplicationConfig};
 use warp_store::events::NotificationConfiguration;
 use warp_store::object_lock::ObjectLockManager;
 use warp_store::version::VersioningMode;
+use warp_store::{MetricsCollector, Store};
 
 use s3::BucketPolicyManager;
 
@@ -214,7 +214,9 @@ impl<B: StorageBackend> AppState<B> {
 
     /// Get an existing upload
     pub fn get_upload(&self, upload_id: &str) -> Option<MultipartUpload> {
-        self.uploads.get(upload_id).map(|u: dashmap::mapref::one::Ref<'_, String, MultipartUpload>| u.value().clone())
+        self.uploads
+            .get(upload_id)
+            .map(|u: dashmap::mapref::one::Ref<'_, String, MultipartUpload>| u.value().clone())
     }
 
     /// Add a part to an upload
@@ -355,7 +357,11 @@ impl<B: StorageBackend> ApiServer<B> {
     }
 
     /// Create with custom backend and optional metrics
-    pub fn with_backend_and_metrics(store: Store<B>, config: ApiConfig, metrics: Option<Arc<MetricsCollector>>) -> Self {
+    pub fn with_backend_and_metrics(
+        store: Store<B>,
+        config: ApiConfig,
+        metrics: Option<Arc<MetricsCollector>>,
+    ) -> Self {
         #[cfg(feature = "iam")]
         let iam = if config.enable_iam {
             Some(Arc::new(IamManagers::with_ttl(config.session_ttl_seconds)))

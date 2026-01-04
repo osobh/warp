@@ -8,17 +8,17 @@
 //! These endpoints require the `zk` feature to be enabled.
 
 use axum::{
-    extract::{Path, State},
     Json,
+    extract::{Path, State},
 };
 use serde::{Deserialize, Serialize};
 use std::time::Instant;
 
-use warp_store::backend::StorageBackend;
 use warp_store::ObjectKey;
+use warp_store::backend::StorageBackend;
 
-use crate::error::{ApiError, ApiResult};
 use crate::AppState;
+use crate::error::{ApiError, ApiResult};
 
 // =============================================================================
 // Proof Types (matching nebula-zk structure)
@@ -121,21 +121,21 @@ pub async fn zk_prove<B: StorageBackend>(
 
     // Validate inputs
     if req.public_inputs.is_empty() {
-        return Err(ApiError::InvalidRequest("At least one public input required".into()));
+        return Err(ApiError::InvalidRequest(
+            "At least one public input required".into(),
+        ));
     }
 
     // Parse public inputs
     for (i, input) in req.public_inputs.iter().enumerate() {
-        hex::decode(input).map_err(|_| {
-            ApiError::InvalidRequest(format!("Invalid hex in public_input[{}]", i))
-        })?;
+        hex::decode(input)
+            .map_err(|_| ApiError::InvalidRequest(format!("Invalid hex in public_input[{}]", i)))?;
     }
 
     // Parse witness
     for (i, w) in req.witness.iter().enumerate() {
-        hex::decode(w).map_err(|_| {
-            ApiError::InvalidRequest(format!("Invalid hex in witness[{}]", i))
-        })?;
+        hex::decode(w)
+            .map_err(|_| ApiError::InvalidRequest(format!("Invalid hex in witness[{}]", i)))?;
     }
 
     // Simulate proof generation
@@ -148,7 +148,8 @@ pub async fn zk_prove<B: StorageBackend>(
         &[
             req.public_inputs.join("").as_bytes(),
             req.witness.join("").as_bytes(),
-        ].concat()
+        ]
+        .concat(),
     );
     let hash_bytes = hash.as_bytes();
     for i in 0..proof_size.min(32) {
@@ -206,9 +207,8 @@ pub async fn zk_verify<B: StorageBackend>(
 
     // Validate public inputs
     for (i, input) in req.public_inputs.iter().enumerate() {
-        hex::decode(input).map_err(|_| {
-            ApiError::InvalidRequest(format!("Invalid hex in public_input[{}]", i))
-        })?;
+        hex::decode(input)
+            .map_err(|_| ApiError::InvalidRequest(format!("Invalid hex in public_input[{}]", i)))?;
     }
 
     // Simulate verification
@@ -379,9 +379,7 @@ pub struct ZkStats {
 }
 
 /// Get ZK stats
-pub async fn zk_stats<B: StorageBackend>(
-    State(_state): State<AppState<B>>,
-) -> Json<ZkStats> {
+pub async fn zk_stats<B: StorageBackend>(State(_state): State<AppState<B>>) -> Json<ZkStats> {
     Json(ZkStats {
         zk_enabled: cfg!(feature = "zk"),
         supported_types: vec![

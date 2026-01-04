@@ -49,8 +49,8 @@
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
 
 use async_trait::async_trait;
 use bytes::{BufMut, Bytes, BytesMut};
@@ -63,7 +63,10 @@ use tracing::{debug, trace};
 use crate::backend::{HpcStorageBackend, StorageBackend, StorageProof};
 use crate::error::{Error, Result};
 use crate::key::ObjectKey;
-use crate::object::{FieldData, FieldValue, ListOptions, ObjectData, ObjectEntry, ObjectList, ObjectMeta, PutOptions, StorageClass};
+use crate::object::{
+    FieldData, FieldValue, ListOptions, ObjectData, ObjectEntry, ObjectList, ObjectMeta,
+    PutOptions, StorageClass,
+};
 
 /// Magic bytes for parcode format
 const PARCODE_MAGIC: &[u8; 4] = b"PARC";
@@ -176,12 +179,12 @@ impl ParcodeHeader {
         buf = &buf[4..];
 
         let index_offset = u64::from_le_bytes([
-            buf[0], buf[1], buf[2], buf[3], buf[4], buf[5], buf[6], buf[7]
+            buf[0], buf[1], buf[2], buf[3], buf[4], buf[5], buf[6], buf[7],
         ]);
         buf = &buf[8..];
 
         let data_offset = u64::from_le_bytes([
-            buf[0], buf[1], buf[2], buf[3], buf[4], buf[5], buf[6], buf[7]
+            buf[0], buf[1], buf[2], buf[3], buf[4], buf[5], buf[6], buf[7],
         ]);
 
         // Checksum is at offset 32
@@ -403,7 +406,8 @@ impl ParcodeBackend {
 
     /// Path for an object
     fn object_path(&self, key: &ObjectKey) -> PathBuf {
-        self.bucket_path(key.bucket()).join(format!("{}.parc", key.key()))
+        self.bucket_path(key.bucket())
+            .join(format!("{}.parc", key.key()))
     }
 
     /// Cache key for field index
@@ -416,8 +420,7 @@ impl ParcodeBackend {
         let hash = blake3::hash(name.as_bytes());
         let bytes = hash.as_bytes();
         u64::from_le_bytes([
-            bytes[0], bytes[1], bytes[2], bytes[3],
-            bytes[4], bytes[5], bytes[6], bytes[7],
+            bytes[0], bytes[1], bytes[2], bytes[3], bytes[4], bytes[5], bytes[6], bytes[7],
         ])
     }
 
@@ -449,21 +452,22 @@ impl ParcodeBackend {
             let slot = (name_hash as usize) % table_size;
 
             // Compress large fields
-            let (stored_value, compressed, uncompressed_size) = if value.len() > COMPRESSION_THRESHOLD {
-                match zstd::encode_all(*value, COMPRESSION_LEVEL) {
-                    Ok(compressed_data) => {
-                        // Only use compression if it actually saves space
-                        if compressed_data.len() < value.len() {
-                            (compressed_data, true, value.len() as u32)
-                        } else {
-                            (value.to_vec(), false, 0)
+            let (stored_value, compressed, uncompressed_size) =
+                if value.len() > COMPRESSION_THRESHOLD {
+                    match zstd::encode_all(*value, COMPRESSION_LEVEL) {
+                        Ok(compressed_data) => {
+                            // Only use compression if it actually saves space
+                            if compressed_data.len() < value.len() {
+                                (compressed_data, true, value.len() as u32)
+                            } else {
+                                (value.to_vec(), false, 0)
+                            }
                         }
+                        Err(_) => (value.to_vec(), false, 0),
                     }
-                    Err(_) => (value.to_vec(), false, 0),
-                }
-            } else {
-                (value.to_vec(), false, 0)
-            };
+                } else {
+                    (value.to_vec(), false, 0)
+                };
 
             // Linear probing for collisions
             let mut probe = slot;
@@ -546,7 +550,9 @@ impl ParcodeBackend {
         let name_hash = Self::hash_field_name(name);
 
         // Find by hash first (O(1)), then verify name
-        entries.iter().find(|e| e.name_hash == name_hash && e.name == name)
+        entries
+            .iter()
+            .find(|e| e.name_hash == name_hash && e.name == name)
     }
 
     /// Read field data from storage
@@ -602,8 +608,7 @@ impl ParcodeBackend {
                     return Err(Error::Backend("invalid int size".into()));
                 }
                 let val = i64::from_le_bytes([
-                    data[0], data[1], data[2], data[3],
-                    data[4], data[5], data[6], data[7],
+                    data[0], data[1], data[2], data[3], data[4], data[5], data[6], data[7],
                 ]);
                 Ok(FieldValue::Int(val))
             }
@@ -612,8 +617,7 @@ impl ParcodeBackend {
                     return Err(Error::Backend("invalid float size".into()));
                 }
                 let val = f64::from_le_bytes([
-                    data[0], data[1], data[2], data[3],
-                    data[4], data[5], data[6], data[7],
+                    data[0], data[1], data[2], data[3], data[4], data[5], data[6], data[7],
                 ]);
                 Ok(FieldValue::Float(val))
             }
@@ -871,7 +875,10 @@ impl StorageBackend for ParcodeBackend {
             objects.push(ObjectEntry {
                 key: key.to_string(),
                 size: meta.len(),
-                last_modified: meta.modified().map(chrono::DateTime::from).unwrap_or_else(|_| Utc::now()),
+                last_modified: meta
+                    .modified()
+                    .map(chrono::DateTime::from)
+                    .unwrap_or_else(|_| Utc::now()),
                 etag: String::new(),
                 storage_class: StorageClass::Standard,
                 version_id: None,
@@ -898,7 +905,10 @@ impl StorageBackend for ParcodeBackend {
     async fn head(&self, key: &ObjectKey) -> Result<ObjectMeta> {
         let path = self.object_path(key);
         let file_meta = tokio::fs::metadata(&path).await?;
-        let modified = file_meta.modified().map(chrono::DateTime::from).unwrap_or_else(|_| Utc::now());
+        let modified = file_meta
+            .modified()
+            .map(chrono::DateTime::from)
+            .unwrap_or_else(|_| Utc::now());
 
         Ok(ObjectMeta {
             size: file_meta.len(),
@@ -916,7 +926,8 @@ impl StorageBackend for ParcodeBackend {
     async fn create_bucket(&self, name: &str) -> Result<()> {
         let path = self.bucket_path(name);
         tokio::fs::create_dir_all(&path).await?;
-        self.buckets.insert(name.to_string(), Arc::new(BucketMeta::default()));
+        self.buckets
+            .insert(name.to_string(), Arc::new(BucketMeta::default()));
         debug!(bucket = name, "Created bucket");
         Ok(())
     }
@@ -958,7 +969,8 @@ impl HpcStorageBackend for ParcodeBackend {
         gpu_buffer: &warp_gpu::GpuBuffer<u8>,
     ) -> Result<ObjectMeta> {
         // Copy from GPU to CPU then store with parcode format
-        let buffer = gpu_buffer.copy_to_host()
+        let buffer = gpu_buffer
+            .copy_to_host()
             .map_err(|e| crate::Error::Backend(format!("GPU copy failed: {}", e)))?;
 
         let data = ObjectData::from(buffer);
@@ -1018,7 +1030,10 @@ mod tests {
         fields.insert("field2".to_string(), b"value2".to_vec());
 
         let parcode = ParcodeBackend::build_parcode(&fields).unwrap();
-        backend.put(&key, ObjectData::from(parcode), PutOptions::default()).await.unwrap();
+        backend
+            .put(&key, ObjectData::from(parcode), PutOptions::default())
+            .await
+            .unwrap();
 
         // Get full object
         let data = backend.get(&key).await.unwrap();
@@ -1059,7 +1074,11 @@ mod tests {
         let elapsed = start.elapsed();
 
         // Should complete very quickly (under 1ms for 100 lookups)
-        assert!(elapsed.as_millis() < 10, "Lookup took too long: {:?}", elapsed);
+        assert!(
+            elapsed.as_millis() < 10,
+            "Lookup took too long: {:?}",
+            elapsed
+        );
     }
 
     #[tokio::test]
@@ -1192,7 +1211,8 @@ mod tests {
         use bytes::Bytes;
 
         // String
-        let (bytes, ft) = ParcodeBackend::field_value_to_bytes(&FieldValue::String("test".into())).unwrap();
+        let (bytes, ft) =
+            ParcodeBackend::field_value_to_bytes(&FieldValue::String("test".into())).unwrap();
         assert_eq!(bytes, b"test");
         assert_eq!(ft, FieldType::String);
 
@@ -1217,7 +1237,11 @@ mod tests {
         assert_eq!(ft, FieldType::Bytes);
 
         // Bytes
-        let (bytes, ft) = ParcodeBackend::field_value_to_bytes(&FieldValue::Bytes(Bytes::from_static(&[0xAB, 0xCD]))).unwrap();
+        let (bytes, ft) =
+            ParcodeBackend::field_value_to_bytes(&FieldValue::Bytes(Bytes::from_static(&[
+                0xAB, 0xCD,
+            ])))
+            .unwrap();
         assert_eq!(bytes, vec![0xAB, 0xCD]);
         assert_eq!(ft, FieldType::Bytes);
     }
@@ -1268,7 +1292,10 @@ mod tests {
         ];
 
         let data = ParcodeBackend::build_parcode_typed(&fields).unwrap();
-        backend.put(&key, ObjectData::from(data), PutOptions::default()).await.unwrap();
+        backend
+            .put(&key, ObjectData::from(data), PutOptions::default())
+            .await
+            .unwrap();
 
         // Create promises
         let name_promise = backend.create_promise(&key, "name").await.unwrap();
@@ -1308,10 +1335,16 @@ mod tests {
         fields.insert("ratio".to_string(), FieldValue::Float(0.75));
         fields.insert("active".to_string(), FieldValue::Bool(true));
 
-        backend.put_typed_fields(&key, fields, PutOptions::default()).await.unwrap();
+        backend
+            .put_typed_fields(&key, fields, PutOptions::default())
+            .await
+            .unwrap();
 
         // Read back the fields
-        let field_data = backend.get_fields(&key, &["name", "count", "ratio", "active"]).await.unwrap();
+        let field_data = backend
+            .get_fields(&key, &["name", "count", "ratio", "active"])
+            .await
+            .unwrap();
         assert_eq!(field_data.len(), 4);
 
         // Verify values
@@ -1345,7 +1378,10 @@ mod tests {
         ];
 
         let data = ParcodeBackend::build_parcode_typed(&fields).unwrap();
-        backend.put(&key, ObjectData::from(data), PutOptions::default()).await.unwrap();
+        backend
+            .put(&key, ObjectData::from(data), PutOptions::default())
+            .await
+            .unwrap();
 
         // Read back and verify
         let field_data = backend.get_fields(&key, &["small", "large"]).await.unwrap();
@@ -1362,9 +1398,7 @@ mod tests {
     fn test_incompressible_data_not_compressed() {
         // Random data doesn't compress well
         let random_data: Vec<u8> = (0..2048).map(|i| (i * 17 + 31) as u8).collect();
-        let fields = vec![
-            ("random", random_data.as_slice(), FieldType::Bytes),
-        ];
+        let fields = vec![("random", random_data.as_slice(), FieldType::Bytes)];
 
         let parcode = ParcodeBackend::build_parcode_typed(&fields).unwrap();
         let entries = ParcodeBackend::parse_index(&parcode).unwrap();
@@ -1384,16 +1418,11 @@ mod tests {
     #[tokio::test]
     async fn test_array_field_roundtrip() {
         // Test Array field type with msgpack encoding
-        let array_data: Vec<FieldValue> = vec![
-            FieldValue::Int(1),
-            FieldValue::Int(2),
-            FieldValue::Int(3),
-        ];
+        let array_data: Vec<FieldValue> =
+            vec![FieldValue::Int(1), FieldValue::Int(2), FieldValue::Int(3)];
         let encoded = rmp_serde::to_vec(&array_data).unwrap();
 
-        let fields = vec![
-            ("numbers", encoded.as_slice(), FieldType::Array),
-        ];
+        let fields = vec![("numbers", encoded.as_slice(), FieldType::Array)];
 
         let parcode = ParcodeBackend::build_parcode_typed(&fields).unwrap();
         let entries = ParcodeBackend::parse_index(&parcode).unwrap();
@@ -1419,7 +1448,10 @@ mod tests {
                 fields.insert("data".to_string(), vec![i as u8; 100]);
 
                 let parcode = ParcodeBackend::build_parcode(&fields).unwrap();
-                backend.put(&key, ObjectData::from(parcode), PutOptions::default()).await.unwrap();
+                backend
+                    .put(&key, ObjectData::from(parcode), PutOptions::default())
+                    .await
+                    .unwrap();
 
                 // Access fields to populate cache
                 let _ = backend.get_fields(&key, &["id"]).await.unwrap();
@@ -1455,7 +1487,9 @@ mod tests {
         let temp_dir = tempfile::tempdir().unwrap();
 
         // Create backend with persistence disabled
-        let backend = ParcodeBackend::with_options(temp_dir.path(), false).await.unwrap();
+        let backend = ParcodeBackend::with_options(temp_dir.path(), false)
+            .await
+            .unwrap();
         backend.create_bucket("test").await.unwrap();
 
         let key = ObjectKey::new("test", "obj").unwrap();
@@ -1463,7 +1497,10 @@ mod tests {
         fields.insert("data".to_string(), b"test".to_vec());
 
         let parcode = ParcodeBackend::build_parcode(&fields).unwrap();
-        backend.put(&key, ObjectData::from(parcode), PutOptions::default()).await.unwrap();
+        backend
+            .put(&key, ObjectData::from(parcode), PutOptions::default())
+            .await
+            .unwrap();
 
         // Access to populate cache
         let _ = backend.get_fields(&key, &["data"]).await.unwrap();
@@ -1491,7 +1528,10 @@ mod tests {
 
         let parcode = ParcodeBackend::build_parcode(&fields).unwrap();
         let total_size = parcode.len();
-        backend.put(&key, ObjectData::from(parcode), PutOptions::default()).await.unwrap();
+        backend
+            .put(&key, ObjectData::from(parcode), PutOptions::default())
+            .await
+            .unwrap();
 
         // Benchmark: get single field vs full object
         let start = std::time::Instant::now();

@@ -56,8 +56,8 @@ pub struct ChunkConfig {
 impl Default for ChunkConfig {
     fn default() -> Self {
         Self {
-            chunk_threshold: 64 * 1024 * 1024,  // 64 MB
-            chunk_size: 16 * 1024 * 1024,       // 16 MB chunks
+            chunk_threshold: 64 * 1024 * 1024, // 64 MB
+            chunk_size: 16 * 1024 * 1024,      // 16 MB chunks
             max_chunks: 1024,
             parallel_upload: true,
             upload_concurrency: 4,
@@ -86,7 +86,7 @@ impl Default for CompressionConfig {
             enabled: true,
             algorithm: CompressionAlgorithm::Zstd,
             level: 3,
-            min_size: 1024,  // 1 KB
+            min_size: 1024, // 1 KB
             adaptive: true,
         }
     }
@@ -126,8 +126,8 @@ impl Default for CacheConfig {
             metadata_cache: true,
             metadata_cache_size: 10_000,
             data_cache: true,
-            data_cache_size: 1024 * 1024 * 1024,  // 1 GB
-            ttl_secs: 3600,  // 1 hour
+            data_cache_size: 1024 * 1024 * 1024, // 1 GB
+            ttl_secs: 3600,                      // 1 hour
         }
     }
 }

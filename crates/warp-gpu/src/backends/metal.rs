@@ -6,7 +6,9 @@
 //! Note: This uses the objc2 ecosystem which is the modern replacement
 //! for the deprecated gfx-rs/metal-rs crate.
 
-use crate::backend::{BackendType, DeviceInfo, GpuBackend, GpuBuffer, GpuFunction, GpuModule, KernelSource};
+use crate::backend::{
+    BackendType, DeviceInfo, GpuBackend, GpuBuffer, GpuFunction, GpuModule, KernelSource,
+};
 use crate::{Error, Result};
 use objc2::rc::Retained;
 use objc2::runtime::ProtocolObject;
@@ -111,8 +113,8 @@ impl MetalBackend {
     pub fn new() -> Result<Self> {
         debug!("Initializing Metal backend");
 
-        let device = objc2_metal::MTLCreateSystemDefaultDevice()
-            .ok_or_else(|| Error::DeviceInit {
+        let device =
+            objc2_metal::MTLCreateSystemDefaultDevice().ok_or_else(|| Error::DeviceInit {
                 device_id: 0,
                 message: "No Metal-capable device found".into(),
             })?;
@@ -120,11 +122,10 @@ impl MetalBackend {
         let name = device.name().to_string();
         info!("Metal device initialized: {}", name);
 
-        let command_queue = device.newCommandQueue()
-            .ok_or_else(|| Error::DeviceInit {
-                device_id: 0,
-                message: "Failed to create command queue".into(),
-            })?;
+        let command_queue = device.newCommandQueue().ok_or_else(|| Error::DeviceInit {
+            device_id: 0,
+            message: "Failed to create command queue".into(),
+        })?;
 
         let device_info = Self::query_device_info(&device, &name);
 
@@ -143,7 +144,10 @@ impl MetalBackend {
     }
 
     /// Query device information
-    fn query_device_info(device: &Retained<ProtocolObject<dyn MTLDevice>>, name: &str) -> DeviceInfo {
+    fn query_device_info(
+        device: &Retained<ProtocolObject<dyn MTLDevice>>,
+        name: &str,
+    ) -> DeviceInfo {
         // Get GPU family for compute capability equivalent
         let (family_major, family_minor) = Self::get_gpu_family(device);
 
@@ -206,33 +210,57 @@ impl MetalBackend {
 
         // M4 family (newest)
         if name_lower.contains("m4") {
-            if name_lower.contains("ultra") { return 80; }
-            if name_lower.contains("max") { return 40; }
-            if name_lower.contains("pro") { return 20; }
+            if name_lower.contains("ultra") {
+                return 80;
+            }
+            if name_lower.contains("max") {
+                return 40;
+            }
+            if name_lower.contains("pro") {
+                return 20;
+            }
             return 10;
         }
 
         // M3 family
         if name_lower.contains("m3") {
-            if name_lower.contains("ultra") { return 80; }
-            if name_lower.contains("max") { return 40; }
-            if name_lower.contains("pro") { return 18; }
+            if name_lower.contains("ultra") {
+                return 80;
+            }
+            if name_lower.contains("max") {
+                return 40;
+            }
+            if name_lower.contains("pro") {
+                return 18;
+            }
             return 10;
         }
 
         // M2 family
         if name_lower.contains("m2") {
-            if name_lower.contains("ultra") { return 76; }
-            if name_lower.contains("max") { return 38; }
-            if name_lower.contains("pro") { return 19; }
+            if name_lower.contains("ultra") {
+                return 76;
+            }
+            if name_lower.contains("max") {
+                return 38;
+            }
+            if name_lower.contains("pro") {
+                return 19;
+            }
             return 10;
         }
 
         // M1 family
         if name_lower.contains("m1") {
-            if name_lower.contains("ultra") { return 64; }
-            if name_lower.contains("max") { return 32; }
-            if name_lower.contains("pro") { return 16; }
+            if name_lower.contains("ultra") {
+                return 64;
+            }
+            if name_lower.contains("max") {
+                return 32;
+            }
+            if name_lower.contains("pro") {
+                return 16;
+            }
             return 8;
         }
 
@@ -276,12 +304,15 @@ impl MetalBackend {
         threadgroup_size: (u32, u32, u32),
     ) -> Result<()> {
         // Create command buffer
-        let cmd_buffer = self.command_queue.commandBuffer()
+        let cmd_buffer = self
+            .command_queue
+            .commandBuffer()
             .ok_or_else(|| Error::MetalOperation("Failed to create command buffer".into()))?;
 
         // Create compute command encoder
-        let encoder = cmd_buffer.computeCommandEncoder()
-            .ok_or_else(|| Error::MetalOperation("Failed to create compute command encoder".into()))?;
+        let encoder = cmd_buffer.computeCommandEncoder().ok_or_else(|| {
+            Error::MetalOperation("Failed to create compute command encoder".into())
+        })?;
 
         // Set the compute pipeline state
         encoder.setComputePipelineState(&function.pipeline);
@@ -290,11 +321,7 @@ impl MetalBackend {
         // SAFETY: buffers are valid Metal buffers from this backend
         for (idx, buffer) in buffers.iter().enumerate() {
             unsafe {
-                encoder.setBuffer_offset_atIndex(
-                    Some(&buffer.buffer),
-                    0,
-                    idx as usize,
-                );
+                encoder.setBuffer_offset_atIndex(Some(&buffer.buffer), 0, idx as usize);
             }
         }
 
@@ -305,11 +332,7 @@ impl MetalBackend {
 
             // SAFETY: ptr points to valid constant data for the duration of this call
             unsafe {
-                encoder.setBytes_length_atIndex(
-                    ptr,
-                    constants.len(),
-                    buffers.len(),
-                );
+                encoder.setBytes_length_atIndex(ptr, constants.len(), buffers.len());
             }
         }
 
@@ -395,7 +418,9 @@ impl MetalBackend {
         if offset + data.len() > buffer.size {
             return Err(Error::InvalidOperation(format!(
                 "Write exceeds buffer size: {} + {} > {}",
-                offset, data.len(), buffer.size
+                offset,
+                data.len(),
+                buffer.size
             )));
         }
 
@@ -473,15 +498,18 @@ impl GpuBackend for MetalBackend {
     }
 
     fn allocate(&self, bytes: usize) -> Result<Self::Buffer> {
-        let buffer = self.device.newBufferWithLength_options(
-            bytes,
-            MTLResourceOptions::StorageModeShared,
-        ).ok_or_else(|| Error::OutOfMemory {
-            size: bytes,
-            available: 0,
-        })?;
+        let buffer = self
+            .device
+            .newBufferWithLength_options(bytes, MTLResourceOptions::StorageModeShared)
+            .ok_or_else(|| Error::OutOfMemory {
+                size: bytes,
+                available: 0,
+            })?;
 
-        Ok(MetalBuffer { buffer, size: bytes })
+        Ok(MetalBuffer {
+            buffer,
+            size: bytes,
+        })
     }
 
     fn copy_to_device(&self, data: &[u8]) -> Result<Self::Buffer> {
@@ -496,12 +524,16 @@ impl GpuBackend for MetalBackend {
                 data.len(),
                 MTLResourceOptions::StorageModeShared,
             )
-        }.ok_or_else(|| Error::OutOfMemory {
+        }
+        .ok_or_else(|| Error::OutOfMemory {
             size: data.len(),
             available: 0,
         })?;
 
-        Ok(MetalBuffer { buffer, size: data.len() })
+        Ok(MetalBuffer {
+            buffer,
+            size: data.len(),
+        })
     }
 
     fn copy_to_host(&self, buffer: &Self::Buffer) -> Result<Vec<u8>> {
@@ -509,9 +541,7 @@ impl GpuBackend for MetalBackend {
         let ptr = buffer.buffer.contents();
 
         // SAFETY: ptr is valid and buffer.size was set during allocation
-        let slice = unsafe {
-            std::slice::from_raw_parts(ptr.as_ptr().cast::<u8>(), buffer.size)
-        };
+        let slice = unsafe { std::slice::from_raw_parts(ptr.as_ptr().cast::<u8>(), buffer.size) };
 
         Ok(slice.to_vec())
     }
@@ -525,7 +555,9 @@ impl GpuBackend for MetalBackend {
 
         let source_str = NSString::from_str(metal_source);
 
-        let library = self.device.newLibraryWithSource_options_error(&source_str, None)
+        let library = self
+            .device
+            .newLibraryWithSource_options_error(&source_str, None)
             .map_err(|e| {
                 Error::ShaderCompilation(format!("Metal shader compilation failed: {:?}", e))
             })?;
@@ -536,12 +568,16 @@ impl GpuBackend for MetalBackend {
     fn get_function(&self, module: &Self::Module, name: &str) -> Result<Self::Function> {
         let name_str = NSString::from_str(name);
 
-        let function = module.library.newFunctionWithName(&name_str)
+        let function = module
+            .library
+            .newFunctionWithName(&name_str)
             .ok_or_else(|| {
                 Error::InvalidOperation(format!("Function '{}' not found in Metal library", name))
             })?;
 
-        let pipeline = self.device.newComputePipelineStateWithFunction_error(&function)
+        let pipeline = self
+            .device
+            .newComputePipelineStateWithFunction_error(&function)
             .map_err(|e| {
                 Error::MetalOperation(format!("Failed to create compute pipeline: {:?}", e))
             })?;
@@ -590,7 +626,10 @@ mod tests {
         println!("Memory: {} bytes", backend.total_memory());
 
         let info = backend.device_info();
-        println!("GPU Family: {}.{}", info.compute_capability.0, info.compute_capability.1);
+        println!(
+            "GPU Family: {}.{}",
+            info.compute_capability.0, info.compute_capability.1
+        );
         println!("Compute units: {}", info.compute_units);
         println!("Estimated cores: {}", info.estimated_cores);
     }
@@ -610,8 +649,12 @@ mod tests {
 
         // Test copy to device and back
         let data = vec![0x42u8; 1024];
-        let device_buffer = backend.copy_to_device(&data).expect("Failed to copy to device");
-        let host_data = backend.copy_to_host(&device_buffer).expect("Failed to copy to host");
+        let device_buffer = backend
+            .copy_to_device(&data)
+            .expect("Failed to copy to device");
+        let host_data = backend
+            .copy_to_host(&device_buffer)
+            .expect("Failed to copy to host");
         assert_eq!(host_data, data);
     }
 
@@ -624,7 +667,8 @@ mod tests {
 
         let backend = MetalBackend::new().expect("Failed to create Metal backend");
 
-        let source = KernelSource::metal_only(r#"
+        let source = KernelSource::metal_only(
+            r#"
             #include <metal_stdlib>
             using namespace metal;
 
@@ -634,10 +678,13 @@ mod tests {
             ) {
                 data[idx] *= 2.0f;
             }
-        "#);
+        "#,
+        );
 
         let module = backend.compile(&source).expect("Failed to compile shader");
-        let _func = backend.get_function(&module, "test_kernel").expect("Failed to get function");
+        let _func = backend
+            .get_function(&module, "test_kernel")
+            .expect("Failed to get function");
     }
 
     #[test]
@@ -650,7 +697,8 @@ mod tests {
         let backend = MetalBackend::new().expect("Failed to create Metal backend");
 
         // Simple kernel that doubles each element
-        let source = KernelSource::metal_only(r#"
+        let source = KernelSource::metal_only(
+            r#"
             #include <metal_stdlib>
             using namespace metal;
 
@@ -660,30 +708,37 @@ mod tests {
             ) {
                 data[idx] *= 2.0f;
             }
-        "#);
+        "#,
+        );
 
         let module = backend.compile(&source).expect("Failed to compile shader");
-        let function = backend.get_function(&module, "double_values").expect("Failed to get function");
+        let function = backend
+            .get_function(&module, "double_values")
+            .expect("Failed to get function");
 
         // Create input data: [1.0, 2.0, 3.0, 4.0]
         let input_data: Vec<f32> = vec![1.0, 2.0, 3.0, 4.0];
-        let input_bytes: Vec<u8> = input_data.iter()
-            .flat_map(|f| f.to_le_bytes())
-            .collect();
+        let input_bytes: Vec<u8> = input_data.iter().flat_map(|f| f.to_le_bytes()).collect();
 
-        let buffer = backend.copy_to_device(&input_bytes).expect("Failed to copy to device");
+        let buffer = backend
+            .copy_to_device(&input_bytes)
+            .expect("Failed to copy to device");
 
         // Dispatch kernel: 4 threads (one per element)
-        backend.dispatch_kernel(
-            &function,
-            &[&buffer],
-            &[],
-            (1, 1, 1),  // 1 threadgroup
-            (4, 1, 1),  // 4 threads per threadgroup
-        ).expect("Failed to dispatch kernel");
+        backend
+            .dispatch_kernel(
+                &function,
+                &[&buffer],
+                &[],
+                (1, 1, 1), // 1 threadgroup
+                (4, 1, 1), // 4 threads per threadgroup
+            )
+            .expect("Failed to dispatch kernel");
 
         // Read back result
-        let result_bytes = backend.copy_to_host(&buffer).expect("Failed to copy to host");
+        let result_bytes = backend
+            .copy_to_host(&buffer)
+            .expect("Failed to copy to host");
         let result: Vec<f32> = result_bytes
             .chunks(4)
             .map(|chunk| f32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]))
@@ -691,7 +746,10 @@ mod tests {
 
         // Verify: each value should be doubled
         assert_eq!(result, vec![2.0, 4.0, 6.0, 8.0]);
-        println!("Kernel dispatch test passed: {:?} -> {:?}", input_data, result);
+        println!(
+            "Kernel dispatch test passed: {:?} -> {:?}",
+            input_data, result
+        );
     }
 
     #[test]
@@ -704,7 +762,8 @@ mod tests {
         let backend = MetalBackend::new().expect("Failed to create Metal backend");
 
         // Kernel that adds 10 to each element
-        let source = KernelSource::metal_only(r#"
+        let source = KernelSource::metal_only(
+            r#"
             #include <metal_stdlib>
             using namespace metal;
 
@@ -717,30 +776,37 @@ mod tests {
                     data[idx] += 10;
                 }
             }
-        "#);
+        "#,
+        );
 
         let module = backend.compile(&source).expect("Failed to compile shader");
-        let function = backend.get_function(&module, "add_ten").expect("Failed to get function");
+        let function = backend
+            .get_function(&module, "add_ten")
+            .expect("Failed to get function");
 
         // Create input data: [0, 1, 2, 3, ..., 99]
         let count = 100u32;
         let input_data: Vec<i32> = (0..count as i32).collect();
-        let input_bytes: Vec<u8> = input_data.iter()
-            .flat_map(|i| i.to_le_bytes())
-            .collect();
+        let input_bytes: Vec<u8> = input_data.iter().flat_map(|i| i.to_le_bytes()).collect();
 
-        let buffer = backend.copy_to_device(&input_bytes).expect("Failed to copy to device");
+        let buffer = backend
+            .copy_to_device(&input_bytes)
+            .expect("Failed to copy to device");
 
         // Use auto dispatch with constants
-        backend.dispatch_kernel_auto(
-            &function,
-            &[&buffer],
-            &count.to_le_bytes(),  // Pass count as constant
-            (count, 1, 1),         // Total threads
-        ).expect("Failed to dispatch kernel");
+        backend
+            .dispatch_kernel_auto(
+                &function,
+                &[&buffer],
+                &count.to_le_bytes(), // Pass count as constant
+                (count, 1, 1),        // Total threads
+            )
+            .expect("Failed to dispatch kernel");
 
         // Read back result
-        let result_bytes = backend.copy_to_host(&buffer).expect("Failed to copy to host");
+        let result_bytes = backend
+            .copy_to_host(&buffer)
+            .expect("Failed to copy to host");
         let result: Vec<i32> = result_bytes
             .chunks(4)
             .map(|chunk| i32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]))
@@ -769,18 +835,28 @@ mod tests {
         let data1 = vec![0xAAu8; 64];
         let data2 = vec![0xBBu8; 64];
 
-        backend.write_buffer(&buffer, &data1, 0).expect("Failed to write data1");
-        backend.write_buffer(&buffer, &data2, 128).expect("Failed to write data2");
+        backend
+            .write_buffer(&buffer, &data1, 0)
+            .expect("Failed to write data1");
+        backend
+            .write_buffer(&buffer, &data2, 128)
+            .expect("Failed to write data2");
 
         // Read back and verify
-        let read1 = backend.read_buffer(&buffer, 0, 64).expect("Failed to read data1");
-        let read2 = backend.read_buffer(&buffer, 128, 64).expect("Failed to read data2");
+        let read1 = backend
+            .read_buffer(&buffer, 0, 64)
+            .expect("Failed to read data1");
+        let read2 = backend
+            .read_buffer(&buffer, 128, 64)
+            .expect("Failed to read data2");
 
         assert_eq!(read1, data1);
         assert_eq!(read2, data2);
 
         // Verify gap is zeroed
-        let gap = backend.read_buffer(&buffer, 64, 64).expect("Failed to read gap");
+        let gap = backend
+            .read_buffer(&buffer, 64, 64)
+            .expect("Failed to read gap");
         assert!(gap.iter().all(|&b| b == 0));
 
         println!("Buffer write/read test passed");

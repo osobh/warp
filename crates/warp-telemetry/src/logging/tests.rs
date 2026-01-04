@@ -110,8 +110,17 @@ fn test_log_output_file() {
 #[test]
 fn test_log_output_both() {
     let path = PathBuf::from("/tmp/test.log");
-    let output = LogOutput::Both { stdout: true, file: path.clone() };
-    assert_eq!(output, LogOutput::Both { stdout: true, file: path });
+    let output = LogOutput::Both {
+        stdout: true,
+        file: path.clone(),
+    };
+    assert_eq!(
+        output,
+        LogOutput::Both {
+            stdout: true,
+            file: path
+        }
+    );
 }
 
 #[test]
@@ -270,14 +279,21 @@ fn test_log_builder_context() {
 #[test]
 fn test_log_builder_emit() {
     setup_test_logger();
-    LogBuilder::new(LogLevel::Info).message("test").field("key", "value").emit();
+    LogBuilder::new(LogLevel::Info)
+        .message("test")
+        .field("key", "value")
+        .emit();
 }
 
 #[test]
 fn test_log_builder_chained() {
     setup_test_logger();
     let ctx = LogContext::new("test").with_transfer_id("tx123");
-    LogBuilder::new(LogLevel::Info).message("test").field("k1", "v1").context(&ctx).emit();
+    LogBuilder::new(LogLevel::Info)
+        .message("test")
+        .field("k1", "v1")
+        .context(&ctx)
+        .emit();
 }
 
 #[test]
@@ -302,7 +318,10 @@ fn test_span_builder_field() {
 #[test]
 fn test_span_builder_enter() {
     setup_test_logger();
-    let guard = SpanBuilder::new("test_span").level(LogLevel::Info).field("op", "test").enter();
+    let guard = SpanBuilder::new("test_span")
+        .level(LogLevel::Info)
+        .field("op", "test")
+        .enter();
     assert_eq!(guard.name, "test_span");
 }
 
@@ -414,7 +433,10 @@ fn test_log_level_from_str_trait() {
 fn test_log_output_both_no_stdout() {
     let temp_dir = TempDir::new().unwrap();
     let log_path = temp_dir.path().join("test.log");
-    let output = LogOutput::Both { stdout: false, file: log_path.clone() };
+    let output = LogOutput::Both {
+        stdout: false,
+        file: log_path.clone(),
+    };
     match output {
         LogOutput::Both { stdout, file } => {
             assert!(!stdout);
@@ -428,7 +450,9 @@ fn test_log_output_both_no_stdout() {
 fn test_structured_logger_all_levels_with_context() {
     setup_test_logger();
     let logger = StructuredLogger::new(LogConfig::default()).unwrap();
-    let ctx = LogContext::new("integration").with_transfer_id("tx999").with_edge_id("edge888");
+    let ctx = LogContext::new("integration")
+        .with_transfer_id("tx999")
+        .with_edge_id("edge888");
     let logger_ctx = logger.with_context(ctx);
     logger_ctx.trace("trace ctx");
     logger_ctx.debug("debug ctx");
@@ -440,14 +464,20 @@ fn test_structured_logger_all_levels_with_context() {
 #[test]
 fn test_span_builder_all_levels() {
     setup_test_logger();
-    let _g1 = SpanBuilder::new("trace_span").level(LogLevel::Trace).enter();
+    let _g1 = SpanBuilder::new("trace_span")
+        .level(LogLevel::Trace)
+        .enter();
     drop(_g1);
-    let _g2 = SpanBuilder::new("debug_span").level(LogLevel::Debug).enter();
+    let _g2 = SpanBuilder::new("debug_span")
+        .level(LogLevel::Debug)
+        .enter();
     drop(_g2);
     let _g3 = SpanBuilder::new("info_span").level(LogLevel::Info).enter();
     drop(_g3);
     let _g4 = SpanBuilder::new("warn_span").level(LogLevel::Warn).enter();
     drop(_g4);
-    let _g5 = SpanBuilder::new("error_span").level(LogLevel::Error).enter();
+    let _g5 = SpanBuilder::new("error_span")
+        .level(LogLevel::Error)
+        .enter();
     drop(_g5);
 }

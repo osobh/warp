@@ -7,7 +7,7 @@
 
 use axum::{
     extract::{Path, State},
-    http::{header, StatusCode},
+    http::{StatusCode, header},
     response::{IntoResponse, Response},
 };
 use bytes::Bytes;
@@ -16,8 +16,8 @@ use serde::{Deserialize, Serialize};
 use warp_store::backend::StorageBackend;
 use warp_store::bucket::{ReplicationConfig, ReplicationRule};
 
-use crate::error::{ApiError, ApiResult};
 use crate::AppState;
+use crate::error::{ApiError, ApiResult};
 
 // =============================================================================
 // XML Types for S3 Replication API
@@ -60,7 +60,10 @@ pub struct ReplicationRuleXml {
     pub destination: ReplicationDestinationXml,
 
     /// Delete marker replication
-    #[serde(rename = "DeleteMarkerReplication", skip_serializing_if = "Option::is_none")]
+    #[serde(
+        rename = "DeleteMarkerReplication",
+        skip_serializing_if = "Option::is_none"
+    )]
     pub delete_marker_replication: Option<DeleteMarkerReplicationXml>,
 }
 
@@ -235,40 +238,38 @@ fn to_replication_xml(config: &ReplicationConfig) -> ReplicationConfigurationXml
     let rules = config
         .rules
         .iter()
-        .map(|rule| {
-            ReplicationRuleXml {
-                id: Some(rule.id.clone()),
-                priority: None,
-                status: if rule.enabled {
+        .map(|rule| ReplicationRuleXml {
+            id: Some(rule.id.clone()),
+            priority: None,
+            status: if rule.enabled {
+                "Enabled".to_string()
+            } else {
+                "Disabled".to_string()
+            },
+            filter: rule.prefix.as_ref().map(|p| ReplicationFilterXml {
+                prefix: Some(p.clone()),
+                tag: None,
+            }),
+            destination: ReplicationDestinationXml {
+                bucket: format!("arn:aws:s3:::{}", rule.destination_bucket),
+                storage_class: rule.destination_storage_class.as_ref().map(|sc| {
+                    match sc {
+                        warp_store::object::StorageClass::Standard => "STANDARD",
+                        warp_store::object::StorageClass::InfrequentAccess => "STANDARD_IA",
+                        warp_store::object::StorageClass::Archive => "GLACIER",
+                        warp_store::object::StorageClass::GpuPinned => "STANDARD",
+                    }
+                    .to_string()
+                }),
+                account: None,
+            },
+            delete_marker_replication: Some(DeleteMarkerReplicationXml {
+                status: if rule.replicate_deletes {
                     "Enabled".to_string()
                 } else {
                     "Disabled".to_string()
                 },
-                filter: rule.prefix.as_ref().map(|p| ReplicationFilterXml {
-                    prefix: Some(p.clone()),
-                    tag: None,
-                }),
-                destination: ReplicationDestinationXml {
-                    bucket: format!("arn:aws:s3:::{}", rule.destination_bucket),
-                    storage_class: rule.destination_storage_class.as_ref().map(|sc| {
-                        match sc {
-                            warp_store::object::StorageClass::Standard => "STANDARD",
-                            warp_store::object::StorageClass::InfrequentAccess => "STANDARD_IA",
-                            warp_store::object::StorageClass::Archive => "GLACIER",
-                            warp_store::object::StorageClass::GpuPinned => "STANDARD",
-                        }
-                        .to_string()
-                    }),
-                    account: None,
-                },
-                delete_marker_replication: Some(DeleteMarkerReplicationXml {
-                    status: if rule.replicate_deletes {
-                        "Enabled".to_string()
-                    } else {
-                        "Disabled".to_string()
-                    },
-                }),
-            }
+            }),
         })
         .collect();
 
@@ -292,17 +293,24 @@ fn from_replication_xml(xml: &ReplicationConfigurationXml) -> ApiResult<Replicat
                 .to_string();
 
             // Parse storage class
-            let storage_class = rule.destination.storage_class.as_ref().and_then(|sc| {
-                match sc.as_str() {
-                    "STANDARD" => Some(warp_store::object::StorageClass::Standard),
-                    "STANDARD_IA" => Some(warp_store::object::StorageClass::InfrequentAccess),
-                    "GLACIER" | "DEEP_ARCHIVE" => Some(warp_store::object::StorageClass::Archive),
-                    _ => None,
-                }
-            });
+            let storage_class =
+                rule.destination
+                    .storage_class
+                    .as_ref()
+                    .and_then(|sc| match sc.as_str() {
+                        "STANDARD" => Some(warp_store::object::StorageClass::Standard),
+                        "STANDARD_IA" => Some(warp_store::object::StorageClass::InfrequentAccess),
+                        "GLACIER" | "DEEP_ARCHIVE" => {
+                            Some(warp_store::object::StorageClass::Archive)
+                        }
+                        _ => None,
+                    });
 
             ReplicationRule {
-                id: rule.id.clone().unwrap_or_else(|| uuid::Uuid::new_v4().to_string()),
+                id: rule
+                    .id
+                    .clone()
+                    .unwrap_or_else(|| uuid::Uuid::new_v4().to_string()),
                 enabled: rule.status == "Enabled",
                 prefix: rule.filter.as_ref().and_then(|f| f.prefix.clone()),
                 destination_bucket: dest_bucket,

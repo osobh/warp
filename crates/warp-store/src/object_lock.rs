@@ -88,7 +88,9 @@ impl ObjectLockConfig {
 
     /// Calculate retention expiry date based on default retention
     pub fn calculate_default_expiry(&self) -> Option<DateTime<Utc>> {
-        self.default_retention.as_ref().map(|r| r.calculate_expiry())
+        self.default_retention
+            .as_ref()
+            .map(|r| r.calculate_expiry())
     }
 }
 
@@ -687,9 +689,7 @@ mod tests {
         let original = retention.retain_until_date;
 
         // Can extend
-        assert!(retention
-            .extend(original + Duration::days(10))
-            .is_ok());
+        assert!(retention.extend(original + Duration::days(10)).is_ok());
 
         // Cannot shorten
         assert!(retention.extend(original).is_err());

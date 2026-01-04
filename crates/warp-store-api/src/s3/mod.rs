@@ -7,20 +7,20 @@
 //! - SelectObjectContent (S3 Select) for SQL queries on objects
 
 use axum::{
+    Router,
     extract::{Path, Query, State},
-    http::{header, HeaderMap, StatusCode},
+    http::{HeaderMap, StatusCode, header},
     response::{IntoResponse, Response},
     routing::{delete, get, head, post, put},
-    Router,
 };
 use bytes::Bytes;
 use serde::Deserialize;
 
 use warp_store::backend::StorageBackend;
-use warp_store::{ObjectKey, ObjectData, PutOptions, ListOptions};
+use warp_store::{ListOptions, ObjectData, ObjectKey, PutOptions};
 
-use crate::error::ApiResult;
 use crate::AppState;
+use crate::error::ApiResult;
 
 #[cfg(feature = "s3-select")]
 mod select;
@@ -44,7 +44,7 @@ pub use cors::CorsConfigurationXml;
 pub use encryption::ServerSideEncryptionConfigurationXml;
 pub use lifecycle::{LifecycleConfigurationXml, LifecycleQuery};
 pub use notifications::NotificationConfigurationXml;
-pub use object_lock::{ObjectLockConfigurationXml, RetentionXml, LegalHoldXml};
+pub use object_lock::{LegalHoldXml, ObjectLockConfigurationXml, RetentionXml};
 pub use policy::{BucketPolicyManager, PolicyDocument, get_s3_action};
 pub use replication::ReplicationConfigurationXml;
 pub use tagging::TaggingXml;
@@ -68,9 +68,7 @@ pub fn routes<B: StorageBackend>(state: AppState<B>) -> Router {
 }
 
 /// List all buckets
-async fn list_buckets<B: StorageBackend>(
-    State(state): State<AppState<B>>,
-) -> ApiResult<Response> {
+async fn list_buckets<B: StorageBackend>(State(state): State<AppState<B>>) -> ApiResult<Response> {
     let buckets = state.store.list_buckets().await;
 
     let bucket_xml: String = buckets
@@ -90,7 +88,8 @@ async fn list_buckets<B: StorageBackend>(
         StatusCode::OK,
         [(header::CONTENT_TYPE, "application/xml")],
         xml,
-    ).into_response())
+    )
+        .into_response())
 }
 
 /// Query parameters for bucket PUT operations
@@ -177,13 +176,17 @@ async fn create_bucket<B: StorageBackend>(
         return replication::put_replication(State(state), Path(bucket), body).await;
     }
 
-    state.store.create_bucket(&bucket, Default::default()).await?;
+    state
+        .store
+        .create_bucket(&bucket, Default::default())
+        .await?;
 
     Ok((
         StatusCode::OK,
         [(header::LOCATION, format!("/{}", bucket))],
         "",
-    ).into_response())
+    )
+        .into_response())
 }
 
 /// Query parameters for bucket DELETE operations
@@ -350,7 +353,10 @@ async fn list_objects<B: StorageBackend>(
         include_versions: false,
     };
 
-    let list = state.store.list_with_options(&bucket, &prefix, opts).await?;
+    let list = state
+        .store
+        .list_with_options(&bucket, &prefix, opts)
+        .await?;
 
     // Build XML response
     let contents: String = list
@@ -390,20 +396,15 @@ async fn list_objects<B: StorageBackend>(
     {}
     {}
 </ListBucketResult>"#,
-        bucket,
-        prefix,
-        list.key_count,
-        1000,
-        list.is_truncated,
-        contents,
-        common_prefixes
+        bucket, prefix, list.key_count, 1000, list.is_truncated, contents, common_prefixes
     );
 
     Ok((
         StatusCode::OK,
         [(header::CONTENT_TYPE, "application/xml")],
         xml,
-    ).into_response())
+    )
+        .into_response())
 }
 
 /// Query parameters for object GET operations
@@ -439,7 +440,8 @@ async fn get_object<B: StorageBackend>(
         let lock_query = object_lock::ObjectLockQuery {
             version_id: query.version_id,
         };
-        return object_lock::get_retention(State(state), Path((bucket, key)), Query(lock_query)).await;
+        return object_lock::get_retention(State(state), Path((bucket, key)), Query(lock_query))
+            .await;
     }
 
     // Check if this is a legal-hold request
@@ -447,7 +449,8 @@ async fn get_object<B: StorageBackend>(
         let lock_query = object_lock::ObjectLockQuery {
             version_id: query.version_id,
         };
-        return object_lock::get_legal_hold(State(state), Path((bucket, key)), Query(lock_query)).await;
+        return object_lock::get_legal_hold(State(state), Path((bucket, key)), Query(lock_query))
+            .await;
     }
 
     // Check if this is a tagging request
@@ -459,7 +462,9 @@ async fn get_object<B: StorageBackend>(
     let data = state.store.get(&object_key).await?;
     let meta = state.store.head(&object_key).await?;
 
-    let content_type = meta.content_type.unwrap_or_else(|| "application/octet-stream".to_string());
+    let content_type = meta
+        .content_type
+        .unwrap_or_else(|| "application/octet-stream".to_string());
 
     Ok((
         StatusCode::OK,
@@ -469,7 +474,8 @@ async fn get_object<B: StorageBackend>(
             (header::CONTENT_TYPE, content_type),
         ],
         data.into_bytes(),
-    ).into_response())
+    )
+        .into_response())
 }
 
 /// Head an object (get metadata only)
@@ -480,7 +486,9 @@ async fn head_object<B: StorageBackend>(
     let object_key = ObjectKey::new(&bucket, &key)?;
     let meta = state.store.head(&object_key).await?;
 
-    let content_type = meta.content_type.unwrap_or_else(|| "application/octet-stream".to_string());
+    let content_type = meta
+        .content_type
+        .unwrap_or_else(|| "application/octet-stream".to_string());
 
     Ok((
         StatusCode::OK,
@@ -489,7 +497,8 @@ async fn head_object<B: StorageBackend>(
             (header::ETAG, meta.etag),
             (header::CONTENT_TYPE, content_type),
         ],
-    ).into_response())
+    )
+        .into_response())
 }
 
 // =============================================================================
@@ -546,7 +555,14 @@ async fn put_or_upload_part<B: StorageBackend>(
         let lock_query = object_lock::ObjectLockQuery {
             version_id: query.version_id,
         };
-        return object_lock::put_retention(State(state), Path((bucket, key)), Query(lock_query), headers, body).await;
+        return object_lock::put_retention(
+            State(state),
+            Path((bucket, key)),
+            Query(lock_query),
+            headers,
+            body,
+        )
+        .await;
     }
 
     // Check if this is a legal-hold request
@@ -554,7 +570,13 @@ async fn put_or_upload_part<B: StorageBackend>(
         let lock_query = object_lock::ObjectLockQuery {
             version_id: query.version_id,
         };
-        return object_lock::put_legal_hold(State(state), Path((bucket, key)), Query(lock_query), body).await;
+        return object_lock::put_legal_hold(
+            State(state),
+            Path((bucket, key)),
+            Query(lock_query),
+            body,
+        )
+        .await;
     }
 
     // Check if this is a tagging request
@@ -592,13 +614,12 @@ async fn put_object<B: StorageBackend>(
     };
 
     let data = ObjectData::from(body.to_vec());
-    let meta = state.store.put_with_options(&object_key, data, opts).await?;
+    let meta = state
+        .store
+        .put_with_options(&object_key, data, opts)
+        .await?;
 
-    Ok((
-        StatusCode::OK,
-        [(header::ETAG, meta.etag)],
-        "",
-    ).into_response())
+    Ok((StatusCode::OK, [(header::ETAG, meta.etag)], "").into_response())
 }
 
 /// Upload a part to a multipart upload
@@ -610,7 +631,6 @@ async fn upload_part_handler<B: StorageBackend>(
     part_number: u32,
     body: Bytes,
 ) -> ApiResult<Response> {
-
     // Get upload from state
     let upload = state.get_upload(upload_id).ok_or_else(|| {
         crate::error::ApiError::InvalidRequest(format!("Upload {} not found", upload_id))
@@ -622,11 +642,7 @@ async fn upload_part_handler<B: StorageBackend>(
     // Store part info
     state.add_part(upload_id, part_info.clone());
 
-    Ok((
-        StatusCode::OK,
-        [(header::ETAG, part_info.etag)],
-        "",
-    ).into_response())
+    Ok((StatusCode::OK, [(header::ETAG, part_info.etag)], "").into_response())
 }
 
 /// DELETE handler that handles both regular deletes and abort multipart
@@ -688,7 +704,8 @@ async fn multipart_handler<B: StorageBackend>(
             Path((bucket, key)),
             Query(select_query),
             body,
-        ).await;
+        )
+        .await;
     }
 
     // Check if this is create multipart (POST with ?uploads)
@@ -701,7 +718,9 @@ async fn multipart_handler<B: StorageBackend>(
         return complete_multipart_handler(&state, &bucket, &key, &upload_id, body).await;
     }
 
-    Err(crate::error::ApiError::InvalidRequest("Invalid multipart request".to_string()))
+    Err(crate::error::ApiError::InvalidRequest(
+        "Invalid multipart request".to_string(),
+    ))
 }
 
 /// Create a new multipart upload
@@ -730,7 +749,8 @@ async fn create_multipart_handler<B: StorageBackend>(
         StatusCode::OK,
         [(header::CONTENT_TYPE, "application/xml")],
         xml,
-    ).into_response())
+    )
+        .into_response())
 }
 
 /// Complete a multipart upload
@@ -766,5 +786,6 @@ async fn complete_multipart_handler<B: StorageBackend>(
         StatusCode::OK,
         [(header::CONTENT_TYPE, "application/xml")],
         xml,
-    ).into_response())
+    )
+        .into_response())
 }

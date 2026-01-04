@@ -32,8 +32,8 @@ mod state_machine;
 mod types;
 
 pub use log_store::MemLogStore;
-pub use network::{RaftRouter, RaftNetworkFactory};
-pub use persistent_log::{SledLogStore, SledLogStats};
+pub use network::{RaftNetworkFactory, RaftRouter};
+pub use persistent_log::{SledLogStats, SledLogStore};
 pub use snapshot::{SnapshotConfig, SnapshotError, SnapshotInfo, SnapshotManager, SnapshotStats};
 pub use state_machine::MetadataStateMachine;
 pub use types::*;
@@ -46,9 +46,9 @@ use openraft::{BasicNode, Config, Raft};
 use tokio::sync::RwLock;
 use tracing::{debug, info};
 
+use crate::ObjectKey;
 use crate::bucket::BucketConfig;
 use crate::error::{Error, Result};
-use crate::ObjectKey;
 
 /// Raft-based distributed store wrapper
 ///
@@ -75,15 +75,13 @@ impl RaftStore {
 
     /// Create with custom configuration
     pub async fn with_config(node_id: NodeId, config: RaftStoreConfig) -> Result<Self> {
-        let raft_config = Arc::new(
-            Config {
-                cluster_name: config.cluster_name,
-                heartbeat_interval: config.heartbeat_interval_ms,
-                election_timeout_min: config.election_timeout_min_ms,
-                election_timeout_max: config.election_timeout_max_ms,
-                ..Default::default()
-            },
-        );
+        let raft_config = Arc::new(Config {
+            cluster_name: config.cluster_name,
+            heartbeat_interval: config.heartbeat_interval_ms,
+            election_timeout_min: config.election_timeout_min_ms,
+            election_timeout_max: config.election_timeout_max_ms,
+            ..Default::default()
+        });
 
         // Create components - openraft takes ownership
         let state_machine = MetadataStateMachine::new();
@@ -119,28 +117,22 @@ impl RaftStore {
     ///
     /// This creates a RaftStore that persists log entries and metadata to disk,
     /// allowing recovery after restarts.
-    pub async fn with_persistent_storage(
-        node_id: NodeId,
-        config: RaftStoreConfig,
-    ) -> Result<Self> {
+    pub async fn with_persistent_storage(node_id: NodeId, config: RaftStoreConfig) -> Result<Self> {
         let data_dir = config.data_dir.clone().ok_or_else(|| {
             Error::Raft("Persistent storage requires data_dir to be set".to_string())
         })?;
 
         // Ensure data directory exists
-        std::fs::create_dir_all(&data_dir).map_err(|e| {
-            Error::Raft(format!("Failed to create data directory: {}", e))
-        })?;
+        std::fs::create_dir_all(&data_dir)
+            .map_err(|e| Error::Raft(format!("Failed to create data directory: {}", e)))?;
 
-        let raft_config = Arc::new(
-            Config {
-                cluster_name: config.cluster_name.clone(),
-                heartbeat_interval: config.heartbeat_interval_ms,
-                election_timeout_min: config.election_timeout_min_ms,
-                election_timeout_max: config.election_timeout_max_ms,
-                ..Default::default()
-            },
-        );
+        let raft_config = Arc::new(Config {
+            cluster_name: config.cluster_name.clone(),
+            heartbeat_interval: config.heartbeat_interval_ms,
+            election_timeout_min: config.election_timeout_min_ms,
+            election_timeout_max: config.election_timeout_max_ms,
+            ..Default::default()
+        });
 
         // Create persistent log store
         let log_store_path = data_dir.join("raft_log");
@@ -213,11 +205,8 @@ impl RaftStore {
 
         // Promote to voter
         let metrics = self.raft.metrics().borrow().clone();
-        let mut new_members: BTreeSet<NodeId> = metrics
-            .membership_config
-            .membership()
-            .voter_ids()
-            .collect();
+        let mut new_members: BTreeSet<NodeId> =
+            metrics.membership_config.membership().voter_ids().collect();
         new_members.insert(node_id);
 
         self.raft
@@ -467,7 +456,12 @@ impl RaftStoreConfig {
     }
 
     /// Set heartbeat and election timeouts
-    pub fn with_timeouts(mut self, heartbeat_ms: u64, election_min_ms: u64, election_max_ms: u64) -> Self {
+    pub fn with_timeouts(
+        mut self,
+        heartbeat_ms: u64,
+        election_min_ms: u64,
+        election_max_ms: u64,
+    ) -> Self {
         self.heartbeat_interval_ms = heartbeat_ms;
         self.election_timeout_min_ms = election_min_ms;
         self.election_timeout_max_ms = election_max_ms;

@@ -1,6 +1,6 @@
 //! Inode management for warp-fs
 
-use crate::metadata::{InodeMetadata, FileType};
+use crate::metadata::{FileType, InodeMetadata};
 use std::sync::atomic::{AtomicU64, Ordering};
 
 /// Inode number type

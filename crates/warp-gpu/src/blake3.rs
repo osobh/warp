@@ -35,7 +35,7 @@
 //! - Achievable with stream overlap: 15+ GB/s effective
 
 use crate::Result;
-use cudarc::driver::{CudaContext, CudaStream, CudaModule, CudaFunction, PushKernelArg};
+use cudarc::driver::{CudaContext, CudaFunction, CudaModule, CudaStream, PushKernelArg};
 use cudarc::nvrtc::compile_ptx;
 use std::sync::Arc;
 use tracing::{debug, trace};
@@ -50,8 +50,8 @@ mod constants {
 
     // BLAKE3 IV (first 8 words)
     pub const IV: [u32; 8] = [
-        0x6A09E667, 0xBB67AE85, 0x3C6EF372, 0xA54FF53A,
-        0x510E527F, 0x9B05688C, 0x1F83D9AB, 0x5BE0CD19,
+        0x6A09E667, 0xBB67AE85, 0x3C6EF372, 0xA54FF53A, 0x510E527F, 0x9B05688C, 0x1F83D9AB,
+        0x5BE0CD19,
     ];
 
     // Permutation indices for BLAKE3 mixing
@@ -340,12 +340,14 @@ impl Blake3Hasher {
 
         // Load module
         debug!("Loading BLAKE3 CUDA module");
-        let module = ctx.load_module(ptx)
+        let module = ctx
+            .load_module(ptx)
             .map_err(|e| crate::Error::CudaOperation(format!("Module load failed: {:?}", e)))?;
 
         // Get function handle
         debug!("Loading blake3_hash_chunks function");
-        let hash_chunks_fn = module.load_function("blake3_hash_chunks")
+        let hash_chunks_fn = module
+            .load_function("blake3_hash_chunks")
             .map_err(|e| crate::Error::CudaOperation(format!("Function load failed: {:?}", e)))?;
 
         debug!("Created BLAKE3 GPU hasher");
@@ -403,8 +405,12 @@ impl Blake3Hasher {
         let d_input = self.stream.clone_htod(data)?;
 
         // 2. Allocate output buffer (8 words per chunk = 32 bytes per chunk)
-        let mut d_output = self.stream.alloc_zeros::<u32>(num_chunks * 8)
-            .map_err(|e| crate::Error::CudaOperation(format!("Output allocation failed: {:?}", e)))?;
+        let mut d_output = self
+            .stream
+            .alloc_zeros::<u32>(num_chunks * 8)
+            .map_err(|e| {
+                crate::Error::CudaOperation(format!("Output allocation failed: {:?}", e))
+            })?;
 
         // 3. Launch kernel
         let (grid_size, block_size, _) = self.compute_launch_config(data.len());
@@ -414,6 +420,12 @@ impl Blake3Hasher {
         let total_size = data.len() as u64;
         let is_single_chunk = if num_chunks == 1 { 1u32 } else { 0u32 };
 
+        // SAFETY: CUDA kernel launch is safe because:
+        // 1. self.hash_chunks_fn is a valid CudaFunction from our compiled PTX
+        // 2. d_input and d_output are valid device allocations on this stream
+        // 3. Launch config is within device limits (computed by compute_launch_config)
+        // 4. Kernel arguments match the PTX function signature
+        // 5. Stream is synchronized after launch
         unsafe {
             let cfg = cudarc::driver::LaunchConfig {
                 grid_dim: (grid_size, 1, 1),
@@ -421,18 +433,22 @@ impl Blake3Hasher {
                 shared_mem_bytes: 0,
             };
 
-            self.stream.launch_builder(&self.hash_chunks_fn)
+            self.stream
+                .launch_builder(&self.hash_chunks_fn)
                 .arg(&d_input)
                 .arg(&mut d_output)
                 .arg(&num_chunks_u32)
                 .arg(&total_size)
                 .arg(&is_single_chunk)
                 .launch(cfg)
-                .map_err(|e| crate::Error::CudaOperation(format!("Kernel launch failed: {:?}", e)))?;
+                .map_err(|e| {
+                    crate::Error::CudaOperation(format!("Kernel launch failed: {:?}", e))
+                })?;
         }
 
         // 4. Synchronize stream to ensure kernel completion
-        self.stream.synchronize()
+        self.stream
+            .synchronize()
             .map_err(|e| crate::Error::CudaOperation(format!("Stream sync failed: {:?}", e)))?;
 
         // 5. For single chunk, return directly
@@ -449,8 +465,12 @@ impl Blake3Hasher {
 
         // 6. For multiple chunks, build binary tree by merging parent nodes
         // Get merge kernel function
-        let merge_fn = self.module.load_function("blake3_merge_tree")
-            .map_err(|e| crate::Error::CudaOperation(format!("Failed to load merge function: {:?}", e)))?;
+        let merge_fn = self
+            .module
+            .load_function("blake3_merge_tree")
+            .map_err(|e| {
+                crate::Error::CudaOperation(format!("Failed to load merge function: {:?}", e))
+            })?;
 
         // Tree merging: repeatedly merge pairs of hashes until we have one root
         let mut current_level = d_output;
@@ -458,8 +478,12 @@ impl Blake3Hasher {
 
         while current_count > 1 {
             let parent_count = current_count.div_ceil(2);
-            let mut next_level = self.stream.alloc_zeros::<u32>(parent_count * 8)
-                .map_err(|e| crate::Error::CudaOperation(format!("Parent allocation failed: {:?}", e)))?;
+            let mut next_level = self
+                .stream
+                .alloc_zeros::<u32>(parent_count * 8)
+                .map_err(|e| {
+                    crate::Error::CudaOperation(format!("Parent allocation failed: {:?}", e))
+                })?;
 
             // Check if this is the final merge (producing the root)
             let is_root = if parent_count == 1 { 1u32 } else { 0u32 };
@@ -468,6 +492,12 @@ impl Blake3Hasher {
             let threads_per_block = 256;
             let num_blocks = (parent_count as u32).div_ceil(threads_per_block);
 
+            // SAFETY: CUDA kernel launch is safe because:
+            // 1. merge_fn is a valid CudaFunction loaded from our PTX module
+            // 2. current_level and next_level are valid device allocations
+            // 3. Launch config uses safe block/grid dimensions
+            // 4. Arguments match the kernel signature
+            // 5. Stream is synchronized after this loop
             unsafe {
                 let cfg = cudarc::driver::LaunchConfig {
                     grid_dim: (num_blocks, 1, 1),
@@ -475,17 +505,21 @@ impl Blake3Hasher {
                     shared_mem_bytes: 0,
                 };
 
-                self.stream.launch_builder(&merge_fn)
+                self.stream
+                    .launch_builder(&merge_fn)
                     .arg(&current_level)
                     .arg(&mut next_level)
                     .arg(&(parent_count as u32))
                     .arg(&(current_count as u32))
                     .arg(&is_root)
                     .launch(cfg)
-                    .map_err(|e| crate::Error::CudaOperation(format!("Merge kernel launch failed: {:?}", e)))?;
+                    .map_err(|e| {
+                        crate::Error::CudaOperation(format!("Merge kernel launch failed: {:?}", e))
+                    })?;
             }
 
-            self.stream.synchronize()
+            self.stream
+                .synchronize()
                 .map_err(|e| crate::Error::CudaOperation(format!("Merge sync failed: {:?}", e)))?;
 
             current_level = next_level;
@@ -554,9 +588,7 @@ impl Blake3Batch {
         // 4. Single GPU transfer back
         // This amortizes transfer overhead
 
-        inputs.iter()
-            .map(|data| self.hasher.hash(data))
-            .collect()
+        inputs.iter().map(|data| self.hasher.hash(data)).collect()
     }
 }
 
@@ -722,7 +754,10 @@ mod tests {
             let hash1 = hasher.hash(&data1).expect("Hash 1 should succeed");
             let hash2 = hasher.hash(&data2).expect("Hash 2 should succeed");
 
-            assert_ne!(hash1, hash2, "Different inputs should produce different hashes");
+            assert_ne!(
+                hash1, hash2,
+                "Different inputs should produce different hashes"
+            );
         } else {
             eprintln!("Skipping GPU test - no GPU available");
         }
@@ -752,7 +787,9 @@ mod tests {
         let cpu_result = cpu_hash(&data);
 
         if let Some(hasher) = try_get_hasher() {
-            let gpu_result = hasher.hash(&data).expect("Partial chunk hash should succeed");
+            let gpu_result = hasher
+                .hash(&data)
+                .expect("Partial chunk hash should succeed");
             assert_eq!(
                 gpu_result, cpu_result,
                 "GPU hash should match CPU hash for partial chunk"
@@ -797,7 +834,9 @@ mod tests {
                 let data3 = vec![0x33; 4096];
 
                 let inputs: Vec<&[u8]> = vec![&data1, &data2, &data3];
-                let hashes = batch.hash_batch(&inputs).expect("Batch hash should succeed");
+                let hashes = batch
+                    .hash_batch(&inputs)
+                    .expect("Batch hash should succeed");
 
                 assert_eq!(hashes.len(), 3, "Should have 3 hashes");
                 for hash in &hashes {
@@ -818,4 +857,3 @@ mod tests {
         }
     }
 }
-

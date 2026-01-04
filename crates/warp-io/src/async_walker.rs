@@ -3,8 +3,8 @@
 //! This module provides async versions of directory walking functionality,
 //! allowing non-blocking enumeration of directory contents.
 
-use crate::walker::FileEntry;
 use crate::Result;
+use crate::walker::FileEntry;
 use std::path::Path;
 use tokio::sync::mpsc;
 
@@ -209,11 +209,8 @@ mod tests {
 
         #[cfg(unix)]
         {
-            std::os::unix::fs::symlink(
-                dir.path().join("real.txt"),
-                dir.path().join("link.txt"),
-            )
-            .unwrap();
+            std::os::unix::fs::symlink(dir.path().join("real.txt"), dir.path().join("link.txt"))
+                .unwrap();
 
             let entries = walk_directory_async(dir.path()).await.unwrap();
 

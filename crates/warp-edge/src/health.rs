@@ -24,13 +24,21 @@ pub struct HealthWeights {
 impl HealthWeights {
     /// Creates new health weights with specified values
     pub fn new(success_rate: f64, uptime: f64, response_time: f64) -> Self {
-        HealthWeights { success_rate, uptime, response_time }
+        HealthWeights {
+            success_rate,
+            uptime,
+            response_time,
+        }
     }
 }
 
 impl Default for HealthWeights {
     fn default() -> Self {
-        HealthWeights { success_rate: 0.4, uptime: 0.3, response_time: 0.3 }
+        HealthWeights {
+            success_rate: 0.4,
+            uptime: 0.3,
+            response_time: 0.3,
+        }
     }
 }
 
@@ -201,12 +209,18 @@ pub struct HealthScorer {
 impl HealthScorer {
     /// Creates a new health scorer with default weights
     pub fn new() -> Self {
-        HealthScorer { scores: DashMap::new(), weights: HealthWeights::default() }
+        HealthScorer {
+            scores: DashMap::new(),
+            weights: HealthWeights::default(),
+        }
     }
 
     /// Creates a new health scorer with custom weights
     pub fn with_weights(weights: HealthWeights) -> Self {
-        HealthScorer { scores: DashMap::new(), weights }
+        HealthScorer {
+            scores: DashMap::new(),
+            weights,
+        }
     }
 
     /// Records a successful request with response time
@@ -251,10 +265,7 @@ impl HealthScorer {
     pub fn rank_edges(&self, edges: &[EdgeId]) -> Vec<(EdgeId, f64)> {
         let mut ranked: Vec<(EdgeId, f64)> = edges
             .iter()
-            .filter_map(|edge| {
-                self.get_overall(edge)
-                    .map(|score| (*edge, score))
-            })
+            .filter_map(|edge| self.get_overall(edge).map(|score| (*edge, score)))
             .collect();
 
         // Sort by score descending (highest score first)
@@ -439,7 +450,10 @@ mod tests {
 
         let edge4 = create_test_edge(4);
         scorer.record_success(&edge4, Duration::from_millis(10000));
-        assert_eq!(scorer.get_score(&edge4).unwrap().components.response_time, 0.0);
+        assert_eq!(
+            scorer.get_score(&edge4).unwrap().components.response_time,
+            0.0
+        );
     }
 
     #[test]
@@ -453,7 +467,11 @@ mod tests {
         let overall = HealthScore::calculate(&components, &weights);
         assert!((overall - 0.8).abs() < 0.01);
 
-        let health_score = HealthScore { overall, components: components.clone(), last_updated: SystemTime::now() };
+        let health_score = HealthScore {
+            overall,
+            components: components.clone(),
+            last_updated: SystemTime::now(),
+        };
         assert!(health_score.is_healthy(0.5));
         assert!(health_score.is_healthy(0.7));
         assert!(!health_score.is_healthy(0.9));
@@ -527,7 +545,10 @@ mod tests {
         scorer.record_success(&edge2, Duration::from_millis(100));
         scorer.record_failure(&edge2);
         scorer.record_uptime_check(&edge2, true);
-        assert_eq!(scorer.get_score(&edge2).unwrap().components.total_requests, 2);
+        assert_eq!(
+            scorer.get_score(&edge2).unwrap().components.total_requests,
+            2
+        );
         scorer.reset(&edge2);
         let score = scorer.get_score(&edge2).unwrap();
         assert_eq!(score.components.total_requests, 0);
@@ -617,8 +638,8 @@ mod tests {
 
         let score = scorer.get_score(&edge).unwrap();
         let expected = 0.6 * score.components.success_rate
-                     + 0.2 * score.components.uptime
-                     + 0.2 * score.components.response_time;
+            + 0.2 * score.components.uptime
+            + 0.2 * score.components.response_time;
         assert!((score.overall - expected).abs() < 0.01);
     }
 
@@ -632,7 +653,10 @@ mod tests {
         let json = serde_json::to_string(&components).unwrap();
         let deserialized: HealthComponents = serde_json::from_str(&json).unwrap();
         assert_eq!(components.total_requests, deserialized.total_requests);
-        assert_eq!(components.successful_requests, deserialized.successful_requests);
+        assert_eq!(
+            components.successful_requests,
+            deserialized.successful_requests
+        );
 
         let msgpack = rmp_serde::to_vec(&components).unwrap();
         let deserialized: HealthComponents = rmp_serde::from_slice(&msgpack).unwrap();

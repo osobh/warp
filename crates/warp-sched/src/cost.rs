@@ -163,10 +163,14 @@ impl CpuCostMatrix {
                     };
 
                     // Compute individual cost components using static methods
-                    let bandwidth_cost = Self::compute_bandwidth_cost_static(chunk_size, edge.available_bandwidth_bps);
+                    let bandwidth_cost = Self::compute_bandwidth_cost_static(
+                        chunk_size,
+                        edge.available_bandwidth_bps,
+                    );
                     let rtt_cost = Self::compute_rtt_cost_static(edge.rtt_us, max_rtt_us);
                     let health_cost = Self::compute_health_cost_static(edge.health_score_f32());
-                    let load_cost = Self::compute_load_cost_static(edge.active_transfers, edge.max_transfers);
+                    let load_cost =
+                        Self::compute_load_cost_static(edge.active_transfers, edge.max_transfers);
 
                     // Weighted sum of all components
                     let total_cost = bandwidth_weight * bandwidth_cost

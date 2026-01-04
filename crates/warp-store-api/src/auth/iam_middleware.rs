@@ -13,7 +13,7 @@ use std::sync::Arc;
 
 use axum::{
     extract::{Request, State},
-    http::{header, StatusCode},
+    http::{StatusCode, header},
     middleware::Next,
     response::{IntoResponse, Response},
 };
@@ -21,9 +21,9 @@ use dashmap::DashMap;
 use tracing::{debug, warn};
 
 use warp_iam::{
+    identity::Identity,
     policy::{AuthorizationDecision, Effect, PolicyDocument, PolicyEngine, Resource, Statement},
     session::SessionManager,
-    identity::Identity,
 };
 
 /// IAM authentication context extracted from request
@@ -68,10 +68,7 @@ impl IamManagers {
     /// Add a default admin policy for a user
     pub fn add_admin_policy(&self, user_id: &str) {
         let policy = PolicyDocument::new()
-            .add_statement(
-                Statement::allow("s3:*", "*")
-                    .with_sid(format!("{}-admin", user_id))
-            );
+            .add_statement(Statement::allow("s3:*", "*").with_sid(format!("{}-admin", user_id)));
         self.user_policies.insert(user_id.to_string(), policy);
     }
 
@@ -80,19 +77,19 @@ impl IamManagers {
         let policy = PolicyDocument::new()
             .add_statement(
                 Statement::allow("s3:GetObject", format!("arn:aws:s3:::{}/*", bucket))
-                    .with_sid(format!("{}-readonly-{}-objects", user_id, bucket))
+                    .with_sid(format!("{}-readonly-{}-objects", user_id, bucket)),
             )
             .add_statement(
                 Statement::allow("s3:ListBucket", format!("arn:aws:s3:::{}", bucket))
-                    .with_sid(format!("{}-readonly-{}-list", user_id, bucket))
+                    .with_sid(format!("{}-readonly-{}-list", user_id, bucket)),
             )
             .add_statement(
                 Statement::allow("s3:HeadObject", format!("arn:aws:s3:::{}/*", bucket))
-                    .with_sid(format!("{}-readonly-{}-head", user_id, bucket))
+                    .with_sid(format!("{}-readonly-{}-head", user_id, bucket)),
             )
             .add_statement(
                 Statement::allow("s3:GetObjectVersion", format!("arn:aws:s3:::{}/*", bucket))
-                    .with_sid(format!("{}-readonly-{}-versions", user_id, bucket))
+                    .with_sid(format!("{}-readonly-{}-versions", user_id, bucket)),
             );
         self.user_policies.insert(user_id.to_string(), policy);
     }
@@ -106,7 +103,10 @@ impl IamManagers {
     pub fn is_allowed(&self, identity: &Identity, action: &str, resource: &str) -> bool {
         // Check if user has a policy
         if let Some(policy) = self.user_policies.get(&identity.id) {
-            match self.policy_engine.evaluate(&policy, identity, action, resource) {
+            match self
+                .policy_engine
+                .evaluate(&policy, identity, action, resource)
+            {
                 Ok(AuthorizationDecision::Allow) => true,
                 Ok(AuthorizationDecision::Deny { .. }) => false,
                 Ok(AuthorizationDecision::NotApplicable) => false,
@@ -397,7 +397,10 @@ mod tests {
         assert_eq!(map_s3_action("PUT", "/bucket", None), "s3:CreateBucket");
         assert_eq!(map_s3_action("PUT", "/bucket/key", None), "s3:PutObject");
         assert_eq!(map_s3_action("DELETE", "/bucket", None), "s3:DeleteBucket");
-        assert_eq!(map_s3_action("DELETE", "/bucket/key", None), "s3:DeleteObject");
+        assert_eq!(
+            map_s3_action("DELETE", "/bucket/key", None),
+            "s3:DeleteObject"
+        );
         assert_eq!(map_s3_action("HEAD", "/bucket", None), "s3:HeadBucket");
         assert_eq!(map_s3_action("HEAD", "/bucket/key", None), "s3:HeadObject");
     }
@@ -442,10 +445,7 @@ mod tests {
     #[test]
     fn test_build_s3_arn() {
         assert_eq!(build_s3_arn(None, None), "*");
-        assert_eq!(
-            build_s3_arn(Some("bucket"), None),
-            "arn:aws:s3:::bucket"
-        );
+        assert_eq!(build_s3_arn(Some("bucket"), None), "arn:aws:s3:::bucket");
         assert_eq!(
             build_s3_arn(Some("bucket"), Some("key")),
             "arn:aws:s3:::bucket/key"
@@ -479,7 +479,11 @@ mod tests {
 
         // Verify reader doesn't have write access
         assert!(!iam.is_allowed(&reader, "s3:PutObject", "arn:aws:s3:::test-bucket/file.txt"));
-        assert!(!iam.is_allowed(&reader, "s3:DeleteObject", "arn:aws:s3:::test-bucket/file.txt"));
+        assert!(!iam.is_allowed(
+            &reader,
+            "s3:DeleteObject",
+            "arn:aws:s3:::test-bucket/file.txt"
+        ));
     }
 
     #[tokio::test]
@@ -493,7 +497,10 @@ mod tests {
         let session = iam.session_manager.create_session(identity).unwrap();
 
         // Validate the session
-        let retrieved = iam.session_manager.get_session(session.token.as_str()).unwrap();
+        let retrieved = iam
+            .session_manager
+            .get_session(session.token.as_str())
+            .unwrap();
         assert_eq!(retrieved.identity.id, "test-user");
 
         // Invalidate the session

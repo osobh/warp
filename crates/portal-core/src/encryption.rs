@@ -41,11 +41,11 @@
 
 use crate::{ContentId, Error, MasterEncryptionKey, Result};
 use chacha20poly1305::{
-    aead::{Aead, KeyInit},
     ChaCha20Poly1305, Nonce,
+    aead::{Aead, KeyInit},
 };
 use hkdf::Hkdf;
-use rand::{rngs::OsRng, RngCore};
+use rand::{RngCore, rngs::OsRng};
 use sha2::Sha256;
 
 /// HKDF context for convergent chunk key derivation
@@ -497,10 +497,7 @@ mod tests {
         tampered.cid[0] ^= 0xFF; // Flip bits in first byte
 
         let result = encryptor.decrypt_chunk(&tampered);
-        assert!(
-            result.is_err(),
-            "Decryption should fail with wrong CID"
-        );
+        assert!(result.is_err(), "Decryption should fail with wrong CID");
 
         // The error should be InvalidContentId since the CID won't match after decryption
         match result.unwrap_err() {
@@ -679,10 +676,7 @@ mod tests {
         }
 
         let result = encryptor.decrypt_chunk(&tampered);
-        assert!(
-            result.is_err(),
-            "Should detect tampered ciphertext"
-        );
+        assert!(result.is_err(), "Should detect tampered ciphertext");
     }
 
     /// Test 11: Manifest decryption with too-short ciphertext
@@ -738,7 +732,10 @@ mod tests {
         // Different CID should produce different nonce
         let cid2 = warp_hash::hash(b"different data");
         let nonce3 = encryptor.derive_nonce(&cid2);
-        assert_ne!(nonce1, nonce3, "Different CID should produce different nonce");
+        assert_ne!(
+            nonce1, nonce3,
+            "Different CID should produce different nonce"
+        );
     }
 
     /// Test 14: EncryptedChunk metadata methods

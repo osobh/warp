@@ -7,7 +7,7 @@
 
 use axum::{
     extract::{Path, State},
-    http::{header, StatusCode},
+    http::{StatusCode, header},
     response::{IntoResponse, Response},
 };
 use bytes::Bytes;
@@ -16,8 +16,8 @@ use serde::{Deserialize, Serialize};
 use warp_store::backend::StorageBackend;
 use warp_store::bucket::{EncryptionAlgorithm, EncryptionConfig};
 
-use crate::error::{ApiError, ApiResult};
 use crate::AppState;
+use crate::error::{ApiError, ApiResult};
 
 // =============================================================================
 // XML Types for S3 Bucket Encryption API
@@ -131,7 +131,9 @@ pub async fn put_encryption<B: StorageBackend>(
     let config = from_encryption_xml(&xml_config)?;
 
     // Store encryption config
-    state.encryption_configs.insert(bucket.clone(), config.clone());
+    state
+        .encryption_configs
+        .insert(bucket.clone(), config.clone());
 
     tracing::info!(bucket = %bucket, algorithm = ?config.algorithm, "Bucket encryption configured");
 
@@ -186,7 +188,11 @@ fn from_encryption_xml(xml: &ServerSideEncryptionConfigurationXml) -> ApiResult<
         ApiError::InvalidRequest("At least one encryption rule is required".to_string())
     })?;
 
-    let algorithm = match rule.apply_server_side_encryption_by_default.sse_algorithm.as_str() {
+    let algorithm = match rule
+        .apply_server_side_encryption_by_default
+        .sse_algorithm
+        .as_str()
+    {
         "AES256" => EncryptionAlgorithm::Aes256Gcm,
         "aws:kms" => {
             // For KMS, we still use AES256 internally but track the key ID
@@ -203,7 +209,10 @@ fn from_encryption_xml(xml: &ServerSideEncryptionConfigurationXml) -> ApiResult<
     Ok(EncryptionConfig {
         enabled: true,
         algorithm,
-        key_id: rule.apply_server_side_encryption_by_default.kms_master_key_id.clone(),
+        key_id: rule
+            .apply_server_side_encryption_by_default
+            .kms_master_key_id
+            .clone(),
     })
 }
 
@@ -226,7 +235,9 @@ mod tests {
         let xml = to_encryption_xml(&config);
         assert_eq!(xml.rules.len(), 1);
         assert_eq!(
-            xml.rules[0].apply_server_side_encryption_by_default.sse_algorithm,
+            xml.rules[0]
+                .apply_server_side_encryption_by_default
+                .sse_algorithm,
             "AES256"
         );
     }
@@ -241,7 +252,9 @@ mod tests {
 
         let xml = to_encryption_xml(&config);
         assert_eq!(
-            xml.rules[0].apply_server_side_encryption_by_default.kms_master_key_id,
+            xml.rules[0]
+                .apply_server_side_encryption_by_default
+                .kms_master_key_id,
             Some("arn:aws:kms:us-east-1:123456789:key/abc".to_string())
         );
     }

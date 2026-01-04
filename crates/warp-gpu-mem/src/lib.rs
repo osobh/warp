@@ -65,11 +65,11 @@ pub mod prefetch;
 pub mod spill;
 pub mod tensor;
 
-pub use cache::{TensorCache, CacheConfig, CacheStats, EvictionPolicy};
-pub use config::{GpuMemConfig, SpillPolicy, PrefetchStrategy};
+pub use cache::{CacheConfig, CacheStats, EvictionPolicy, TensorCache};
+pub use config::{GpuMemConfig, PrefetchStrategy, SpillPolicy};
 pub use error::{GpuMemError, GpuMemResult};
 pub use pager::{GpuPager, PageFault, PageState};
 pub use pool::{GpuMemoryPool, PoolStats};
-pub use prefetch::{Prefetcher, PrefetchHint, AccessPattern};
+pub use prefetch::{AccessPattern, PrefetchHint, Prefetcher};
 pub use spill::{SpillManager, SpillStats, SpilledTensor};
-pub use tensor::{TensorHandle, TensorId, TensorMeta, TensorLayout};
+pub use tensor::{TensorHandle, TensorId, TensorLayout, TensorMeta};

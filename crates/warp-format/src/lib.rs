@@ -8,15 +8,15 @@
 
 #![warn(missing_docs)]
 
+pub mod file_table;
 pub mod header;
 pub mod index;
-pub mod file_table;
 pub mod merkle;
 pub mod reader;
 pub mod writer;
 
-pub use header::{Header, MAGIC, VERSION, Compression, Encryption};
-pub use merkle::{MerkleTree, MerkleProof, SparseMerkleTree};
+pub use header::{Compression, Encryption, Header, MAGIC, VERSION};
+pub use merkle::{MerkleProof, MerkleTree, SparseMerkleTree};
 pub use reader::WarpReader;
 pub use writer::{WarpWriter, WarpWriterConfig};
 

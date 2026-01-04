@@ -132,17 +132,17 @@ impl SnapshotManager {
         let id = snapshot.id;
 
         // Track by source volume
-        self.by_source
-            .entry(source.id)
-            .or_default()
-            .push(id);
+        self.by_source.entry(source.id).or_default().push(id);
 
         self.snapshots.insert(id, snapshot);
         Ok(id)
     }
 
     /// Get a snapshot
-    pub fn get_snapshot(&self, id: &VolumeId) -> Option<dashmap::mapref::one::Ref<VolumeId, BlockSnapshot>> {
+    pub fn get_snapshot(
+        &self,
+        id: &VolumeId,
+    ) -> Option<dashmap::mapref::one::Ref<VolumeId, BlockSnapshot>> {
         self.snapshots.get(id)
     }
 
@@ -252,7 +252,13 @@ impl CowManager {
     }
 
     /// Check if COW is needed for a write
-    pub fn needs_cow(&self, volume_id: VolumeId, offset: u64, length: u64, extents: &ExtentMap) -> bool {
+    pub fn needs_cow(
+        &self,
+        volume_id: VolumeId,
+        offset: u64,
+        length: u64,
+        extents: &ExtentMap,
+    ) -> bool {
         // Check if any extent in the write range is shared
         let end = offset + length;
         for extent in extents.lookup_range(offset, end) {

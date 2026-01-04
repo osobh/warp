@@ -63,8 +63,8 @@ pub struct StreamConfig {
 impl Default for StreamConfig {
     fn default() -> Self {
         Self {
-            num_streams: 4,  // 4 streams for good overlap
-            buffer_size: 16 * 1024 * 1024,  // 16MB per stream
+            num_streams: 4,                // 4 streams for good overlap
+            buffer_size: 16 * 1024 * 1024, // 16MB per stream
             use_priority: false,
             priority: 0,
         }
@@ -333,11 +333,7 @@ impl PipelineExecutor {
     ///
     /// Note: CUDA streams are not thread-safe, so this processes sequentially
     /// but uses stream-based overlapping within the GPU for performance.
-    pub fn execute_batch<F, T>(
-        &self,
-        inputs: &[Vec<u8>],
-        process_fn: F,
-    ) -> Result<Vec<T>>
+    pub fn execute_batch<F, T>(&self, inputs: &[Vec<u8>], process_fn: F) -> Result<Vec<T>>
     where
         F: Fn(usize, &[u8]) -> Result<T>,
     {
@@ -359,11 +355,7 @@ impl PipelineExecutor {
     /// Execute a batch of operations sequentially
     ///
     /// Simpler version that doesn't require stream management
-    pub fn execute_sequential<F, T>(
-        &self,
-        inputs: &[Vec<u8>],
-        process_fn: F,
-    ) -> Result<Vec<T>>
+    pub fn execute_sequential<F, T>(&self, inputs: &[Vec<u8>], process_fn: F) -> Result<Vec<T>>
     where
         F: Fn(&[u8]) -> Result<T>,
     {

@@ -73,12 +73,14 @@ pub mod fallback;
 pub mod traits;
 
 // Re-export main types
-pub use backend::{get_best_backend, is_dpu_available, DpuBackend, DpuBuffer, DpuInfo, DpuType, DpuWorkQueue};
+pub use backend::{
+    DpuBackend, DpuBuffer, DpuInfo, DpuType, DpuWorkQueue, get_best_backend, is_dpu_available,
+};
 pub use error::{Error, ErrorSeverity, Result};
 pub use fallback::{CpuCipher, CpuCompressor, CpuErasureCoder, CpuHasher};
 pub use traits::{
-    CompressionAlgorithm, DpuCipher, DpuCompressor, DpuErasureCoder, DpuHasher, DpuOp,
-    DpuOpStats, IncrementalHasher,
+    CompressionAlgorithm, DpuCipher, DpuCompressor, DpuErasureCoder, DpuHasher, DpuOp, DpuOpStats,
+    IncrementalHasher,
 };
 
 #[cfg(feature = "stub")]

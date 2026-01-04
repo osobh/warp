@@ -99,11 +99,7 @@ impl ChonkerTree {
         let leaf_ids: Vec<ChunkId> = chunks
             .iter()
             .map(|chunk| {
-                let node = ChonkerNode::leaf(
-                    chunk.id,
-                    chunk.weight,
-                    chunk.offset..chunk.end(),
-                );
+                let node = ChonkerNode::leaf(chunk.id, chunk.weight, chunk.offset..chunk.end());
                 tree.nodes.insert(chunk.id, node);
                 chunk.id
             })
@@ -212,7 +208,10 @@ impl ChonkerTree {
     }
 
     /// Get a mutable reference to a node
-    pub fn get_mut(&self, id: &ChunkId) -> Option<dashmap::mapref::one::RefMut<'_, ChunkId, ChonkerNode>> {
+    pub fn get_mut(
+        &self,
+        id: &ChunkId,
+    ) -> Option<dashmap::mapref::one::RefMut<'_, ChunkId, ChonkerNode>> {
         self.nodes.get_mut(id)
     }
 
@@ -238,7 +237,8 @@ impl ChonkerTree {
 
     /// Get all leaf node IDs in order
     pub fn leaf_ids(&self) -> Vec<ChunkId> {
-        let mut leaves: Vec<_> = self.nodes
+        let mut leaves: Vec<_> = self
+            .nodes
             .iter()
             .filter(|n| n.is_leaf())
             .map(|n| (n.data_range.start, n.id))
@@ -265,7 +265,9 @@ impl ChonkerTree {
         let edit_range = match edit {
             EditOp::Insert { offset, .. } => *offset..*offset + 1,
             EditOp::Delete { offset, length } => *offset..*offset + *length,
-            EditOp::Replace { offset, old_length, .. } => *offset..*offset + *old_length,
+            EditOp::Replace {
+                offset, old_length, ..
+            } => *offset..*offset + *old_length,
         };
 
         self.nodes

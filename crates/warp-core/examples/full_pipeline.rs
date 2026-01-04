@@ -7,10 +7,10 @@
 
 use std::io::Cursor;
 use std::time::Instant;
-use warp_io::{Chunker, ChunkerConfig};
 use warp_compress::{Compressor, ZstdCompressor};
-use warp_crypto::encrypt::{encrypt, decrypt, Key};
+use warp_crypto::encrypt::{Key, decrypt, encrypt};
 use warp_hash::hash;
+use warp_io::{Chunker, ChunkerConfig};
 
 fn main() {
     // Create 5MB of test data
@@ -20,7 +20,11 @@ fn main() {
         .collect();
 
     println!("=== Warp Full Pipeline Demo ===\n");
-    println!("Input: {} bytes ({:.2} MB)\n", data.len(), data.len() as f64 / 1024.0 / 1024.0);
+    println!(
+        "Input: {} bytes ({:.2} MB)\n",
+        data.len(),
+        data.len() as f64 / 1024.0 / 1024.0
+    );
 
     let start = Instant::now();
 
@@ -44,9 +48,12 @@ fn main() {
         .map(|chunk| compressor.compress(chunk).expect("Compression failed"))
         .collect();
     let compressed_size: usize = compressed.iter().map(|c| c.len()).sum();
-    println!("  Compressed: {} -> {} bytes ({:.1}x ratio)",
-             data.len(), compressed_size,
-             data.len() as f64 / compressed_size as f64);
+    println!(
+        "  Compressed: {} -> {} bytes ({:.1}x ratio)",
+        data.len(),
+        compressed_size,
+        data.len() as f64 / compressed_size as f64
+    );
 
     // Step 3: Encryption
     println!("\nStep 3: Encryption (ChaCha20-Poly1305)");
@@ -56,15 +63,15 @@ fn main() {
         .map(|chunk| encrypt(&key, chunk).expect("Encryption failed"))
         .collect();
     let encrypted_size: usize = encrypted.iter().map(|c| c.len()).sum();
-    println!("  Encrypted: {} bytes (added {} bytes overhead)",
-             encrypted_size, encrypted_size - compressed_size);
+    println!(
+        "  Encrypted: {} bytes (added {} bytes overhead)",
+        encrypted_size,
+        encrypted_size - compressed_size
+    );
 
     // Step 4: Hashing
     println!("\nStep 4: Hashing (BLAKE3)");
-    let chunk_hashes: Vec<[u8; 32]> = encrypted
-        .iter()
-        .map(|chunk| hash(chunk))
-        .collect();
+    let chunk_hashes: Vec<[u8; 32]> = encrypted.iter().map(|chunk| hash(chunk)).collect();
     println!("  Computed {} chunk hashes", chunk_hashes.len());
 
     // Step 5: Merkle Root
@@ -91,7 +98,9 @@ fn main() {
         let compressed = decrypt(&key, encrypted_chunk).expect("Decryption failed");
 
         // Decompress
-        let original = compressor.decompress(&compressed).expect("Decompression failed");
+        let original = compressor
+            .decompress(&compressed)
+            .expect("Decompression failed");
         reconstructed.extend_from_slice(&original);
     }
 

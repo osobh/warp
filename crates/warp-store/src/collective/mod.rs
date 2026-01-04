@@ -110,11 +110,7 @@ impl CollectiveContext {
     }
 
     /// Create a collective context with peer mappings
-    pub fn with_peers(
-        world_size: u32,
-        my_rank: Rank,
-        rank_peers: HashMap<Rank, String>,
-    ) -> Self {
+    pub fn with_peers(world_size: u32, my_rank: Rank, rank_peers: HashMap<Rank, String>) -> Self {
         Self {
             world_size,
             my_rank,
@@ -287,25 +283,23 @@ impl<B: StorageBackend> StorageCollectiveOps for CollectiveAdapter<B> {
     ) -> Result<ScatterResult> {
         // Compute rank assignments
         let assignments = match config.pattern {
-            DistributionPattern::RoundRobin => {
-                keys.iter()
-                    .enumerate()
-                    .map(|(i, _)| Rank::from((i as u32) % ctx.world_size()))
-                    .collect::<Vec<_>>()
-            }
+            DistributionPattern::RoundRobin => keys
+                .iter()
+                .enumerate()
+                .map(|(i, _)| Rank::from((i as u32) % ctx.world_size()))
+                .collect::<Vec<_>>(),
             DistributionPattern::Block => {
-                let chunk_size = (keys.len() + ctx.world_size() as usize - 1)
-                    / ctx.world_size() as usize;
+                let chunk_size =
+                    (keys.len() + ctx.world_size() as usize - 1) / ctx.world_size() as usize;
                 keys.iter()
                     .enumerate()
                     .map(|(i, _)| Rank::from((i / chunk_size) as u32))
                     .collect::<Vec<_>>()
             }
-            DistributionPattern::Custom => {
-                config.rank_assignments.clone().ok_or_else(|| {
-                    Error::Backend("Custom pattern requires rank_assignments".into())
-                })?
-            }
+            DistributionPattern::Custom => config
+                .rank_assignments
+                .clone()
+                .ok_or_else(|| Error::Backend("Custom pattern requires rank_assignments".into()))?,
         };
 
         // Filter keys for this rank
@@ -474,19 +468,13 @@ mod tests {
         let world_size = 4u32;
 
         // Round robin: 0,1,2,3,0,1,2,3,0,1
-        let round_robin: Vec<u32> = keys
-            .iter()
-            .map(|i| (*i as u32) % world_size)
-            .collect();
+        let round_robin: Vec<u32> = keys.iter().map(|i| (*i as u32) % world_size).collect();
         assert_eq!(round_robin, vec![0, 1, 2, 3, 0, 1, 2, 3, 0, 1]);
 
         // Block: ceil(10/4) = 3 per chunk
         // 0,0,0,1,1,1,2,2,2,3
         let chunk_size = (keys.len() + world_size as usize - 1) / world_size as usize;
-        let block: Vec<u32> = keys
-            .iter()
-            .map(|i| (*i / chunk_size) as u32)
-            .collect();
+        let block: Vec<u32> = keys.iter().map(|i| (*i / chunk_size) as u32).collect();
         assert_eq!(block, vec![0, 0, 0, 1, 1, 1, 2, 2, 2, 3]);
     }
 
@@ -494,7 +482,9 @@ mod tests {
     async fn test_collective_adapter() {
         // Create a temporary backend
         let temp_dir = tempfile::tempdir().unwrap();
-        let backend = crate::backend::LocalBackend::new(temp_dir.path()).await.unwrap();
+        let backend = crate::backend::LocalBackend::new(temp_dir.path())
+            .await
+            .unwrap();
         let adapter = CollectiveAdapter::new(Arc::new(backend));
 
         let ctx = CollectiveContext::new(4, Rank::new(0));

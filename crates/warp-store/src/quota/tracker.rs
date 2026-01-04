@@ -7,6 +7,8 @@ use std::time::{Duration, Instant, SystemTime};
 use dashmap::DashMap;
 use parking_lot::RwLock;
 
+// Note: Instant is still used in UsageTracker for rate limiting (last_rate_reset)
+
 use super::QuotaScope;
 
 /// Current usage for a quota scope
@@ -54,12 +56,18 @@ pub struct UsageSnapshot {
 }
 
 /// Atomic usage counters for thread-safe updates
+///
+/// Uses all-atomic operations to avoid lock contention. The `update_version`
+/// field is incremented on each mutation, allowing observers to detect changes
+/// without needing timestamps (which would require lock coordination).
 struct AtomicUsage {
     storage_bytes: AtomicU64,
     object_count: AtomicU64,
     request_count: AtomicU64,
     bandwidth_used: AtomicU64,
-    last_updated: RwLock<Option<Instant>>,
+    /// Monotonically increasing version counter - incremented on each mutation.
+    /// Used to detect changes without lock contention (0 = never updated).
+    update_version: AtomicU64,
 }
 
 impl AtomicUsage {
@@ -69,7 +77,7 @@ impl AtomicUsage {
             object_count: AtomicU64::new(0),
             request_count: AtomicU64::new(0),
             bandwidth_used: AtomicU64::new(0),
-            last_updated: RwLock::new(None),
+            update_version: AtomicU64::new(0),
         }
     }
 
@@ -79,7 +87,7 @@ impl AtomicUsage {
             object_count: AtomicU64::new(usage.object_count),
             request_count: AtomicU64::new(usage.request_count),
             bandwidth_used: AtomicU64::new(usage.bandwidth_used),
-            last_updated: RwLock::new(Some(Instant::now())),
+            update_version: AtomicU64::new(1), // Mark as initialized
         }
     }
 
@@ -89,23 +97,37 @@ impl AtomicUsage {
             object_count: self.object_count.load(Ordering::Relaxed),
             request_count: self.request_count.load(Ordering::Relaxed),
             bandwidth_used: self.bandwidth_used.load(Ordering::Relaxed),
-            last_updated: Some(SystemTime::now()),
+            // Use current time as last_updated since we only track update versions internally
+            last_updated: if self.update_version.load(Ordering::Relaxed) > 0 {
+                Some(SystemTime::now())
+            } else {
+                None
+            },
         }
+    }
+
+    /// Mark as updated (increment version counter atomically)
+    #[inline]
+    fn mark_updated(&self) {
+        self.update_version.fetch_add(1, Ordering::Relaxed);
     }
 
     fn add_storage(&self, bytes: u64) {
         self.storage_bytes.fetch_add(bytes, Ordering::Relaxed);
-        *self.last_updated.write() = Some(Instant::now());
+        self.mark_updated();
     }
 
     fn remove_storage(&self, bytes: u64) {
-        self.storage_bytes.fetch_sub(bytes.min(self.storage_bytes.load(Ordering::Relaxed)), Ordering::Relaxed);
-        *self.last_updated.write() = Some(Instant::now());
+        self.storage_bytes.fetch_sub(
+            bytes.min(self.storage_bytes.load(Ordering::Relaxed)),
+            Ordering::Relaxed,
+        );
+        self.mark_updated();
     }
 
     fn add_object(&self) {
         self.object_count.fetch_add(1, Ordering::Relaxed);
-        *self.last_updated.write() = Some(Instant::now());
+        self.mark_updated();
     }
 
     fn remove_object(&self) {
@@ -113,7 +135,7 @@ impl AtomicUsage {
         if current > 0 {
             self.object_count.fetch_sub(1, Ordering::Relaxed);
         }
-        *self.last_updated.write() = Some(Instant::now());
+        self.mark_updated();
     }
 
     fn record_request(&self) {

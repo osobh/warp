@@ -38,7 +38,7 @@ mod metrics;
 mod quarantine;
 mod scheduler;
 
-pub use daemon::{ScrubDaemon, ScrubConfig, ScrubJob, ScrubResult};
+pub use daemon::{ScrubConfig, ScrubDaemon, ScrubJob, ScrubResult};
 pub use metrics::{ScrubMetrics, ScrubStats};
-pub use scheduler::{ScrubScheduler, ScrubSchedule};
-pub use quarantine::{QuarantineManager, QuarantinedBlock, QuarantineReason};
+pub use quarantine::{QuarantineManager, QuarantineReason, QuarantinedBlock};
+pub use scheduler::{ScrubSchedule, ScrubScheduler};

@@ -6383,6 +6383,7 @@ dependencies = [
  "criterion",
  "cudarc",
  "lz4_flex",
+ "proptest",
  "rand 0.8.5",
  "rayon",
  "tempfile",
@@ -6715,6 +6716,8 @@ name = "warp-net"
 version = "0.1.0"
 dependencies = [
  "bytes",
+ "parking_lot 0.12.5",
+ "proptest",
  "quinn",
  "rcgen",
  "rmp-serde",

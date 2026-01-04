@@ -11,8 +11,8 @@ use serde::{Deserialize, Serialize};
 
 use crate::config::TensorConfig;
 use crate::error::{TensorError, TensorResult};
-use crate::shard::{ShardedTensorMeta, ShardStrategy};
-use crate::tensor::{TensorData, TensorMeta, LazyTensor};
+use crate::shard::{ShardStrategy, ShardedTensorMeta};
+use crate::tensor::{LazyTensor, TensorData, TensorMeta};
 
 /// Checkpoint metadata
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -92,9 +92,7 @@ impl Checkpoint {
         let lazy_tensors: HashMap<String, LazyTensor> = meta
             .tensors
             .iter()
-            .map(|(name, tensor_meta)| {
-                (name.clone(), LazyTensor::new(tensor_meta.clone()))
-            })
+            .map(|(name, tensor_meta)| (name.clone(), LazyTensor::new(tensor_meta.clone())))
             .collect();
 
         Self {
@@ -401,7 +399,8 @@ mod tests {
     #[test]
     fn test_checkpoint_from_meta() {
         let mut meta = CheckpointMeta::new("loaded");
-        let tensor_meta = TensorMeta::new("weight", vec![10, 20], crate::tensor::TensorDtype::Float32);
+        let tensor_meta =
+            TensorMeta::new("weight", vec![10, 20], crate::tensor::TensorDtype::Float32);
         meta.tensor_names.push("weight".to_string());
         meta.tensors.insert("weight".to_string(), tensor_meta);
 

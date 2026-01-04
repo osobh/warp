@@ -417,8 +417,7 @@ impl DashboardState {
             .iter()
             .filter(|t| matches!(t.status, TransferStatus::Failed))
             .count();
-        self.metrics.total_transfers =
-            self.metrics.active_transfers + self.recent_transfers.len();
+        self.metrics.total_transfers = self.metrics.active_transfers + self.recent_transfers.len();
 
         self.metrics.total_bytes_transferred = self
             .active_transfers
@@ -427,32 +426,22 @@ impl DashboardState {
             .map(|t| t.bytes_transferred)
             .sum();
 
-        self.metrics.aggregate_throughput_mbps = self
-            .active_transfers
-            .iter()
-            .map(|t| t.speed_mbps)
-            .sum();
+        self.metrics.aggregate_throughput_mbps =
+            self.active_transfers.iter().map(|t| t.speed_mbps).sum();
 
         if !self.active_transfers.is_empty() {
-            self.metrics.average_speed_mbps = self.metrics.aggregate_throughput_mbps
-                / self.active_transfers.len() as f64;
+            self.metrics.average_speed_mbps =
+                self.metrics.aggregate_throughput_mbps / self.active_transfers.len() as f64;
         } else {
             self.metrics.average_speed_mbps = 0.0;
         }
 
-        self.metrics.connected_edges = self
-            .connected_edges
-            .iter()
-            .filter(|e| e.connected)
-            .count();
+        self.metrics.connected_edges = self.connected_edges.iter().filter(|e| e.connected).count();
 
         if !self.connected_edges.is_empty() {
-            self.metrics.average_rtt_ms = self
-                .connected_edges
-                .iter()
-                .map(|e| e.rtt_ms)
-                .sum::<f64>()
-                / self.connected_edges.len() as f64;
+            self.metrics.average_rtt_ms =
+                self.connected_edges.iter().map(|e| e.rtt_ms).sum::<f64>()
+                    / self.connected_edges.len() as f64;
         } else {
             self.metrics.average_rtt_ms = 0.0;
         }

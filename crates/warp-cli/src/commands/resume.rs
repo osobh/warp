@@ -62,8 +62,10 @@ pub async fn execute(session_id: &str) -> Result<()> {
     // Display erasure coding state if present
     if let Some(ref erasure_state) = session.erasure_state {
         println!();
-        println!("Erasure Coding: {}:{} (data:parity shards)",
-            erasure_state.data_shards, erasure_state.parity_shards);
+        println!(
+            "Erasure Coding: {}:{} (data:parity shards)",
+            erasure_state.data_shards, erasure_state.parity_shards
+        );
         println!("Decoded chunks: {}", erasure_state.decoded_chunks.len());
 
         let partial = erasure_state.partial_chunks();
@@ -72,11 +74,15 @@ pub async fn execute(session_id: &str) -> Result<()> {
             // Show details for up to 5 partial chunks
             for chunk_id in partial.iter().take(5) {
                 let needed = erasure_state.shards_needed(*chunk_id);
-                let received = erasure_state.received_shards.get(chunk_id)
+                let received = erasure_state
+                    .received_shards
+                    .get(chunk_id)
                     .map(|v| v.len())
                     .unwrap_or(0);
-                println!("  Chunk {}: {}/{} shards ({} more needed)",
-                    chunk_id, received, erasure_state.data_shards, needed);
+                println!(
+                    "  Chunk {}: {}/{} shards ({} more needed)",
+                    chunk_id, received, erasure_state.data_shards, needed
+                );
             }
             if partial.len() > 5 {
                 println!("  ... and {} more partial chunks", partial.len() - 5);
@@ -129,7 +135,10 @@ pub async fn execute(session_id: &str) -> Result<()> {
             println!("{}", "=".repeat(60));
             println!("Session:     {}", &session.id[..12]);
             println!("Chunks:      {}", session.total_chunks);
-            println!("Transferred: {:.2} MB", session.transferred_bytes as f64 / 1_048_576.0);
+            println!(
+                "Transferred: {:.2} MB",
+                session.transferred_bytes as f64 / 1_048_576.0
+            );
 
             // Clean up completed session
             if let Err(e) = Session::delete(&sessions_dir, &session.id) {
@@ -239,10 +248,7 @@ mod tests {
 
         rt.block_on(async {
             // Create a test session
-            let mut session = Session::new(
-                PathBuf::from("/tmp/test.txt"),
-                "dest".to_string(),
-            );
+            let mut session = Session::new(PathBuf::from("/tmp/test.txt"), "dest".to_string());
             session.total_chunks = 10;
             session.complete_chunk(5);
             session.set_state(SessionState::Paused);

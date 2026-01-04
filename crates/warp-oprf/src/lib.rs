@@ -148,9 +148,15 @@ mod tests {
         let server = BlindDedupServer::new("test").unwrap();
         let client = BlindDedupClient::new(&server.public_key()).unwrap();
 
-        let token1 = client.compute_token_with_server(b"content1", &server).unwrap();
-        let token2 = client.compute_token_with_server(b"content1", &server).unwrap();
-        let token3 = client.compute_token_with_server(b"content2", &server).unwrap();
+        let token1 = client
+            .compute_token_with_server(b"content1", &server)
+            .unwrap();
+        let token2 = client
+            .compute_token_with_server(b"content1", &server)
+            .unwrap();
+        let token3 = client
+            .compute_token_with_server(b"content2", &server)
+            .unwrap();
 
         assert_eq!(token1, token2); // Same content = same token
         assert_ne!(token1, token3); // Different content = different token
@@ -162,9 +168,15 @@ mod tests {
         let server = PrivateKdfServer::new("kdf-key").unwrap();
         let client = PrivateKdfClient::new(&server.public_key()).unwrap();
 
-        let key1 = client.derive_with_server(b"password", "context1", &server).unwrap();
-        let key2 = client.derive_with_server(b"password", "context1", &server).unwrap();
-        let key3 = client.derive_with_server(b"password", "context2", &server).unwrap();
+        let key1 = client
+            .derive_with_server(b"password", "context1", &server)
+            .unwrap();
+        let key2 = client
+            .derive_with_server(b"password", "context1", &server)
+            .unwrap();
+        let key3 = client
+            .derive_with_server(b"password", "context2", &server)
+            .unwrap();
 
         assert_eq!(key1.as_bytes(), key2.as_bytes()); // Same input = same key
         assert_ne!(key1.as_bytes(), key3.as_bytes()); // Different context = different key

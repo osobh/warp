@@ -162,6 +162,8 @@ objc2-quartz-core = "0.3"
 criterion = { version = "0.5", features = ["html_reports"] }
 proptest = "1.5"
 test-case = "3.3"
+loom = "0.7"
+shuttle = "0.8"
 
 # Embedded databases
 sled = "0.34"

@@ -1,7 +1,7 @@
 //! GPU memory pool - main interface for tensor allocation
 
-use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Instant;
 
 use dashmap::DashMap;
@@ -13,7 +13,7 @@ use crate::cache::TensorCache;
 use crate::config::GpuMemConfig;
 use crate::error::{GpuMemError, GpuMemResult};
 use crate::pager::{GpuPager, PageState};
-use crate::prefetch::{Prefetcher, PrefetchHint};
+use crate::prefetch::{PrefetchHint, Prefetcher};
 use crate::spill::SpillManager;
 use crate::tensor::{TensorDtype, TensorHandle, TensorId, TensorMeta};
 
@@ -444,10 +444,7 @@ mod tests {
     async fn test_pool_allocation() {
         let pool = create_test_pool().await;
 
-        let handle = pool
-            .allocate_tensor::<f32>(&[1024, 1024])
-            .await
-            .unwrap();
+        let handle = pool.allocate_tensor::<f32>(&[1024, 1024]).await.unwrap();
 
         assert!(handle.is_resident());
         assert_eq!(handle.size_bytes(), 1024 * 1024 * 4);
@@ -461,10 +458,7 @@ mod tests {
     async fn test_pool_free() {
         let pool = create_test_pool().await;
 
-        let handle = pool
-            .allocate_tensor::<f32>(&[1024, 1024])
-            .await
-            .unwrap();
+        let handle = pool.allocate_tensor::<f32>(&[1024, 1024]).await.unwrap();
         let tensor_id = handle.id();
 
         pool.free(tensor_id).await.unwrap();
@@ -478,10 +472,7 @@ mod tests {
     async fn test_pool_pin_unpin() {
         let pool = create_test_pool().await;
 
-        let handle = pool
-            .allocate_tensor::<f32>(&[1024])
-            .await
-            .unwrap();
+        let handle = pool.allocate_tensor::<f32>(&[1024]).await.unwrap();
         let tensor_id = handle.id();
 
         pool.pin(tensor_id).unwrap();

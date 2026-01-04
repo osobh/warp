@@ -58,14 +58,8 @@ pub struct TransfersTemplate {
 impl TransfersTemplate {
     /// Create a new transfers template
     pub fn new(transfers: Vec<TransferView>, uptime_seconds: u64) -> Self {
-        let active_count = transfers
-            .iter()
-            .filter(|t| t.is_active())
-            .count();
-        let completed_count = transfers
-            .iter()
-            .filter(|t| t.is_complete())
-            .count();
+        let active_count = transfers.iter().filter(|t| t.is_active()).count();
+        let completed_count = transfers.iter().filter(|t| t.is_complete()).count();
         let failed_count = transfers
             .iter()
             .filter(|t| matches!(t.status, crate::types::TransferStatus::Failed))
@@ -262,9 +256,11 @@ mod tests {
 
     #[test]
     fn test_transfers_template_new() {
-        let transfers = vec![
-            TransferView::new("t1".to_string(), "test1".to_string(), TransferDirection::Send),
-        ];
+        let transfers = vec![TransferView::new(
+            "t1".to_string(),
+            "test1".to_string(),
+            TransferDirection::Send,
+        )];
         let template = TransfersTemplate::new(transfers, 100);
         assert_eq!(template.transfers.len(), 1);
         assert_eq!(template.version, VERSION);
@@ -306,9 +302,11 @@ mod tests {
 
     #[test]
     fn test_transfers_template_render() {
-        let transfers = vec![
-            TransferView::new("t1".to_string(), "test1".to_string(), TransferDirection::Send),
-        ];
+        let transfers = vec![TransferView::new(
+            "t1".to_string(),
+            "test1".to_string(),
+            TransferDirection::Send,
+        )];
         let template = TransfersTemplate::new(transfers, 100);
         let rendered = template.render().unwrap();
         assert!(rendered.contains("All Transfers"));
@@ -343,9 +341,10 @@ mod tests {
 
     #[test]
     fn test_edges_template_new() {
-        let edges = vec![
-            EdgeView::new("e1".to_string(), "127.0.0.1:8080".to_string()),
-        ];
+        let edges = vec![EdgeView::new(
+            "e1".to_string(),
+            "127.0.0.1:8080".to_string(),
+        )];
         let template = EdgesTemplate::new(edges, 100);
         assert_eq!(template.edges.len(), 1);
         assert_eq!(template.version, VERSION);
@@ -372,9 +371,10 @@ mod tests {
 
     #[test]
     fn test_edges_template_render() {
-        let edges = vec![
-            EdgeView::new("e1".to_string(), "127.0.0.1:8080".to_string()),
-        ];
+        let edges = vec![EdgeView::new(
+            "e1".to_string(),
+            "127.0.0.1:8080".to_string(),
+        )];
         let template = EdgesTemplate::new(edges, 100);
         let rendered = template.render().unwrap();
         assert!(rendered.contains("Edge Connections"));

@@ -7,7 +7,7 @@
 
 use axum::{
     extract::{Path, State},
-    http::{header, StatusCode},
+    http::{StatusCode, header},
     response::{IntoResponse, Response},
 };
 use bytes::Bytes;
@@ -19,8 +19,8 @@ use warp_store::events::{
     NotificationConfiguration, QueueConfiguration, TopicConfiguration,
 };
 
-use crate::error::{ApiError, ApiResult};
 use crate::AppState;
+use crate::error::{ApiError, ApiResult};
 
 // =============================================================================
 // XML Types for S3 Notification API

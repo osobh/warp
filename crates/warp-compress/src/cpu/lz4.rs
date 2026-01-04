@@ -22,12 +22,11 @@ impl Compressor for Lz4Compressor {
     fn compress(&self, input: &[u8]) -> Result<Vec<u8>> {
         Ok(lz4_flex::compress_prepend_size(input))
     }
-    
+
     fn decompress(&self, input: &[u8]) -> Result<Vec<u8>> {
-        lz4_flex::decompress_size_prepended(input)
-            .map_err(|e| Error::Decompression(e.to_string()))
+        lz4_flex::decompress_size_prepended(input).map_err(|e| Error::Decompression(e.to_string()))
     }
-    
+
     fn name(&self) -> &'static str {
         "lz4"
     }
@@ -36,15 +35,34 @@ impl Compressor for Lz4Compressor {
 #[cfg(test)]
 mod tests {
     use super::*;
-    
+
     #[test]
     fn test_roundtrip() {
         let compressor = Lz4Compressor::new();
         let data = b"hello world hello world hello world";
-        
+
         let compressed = compressor.compress(data).unwrap();
         let decompressed = compressor.decompress(&compressed).unwrap();
-        
+
         assert_eq!(data.as_slice(), decompressed.as_slice());
+    }
+}
+
+#[cfg(test)]
+mod proptest_tests {
+    use super::*;
+    use proptest::prelude::*;
+
+    proptest! {
+        /// Property: LZ4 compress/decompress roundtrip
+        #[test]
+        fn lz4_roundtrip(data in prop::collection::vec(any::<u8>(), 1..8192)) {
+            let compressor = Lz4Compressor::new();
+
+            let compressed = compressor.compress(&data).unwrap();
+            let decompressed = compressor.decompress(&compressed).unwrap();
+
+            prop_assert_eq!(data, decompressed);
+        }
     }
 }

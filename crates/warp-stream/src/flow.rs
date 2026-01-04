@@ -11,11 +11,11 @@
 //! prevents memory exhaustion while maintaining throughput.
 
 use std::sync::{
-    atomic::{AtomicBool, AtomicUsize, Ordering},
     Arc,
+    atomic::{AtomicBool, AtomicUsize, Ordering},
 };
 use std::time::Duration;
-use tokio::sync::{mpsc, Semaphore};
+use tokio::sync::{Semaphore, mpsc};
 use tracing::trace;
 
 use crate::{Result, SharedStats, StreamError};
@@ -69,7 +69,11 @@ impl FlowControl {
             return Err(StreamError::Cancelled);
         }
 
-        let permit = self.semaphore.clone().acquire_owned().await
+        let permit = self
+            .semaphore
+            .clone()
+            .acquire_owned()
+            .await
             .map_err(|_| StreamError::Cancelled)?;
 
         let count = self.in_flight.fetch_add(1, Ordering::Relaxed) + 1;
@@ -184,10 +188,7 @@ impl<T: Send> BackpressureController<T> {
             stats: None,
         };
 
-        let receiver = BackpressureReceiver {
-            receiver,
-            flow,
-        };
+        let receiver = BackpressureReceiver { receiver, flow };
 
         (controller, receiver)
     }
@@ -203,10 +204,7 @@ impl<T: Send> BackpressureController<T> {
             stats: Some(stats),
         };
 
-        let receiver = BackpressureReceiver {
-            receiver,
-            flow,
-        };
+        let receiver = BackpressureReceiver { receiver, flow };
 
         (controller, receiver)
     }
@@ -215,7 +213,9 @@ impl<T: Send> BackpressureController<T> {
     pub async fn send(&self, item: T) -> Result<()> {
         let _permit = self.flow.acquire().await?;
 
-        self.sender.send(item).await
+        self.sender
+            .send(item)
+            .await
             .map_err(|_| StreamError::ChannelClosed("backpressure channel"))
     }
 
@@ -497,10 +497,7 @@ mod tests {
 
         // Receive all values
         let mut received = vec![];
-        while let Ok(v) = tokio::time::timeout(
-            Duration::from_millis(10),
-            receiver.recv()
-        ).await {
+        while let Ok(v) = tokio::time::timeout(Duration::from_millis(10), receiver.recv()).await {
             if let Some(v) = v {
                 received.push(v);
             } else {

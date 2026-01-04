@@ -16,7 +16,7 @@ impl BufferPool {
             buffer_size,
         }
     }
-    
+
     /// Get a buffer from the pool (or allocate a new one)
     pub fn get(&self) -> PooledBuffer<'_> {
         let buffer = self
@@ -31,7 +31,7 @@ impl BufferPool {
             pool: self,
         }
     }
-    
+
     /// Return a buffer to the pool
     fn return_buffer(&self, mut buffer: Vec<u8>) {
         buffer.clear();
@@ -51,7 +51,7 @@ pub struct PooledBuffer<'a> {
 
 impl<'a> std::ops::Deref for PooledBuffer<'a> {
     type Target = Vec<u8>;
-    
+
     fn deref(&self) -> &Self::Target {
         self.buffer.as_ref().unwrap()
     }

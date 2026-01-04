@@ -10,7 +10,7 @@ use tokio::net::TcpListener;
 use tokio::time::timeout;
 
 use warp_store::{Store, StoreConfig};
-use warp_store_api::{ApiServer, ApiConfig};
+use warp_store_api::{ApiConfig, ApiServer};
 
 /// Test server helper
 struct TestServer {
@@ -77,7 +77,12 @@ impl TestServer {
 async fn test_health_check() {
     let server = TestServer::new().await;
 
-    let resp = server.client.get(server.url("/health")).send().await.unwrap();
+    let resp = server
+        .client
+        .get(server.url("/health"))
+        .send()
+        .await
+        .unwrap();
 
     assert_eq!(resp.status(), 200);
     assert_eq!(resp.text().await.unwrap(), "OK");
@@ -104,7 +109,8 @@ async fn test_s3_create_bucket() {
     let server = TestServer::new().await;
 
     // Create bucket
-    let resp = server.client
+    let resp = server
+        .client
         .put(server.url("/test-bucket"))
         .send()
         .await
@@ -123,14 +129,16 @@ async fn test_s3_delete_bucket() {
     let server = TestServer::new().await;
 
     // Create bucket
-    server.client
+    server
+        .client
         .put(server.url("/delete-me"))
         .send()
         .await
         .unwrap();
 
     // Delete bucket
-    let resp = server.client
+    let resp = server
+        .client
         .delete(server.url("/delete-me"))
         .send()
         .await
@@ -153,7 +161,8 @@ async fn test_s3_put_get_object() {
     let server = TestServer::new().await;
 
     // Create bucket first
-    server.client
+    server
+        .client
         .put(server.url("/objects"))
         .send()
         .await
@@ -161,7 +170,8 @@ async fn test_s3_put_get_object() {
 
     // Put object
     let data = b"Hello, warp-store!";
-    let resp = server.client
+    let resp = server
+        .client
         .put(server.url("/objects/hello.txt"))
         .body(data.to_vec())
         .header("Content-Type", "text/plain")
@@ -173,7 +183,8 @@ async fn test_s3_put_get_object() {
     assert!(resp.headers().contains_key("etag"));
 
     // Get object
-    let resp = server.client
+    let resp = server
+        .client
         .get(server.url("/objects/hello.txt"))
         .send()
         .await
@@ -188,10 +199,16 @@ async fn test_s3_head_object() {
     let server = TestServer::new().await;
 
     // Create bucket and object
-    server.client.put(server.url("/head-test")).send().await.unwrap();
+    server
+        .client
+        .put(server.url("/head-test"))
+        .send()
+        .await
+        .unwrap();
 
     let data = b"Test data for head";
-    server.client
+    server
+        .client
         .put(server.url("/head-test/file.bin"))
         .body(data.to_vec())
         .send()
@@ -199,7 +216,8 @@ async fn test_s3_head_object() {
         .unwrap();
 
     // Head object
-    let resp = server.client
+    let resp = server
+        .client
         .head(server.url("/head-test/file.bin"))
         .send()
         .await
@@ -215,9 +233,15 @@ async fn test_s3_delete_object() {
     let server = TestServer::new().await;
 
     // Create bucket and object
-    server.client.put(server.url("/del-obj")).send().await.unwrap();
+    server
+        .client
+        .put(server.url("/del-obj"))
+        .send()
+        .await
+        .unwrap();
 
-    server.client
+    server
+        .client
         .put(server.url("/del-obj/to-delete.txt"))
         .body("delete me")
         .send()
@@ -225,7 +249,8 @@ async fn test_s3_delete_object() {
         .unwrap();
 
     // Delete object
-    let resp = server.client
+    let resp = server
+        .client
         .delete(server.url("/del-obj/to-delete.txt"))
         .send()
         .await
@@ -234,7 +259,8 @@ async fn test_s3_delete_object() {
     assert_eq!(resp.status(), 204);
 
     // Verify object is gone
-    let resp = server.client
+    let resp = server
+        .client
         .get(server.url("/del-obj/to-delete.txt"))
         .send()
         .await
@@ -248,10 +274,16 @@ async fn test_s3_list_objects() {
     let server = TestServer::new().await;
 
     // Create bucket with multiple objects
-    server.client.put(server.url("/list-test")).send().await.unwrap();
+    server
+        .client
+        .put(server.url("/list-test"))
+        .send()
+        .await
+        .unwrap();
 
     for i in 0..5 {
-        server.client
+        server
+            .client
             .put(server.url(&format!("/list-test/file{}.txt", i)))
             .body(format!("content {}", i))
             .send()
@@ -260,7 +292,8 @@ async fn test_s3_list_objects() {
     }
 
     // List objects
-    let resp = server.client
+    let resp = server
+        .client
         .get(server.url("/list-test"))
         .send()
         .await
@@ -278,10 +311,16 @@ async fn test_s3_list_objects_with_prefix() {
     let server = TestServer::new().await;
 
     // Create bucket with objects in subdirectories
-    server.client.put(server.url("/prefix-test")).send().await.unwrap();
+    server
+        .client
+        .put(server.url("/prefix-test"))
+        .send()
+        .await
+        .unwrap();
 
     for path in ["dir1/a.txt", "dir1/b.txt", "dir2/c.txt", "root.txt"] {
-        server.client
+        server
+            .client
             .put(server.url(&format!("/prefix-test/{}", path)))
             .body("content")
             .send()
@@ -290,7 +329,8 @@ async fn test_s3_list_objects_with_prefix() {
     }
 
     // List with prefix
-    let resp = server.client
+    let resp = server
+        .client
         .get(server.url("/prefix-test?prefix=dir1/"))
         .send()
         .await
@@ -313,11 +353,22 @@ async fn test_native_stats() {
     let server = TestServer::new().await;
 
     // Create some buckets
-    server.client.put(server.url("/bucket1")).send().await.unwrap();
-    server.client.put(server.url("/bucket2")).send().await.unwrap();
+    server
+        .client
+        .put(server.url("/bucket1"))
+        .send()
+        .await
+        .unwrap();
+    server
+        .client
+        .put(server.url("/bucket2"))
+        .send()
+        .await
+        .unwrap();
 
     // Get stats
-    let resp = server.client
+    let resp = server
+        .client
         .get(server.url("/api/v1/stats"))
         .send()
         .await
@@ -333,8 +384,14 @@ async fn test_native_ephemeral_token() {
     let server = TestServer::new().await;
 
     // Create bucket and object
-    server.client.put(server.url("/ephemeral")).send().await.unwrap();
-    server.client
+    server
+        .client
+        .put(server.url("/ephemeral"))
+        .send()
+        .await
+        .unwrap();
+    server
+        .client
         .put(server.url("/ephemeral/secret.bin"))
         .body("secret data")
         .send()
@@ -342,7 +399,8 @@ async fn test_native_ephemeral_token() {
         .unwrap();
 
     // Create ephemeral token
-    let resp = server.client
+    let resp = server
+        .client
         .post(server.url("/api/v1/ephemeral"))
         .json(&serde_json::json!({
             "bucket": "ephemeral",
@@ -361,7 +419,8 @@ async fn test_native_ephemeral_token() {
 
     // Verify token
     let token = body["token"].as_str().unwrap();
-    let verify_resp = server.client
+    let verify_resp = server
+        .client
         .post(server.url("/api/v1/ephemeral/verify"))
         .json(&serde_json::json!({
             "token": token
@@ -380,9 +439,15 @@ async fn test_native_ephemeral_access() {
     let server = TestServer::new().await;
 
     // Create bucket and object
-    server.client.put(server.url("/access-test")).send().await.unwrap();
+    server
+        .client
+        .put(server.url("/access-test"))
+        .send()
+        .await
+        .unwrap();
     let content = "This is protected content";
-    server.client
+    server
+        .client
         .put(server.url("/access-test/protected.txt"))
         .body(content)
         .send()
@@ -390,7 +455,8 @@ async fn test_native_ephemeral_access() {
         .unwrap();
 
     // Create ephemeral token with bucket scope (allows any key in bucket)
-    let resp = server.client
+    let resp = server
+        .client
         .post(server.url("/api/v1/ephemeral"))
         .json(&serde_json::json!({
             "bucket": "access-test",
@@ -414,7 +480,8 @@ async fn test_native_ephemeral_access() {
 
     // Access via ephemeral URL with the key in path
     let access_url = format!("/api/v1/access/{}/protected.txt", token);
-    let resp = server.client
+    let resp = server
+        .client
         .get(server.url(&access_url))
         .send()
         .await
@@ -432,9 +499,15 @@ async fn test_native_ephemeral_access() {
 async fn test_get_nonexistent_object() {
     let server = TestServer::new().await;
 
-    server.client.put(server.url("/errors")).send().await.unwrap();
+    server
+        .client
+        .put(server.url("/errors"))
+        .send()
+        .await
+        .unwrap();
 
-    let resp = server.client
+    let resp = server
+        .client
         .get(server.url("/errors/does-not-exist.txt"))
         .send()
         .await
@@ -447,7 +520,8 @@ async fn test_get_nonexistent_object() {
 async fn test_delete_nonexistent_bucket() {
     let server = TestServer::new().await;
 
-    let resp = server.client
+    let resp = server
+        .client
         .delete(server.url("/nonexistent-bucket"))
         .send()
         .await
@@ -464,12 +538,18 @@ async fn test_delete_nonexistent_bucket() {
 async fn test_large_object() {
     let server = TestServer::new().await;
 
-    server.client.put(server.url("/large")).send().await.unwrap();
+    server
+        .client
+        .put(server.url("/large"))
+        .send()
+        .await
+        .unwrap();
 
     // Create 1MB object
     let data: Vec<u8> = (0..1_000_000).map(|i| (i % 256) as u8).collect();
 
-    let resp = server.client
+    let resp = server
+        .client
         .put(server.url("/large/big-file.bin"))
         .body(data.clone())
         .send()
@@ -479,7 +559,8 @@ async fn test_large_object() {
     assert_eq!(resp.status(), 200);
 
     // Retrieve and verify
-    let resp = server.client
+    let resp = server
+        .client
         .get(server.url("/large/big-file.bin"))
         .send()
         .await
@@ -500,10 +581,16 @@ async fn test_s3_multipart_upload() {
     let server = TestServer::new().await;
 
     // Create bucket
-    server.client.put(server.url("/multipart")).send().await.unwrap();
+    server
+        .client
+        .put(server.url("/multipart"))
+        .send()
+        .await
+        .unwrap();
 
     // 1. Create multipart upload
-    let resp = server.client
+    let resp = server
+        .client
         .post(server.url("/multipart/large-file.bin?uploads"))
         .send()
         .await
@@ -523,7 +610,8 @@ async fn test_s3_multipart_upload() {
 
     // 2. Upload parts
     let part1_data = b"Part 1 data ".to_vec();
-    let resp = server.client
+    let resp = server
+        .client
         .put(server.url(&format!(
             "/multipart/large-file.bin?uploadId={}&partNumber=1",
             upload_id
@@ -536,7 +624,8 @@ async fn test_s3_multipart_upload() {
     assert!(resp.headers().contains_key("etag"));
 
     let part2_data = b"Part 2 data".to_vec();
-    let resp = server.client
+    let resp = server
+        .client
         .put(server.url(&format!(
             "/multipart/large-file.bin?uploadId={}&partNumber=2",
             upload_id
@@ -548,11 +637,9 @@ async fn test_s3_multipart_upload() {
     assert_eq!(resp.status(), 200);
 
     // 3. Complete multipart upload
-    let resp = server.client
-        .post(server.url(&format!(
-            "/multipart/large-file.bin?uploadId={}",
-            upload_id
-        )))
+    let resp = server
+        .client
+        .post(server.url(&format!("/multipart/large-file.bin?uploadId={}", upload_id)))
         .send()
         .await
         .unwrap();
@@ -561,7 +648,8 @@ async fn test_s3_multipart_upload() {
     assert!(body.contains("<CompleteMultipartUploadResult>"));
 
     // 4. Verify final object
-    let resp = server.client
+    let resp = server
+        .client
         .get(server.url("/multipart/large-file.bin"))
         .send()
         .await
@@ -577,10 +665,16 @@ async fn test_s3_multipart_upload_abort() {
     let server = TestServer::new().await;
 
     // Create bucket
-    server.client.put(server.url("/abort-test")).send().await.unwrap();
+    server
+        .client
+        .put(server.url("/abort-test"))
+        .send()
+        .await
+        .unwrap();
 
     // Create multipart upload
-    let resp = server.client
+    let resp = server
+        .client
         .post(server.url("/abort-test/to-abort.bin?uploads"))
         .send()
         .await
@@ -595,7 +689,8 @@ async fn test_s3_multipart_upload_abort() {
         .unwrap();
 
     // Upload a part
-    server.client
+    server
+        .client
         .put(server.url(&format!(
             "/abort-test/to-abort.bin?uploadId={}&partNumber=1",
             upload_id
@@ -606,18 +701,17 @@ async fn test_s3_multipart_upload_abort() {
         .unwrap();
 
     // Abort the upload
-    let resp = server.client
-        .delete(server.url(&format!(
-            "/abort-test/to-abort.bin?uploadId={}",
-            upload_id
-        )))
+    let resp = server
+        .client
+        .delete(server.url(&format!("/abort-test/to-abort.bin?uploadId={}", upload_id)))
         .send()
         .await
         .unwrap();
     assert_eq!(resp.status(), 204);
 
     // Object should not exist
-    let resp = server.client
+    let resp = server
+        .client
         .get(server.url("/abort-test/to-abort.bin"))
         .send()
         .await
@@ -635,7 +729,8 @@ async fn test_s3_select_json_simple() {
     let server = TestServer::new().await;
 
     // Create bucket
-    server.client
+    server
+        .client
         .put(server.url("/select-bucket"))
         .send()
         .await
@@ -646,7 +741,8 @@ async fn test_s3_select_json_simple() {
 {"name":"Bob","age":25}
 {"name":"Charlie","age":35}"#;
 
-    server.client
+    server
+        .client
         .put(server.url("/select-bucket/users.json"))
         .header("Content-Type", "application/json")
         .body(json_data)
@@ -666,7 +762,8 @@ async fn test_s3_select_json_simple() {
         }
     });
 
-    let resp = server.client
+    let resp = server
+        .client
         .post(server.url("/select-bucket/users.json?select"))
         .json(&select_request)
         .send()
@@ -679,7 +776,10 @@ async fn test_s3_select_json_simple() {
     // Should contain Alice (30) and Charlie (35), but not Bob (25)
     assert!(result.contains("Alice"), "Should contain Alice");
     assert!(result.contains("Charlie"), "Should contain Charlie");
-    assert!(!result.contains("Bob"), "Should NOT contain Bob (age <= 28)");
+    assert!(
+        !result.contains("Bob"),
+        "Should NOT contain Bob (age <= 28)"
+    );
 }
 
 #[cfg(feature = "s3-select")]
@@ -688,7 +788,8 @@ async fn test_s3_select_csv() {
     let server = TestServer::new().await;
 
     // Create bucket
-    server.client
+    server
+        .client
         .put(server.url("/csv-bucket"))
         .send()
         .await
@@ -697,7 +798,8 @@ async fn test_s3_select_csv() {
     // Upload CSV data
     let csv_data = "name,age,city\nAlice,30,NYC\nBob,25,LA\nCharlie,35,Chicago";
 
-    server.client
+    server
+        .client
         .put(server.url("/csv-bucket/users.csv"))
         .header("Content-Type", "text/csv")
         .body(csv_data)
@@ -721,7 +823,8 @@ async fn test_s3_select_csv() {
         }
     });
 
-    let resp = server.client
+    let resp = server
+        .client
         .post(server.url("/csv-bucket/users.csv?select"))
         .json(&select_request)
         .send()
@@ -744,7 +847,8 @@ async fn test_s3_select_limit() {
     let server = TestServer::new().await;
 
     // Create bucket
-    server.client
+    server
+        .client
         .put(server.url("/limit-bucket"))
         .send()
         .await
@@ -756,7 +860,8 @@ async fn test_s3_select_limit() {
         .collect::<Vec<_>>()
         .join("\n");
 
-    server.client
+    server
+        .client
         .put(server.url("/limit-bucket/items.json"))
         .header("Content-Type", "application/json")
         .body(json_data)
@@ -776,7 +881,8 @@ async fn test_s3_select_limit() {
         }
     });
 
-    let resp = server.client
+    let resp = server
+        .client
         .post(server.url("/limit-bucket/items.json?select"))
         .json(&select_request)
         .send()
@@ -787,7 +893,8 @@ async fn test_s3_select_limit() {
     let result = resp.text().await.unwrap();
 
     // Count the number of JSON objects (lines with "id")
-    let count = result.lines()
+    let count = result
+        .lines()
         .filter(|line| line.contains("\"id\""))
         .count();
     assert_eq!(count, 3, "Should return exactly 3 records");
@@ -802,10 +909,16 @@ async fn test_lifecycle_get_no_config() {
     let server = TestServer::new().await;
 
     // Create bucket
-    server.client.put(server.url("/lifecycle-bucket")).send().await.unwrap();
+    server
+        .client
+        .put(server.url("/lifecycle-bucket"))
+        .send()
+        .await
+        .unwrap();
 
     // Get lifecycle (should return 404 when no config exists)
-    let resp = server.client
+    let resp = server
+        .client
         .get(server.url("/lifecycle-bucket?lifecycle"))
         .send()
         .await
@@ -819,7 +932,12 @@ async fn test_lifecycle_put_and_get() {
     let server = TestServer::new().await;
 
     // Create bucket
-    server.client.put(server.url("/lifecycle-test")).send().await.unwrap();
+    server
+        .client
+        .put(server.url("/lifecycle-test"))
+        .send()
+        .await
+        .unwrap();
 
     // Put lifecycle configuration
     let lifecycle_xml = r#"<?xml version="1.0" encoding="UTF-8"?>
@@ -847,7 +965,8 @@ async fn test_lifecycle_put_and_get() {
     </Rule>
 </LifecycleConfiguration>"#;
 
-    let resp = server.client
+    let resp = server
+        .client
         .put(server.url("/lifecycle-test?lifecycle"))
         .header("Content-Type", "application/xml")
         .body(lifecycle_xml)
@@ -858,7 +977,8 @@ async fn test_lifecycle_put_and_get() {
     assert_eq!(resp.status(), 200);
 
     // Get lifecycle configuration
-    let resp = server.client
+    let resp = server
+        .client
         .get(server.url("/lifecycle-test?lifecycle"))
         .send()
         .await
@@ -868,13 +988,28 @@ async fn test_lifecycle_put_and_get() {
     let body = resp.text().await.unwrap();
 
     // Verify the response contains our rules
-    assert!(body.contains("<LifecycleConfiguration>"), "Should have LifecycleConfiguration");
-    assert!(body.contains("ExpireLogs"), "Should contain ExpireLogs rule");
-    assert!(body.contains("ArchiveData"), "Should contain ArchiveData rule");
+    assert!(
+        body.contains("<LifecycleConfiguration>"),
+        "Should have LifecycleConfiguration"
+    );
+    assert!(
+        body.contains("ExpireLogs"),
+        "Should contain ExpireLogs rule"
+    );
+    assert!(
+        body.contains("ArchiveData"),
+        "Should contain ArchiveData rule"
+    );
     assert!(body.contains("logs/"), "Should contain logs/ prefix");
     assert!(body.contains("data/"), "Should contain data/ prefix");
-    assert!(body.contains("<Days>30</Days>"), "Should contain 30 days expiration");
-    assert!(body.contains("GLACIER"), "Should contain GLACIER storage class");
+    assert!(
+        body.contains("<Days>30</Days>"),
+        "Should contain 30 days expiration"
+    );
+    assert!(
+        body.contains("GLACIER"),
+        "Should contain GLACIER storage class"
+    );
 }
 
 #[tokio::test]
@@ -882,7 +1017,12 @@ async fn test_lifecycle_delete() {
     let server = TestServer::new().await;
 
     // Create bucket
-    server.client.put(server.url("/delete-lifecycle")).send().await.unwrap();
+    server
+        .client
+        .put(server.url("/delete-lifecycle"))
+        .send()
+        .await
+        .unwrap();
 
     // Put lifecycle configuration
     let lifecycle_xml = r#"<?xml version="1.0" encoding="UTF-8"?>
@@ -896,7 +1036,8 @@ async fn test_lifecycle_delete() {
     </Rule>
 </LifecycleConfiguration>"#;
 
-    server.client
+    server
+        .client
         .put(server.url("/delete-lifecycle?lifecycle"))
         .header("Content-Type", "application/xml")
         .body(lifecycle_xml)
@@ -905,7 +1046,8 @@ async fn test_lifecycle_delete() {
         .unwrap();
 
     // Verify it was set
-    let resp = server.client
+    let resp = server
+        .client
         .get(server.url("/delete-lifecycle?lifecycle"))
         .send()
         .await
@@ -913,7 +1055,8 @@ async fn test_lifecycle_delete() {
     assert_eq!(resp.status(), 200);
 
     // Delete lifecycle configuration
-    let resp = server.client
+    let resp = server
+        .client
         .delete(server.url("/delete-lifecycle?lifecycle"))
         .send()
         .await
@@ -922,7 +1065,8 @@ async fn test_lifecycle_delete() {
     assert_eq!(resp.status(), 204);
 
     // Verify it was deleted (should return 404)
-    let resp = server.client
+    let resp = server
+        .client
         .get(server.url("/delete-lifecycle?lifecycle"))
         .send()
         .await
@@ -936,7 +1080,12 @@ async fn test_lifecycle_noncurrent_version_rules() {
     let server = TestServer::new().await;
 
     // Create bucket
-    server.client.put(server.url("/version-lifecycle")).send().await.unwrap();
+    server
+        .client
+        .put(server.url("/version-lifecycle"))
+        .send()
+        .await
+        .unwrap();
 
     // Put lifecycle with noncurrent version rules
     let lifecycle_xml = r#"<?xml version="1.0" encoding="UTF-8"?>
@@ -955,7 +1104,8 @@ async fn test_lifecycle_noncurrent_version_rules() {
     </Rule>
 </LifecycleConfiguration>"#;
 
-    let resp = server.client
+    let resp = server
+        .client
         .put(server.url("/version-lifecycle?lifecycle"))
         .header("Content-Type", "application/xml")
         .body(lifecycle_xml)
@@ -966,7 +1116,8 @@ async fn test_lifecycle_noncurrent_version_rules() {
     assert_eq!(resp.status(), 200);
 
     // Get and verify
-    let resp = server.client
+    let resp = server
+        .client
         .get(server.url("/version-lifecycle?lifecycle"))
         .send()
         .await
@@ -975,11 +1126,26 @@ async fn test_lifecycle_noncurrent_version_rules() {
     assert_eq!(resp.status(), 200);
     let body = resp.text().await.unwrap();
 
-    assert!(body.contains("CleanOldVersions"), "Should contain CleanOldVersions rule");
-    assert!(body.contains("NoncurrentVersionExpiration"), "Should have NoncurrentVersionExpiration");
-    assert!(body.contains("NoncurrentVersionTransition"), "Should have NoncurrentVersionTransition");
-    assert!(body.contains("<NoncurrentDays>30</NoncurrentDays>"), "Should have 30 noncurrent days for expiration");
-    assert!(body.contains("<NewerNoncurrentVersions>3</NewerNoncurrentVersions>"), "Should keep 3 newer versions");
+    assert!(
+        body.contains("CleanOldVersions"),
+        "Should contain CleanOldVersions rule"
+    );
+    assert!(
+        body.contains("NoncurrentVersionExpiration"),
+        "Should have NoncurrentVersionExpiration"
+    );
+    assert!(
+        body.contains("NoncurrentVersionTransition"),
+        "Should have NoncurrentVersionTransition"
+    );
+    assert!(
+        body.contains("<NoncurrentDays>30</NoncurrentDays>"),
+        "Should have 30 noncurrent days for expiration"
+    );
+    assert!(
+        body.contains("<NewerNoncurrentVersions>3</NewerNoncurrentVersions>"),
+        "Should keep 3 newer versions"
+    );
 }
 
 // =============================================================================
@@ -991,10 +1157,16 @@ async fn test_notification_get_empty() {
     let server = TestServer::new().await;
 
     // Create bucket
-    server.client.put(server.url("/notif-bucket")).send().await.unwrap();
+    server
+        .client
+        .put(server.url("/notif-bucket"))
+        .send()
+        .await
+        .unwrap();
 
     // Get notification (should return empty config, not 404)
-    let resp = server.client
+    let resp = server
+        .client
         .get(server.url("/notif-bucket?notification"))
         .send()
         .await
@@ -1002,7 +1174,10 @@ async fn test_notification_get_empty() {
 
     assert_eq!(resp.status(), 200);
     let body = resp.text().await.unwrap();
-    assert!(body.contains("<NotificationConfiguration>"), "Should have NotificationConfiguration element");
+    assert!(
+        body.contains("<NotificationConfiguration>"),
+        "Should have NotificationConfiguration element"
+    );
 }
 
 #[tokio::test]
@@ -1010,7 +1185,12 @@ async fn test_notification_put_and_get() {
     let server = TestServer::new().await;
 
     // Create bucket
-    server.client.put(server.url("/notif-test")).send().await.unwrap();
+    server
+        .client
+        .put(server.url("/notif-test"))
+        .send()
+        .await
+        .unwrap();
 
     // Put notification configuration with HPC-Channels
     let notification_xml = r#"<?xml version="1.0" encoding="UTF-8"?>
@@ -1031,7 +1211,8 @@ async fn test_notification_put_and_get() {
     </HpcChannelConfiguration>
 </NotificationConfiguration>"#;
 
-    let resp = server.client
+    let resp = server
+        .client
         .put(server.url("/notif-test?notification"))
         .header("Content-Type", "application/xml")
         .body(notification_xml)
@@ -1042,7 +1223,8 @@ async fn test_notification_put_and_get() {
     assert_eq!(resp.status(), 200);
 
     // Get notification configuration
-    let resp = server.client
+    let resp = server
+        .client
         .get(server.url("/notif-test?notification"))
         .send()
         .await
@@ -1051,10 +1233,22 @@ async fn test_notification_put_and_get() {
     assert_eq!(resp.status(), 200);
     let body = resp.text().await.unwrap();
 
-    assert!(body.contains("ml-events"), "Should contain configuration ID");
-    assert!(body.contains("hpc.storage.events"), "Should contain HPC channel ID");
-    assert!(body.contains("s3:ObjectCreated:*"), "Should contain ObjectCreated event");
-    assert!(body.contains("checkpoints/"), "Should contain prefix filter");
+    assert!(
+        body.contains("ml-events"),
+        "Should contain configuration ID"
+    );
+    assert!(
+        body.contains("hpc.storage.events"),
+        "Should contain HPC channel ID"
+    );
+    assert!(
+        body.contains("s3:ObjectCreated:*"),
+        "Should contain ObjectCreated event"
+    );
+    assert!(
+        body.contains("checkpoints/"),
+        "Should contain prefix filter"
+    );
 }
 
 #[tokio::test]
@@ -1062,7 +1256,12 @@ async fn test_notification_with_topic() {
     let server = TestServer::new().await;
 
     // Create bucket
-    server.client.put(server.url("/topic-notif")).send().await.unwrap();
+    server
+        .client
+        .put(server.url("/topic-notif"))
+        .send()
+        .await
+        .unwrap();
 
     // Put notification configuration with SNS topic
     let notification_xml = r#"<?xml version="1.0" encoding="UTF-8"?>
@@ -1082,7 +1281,8 @@ async fn test_notification_with_topic() {
     </TopicConfiguration>
 </NotificationConfiguration>"#;
 
-    let resp = server.client
+    let resp = server
+        .client
         .put(server.url("/topic-notif?notification"))
         .header("Content-Type", "application/xml")
         .body(notification_xml)
@@ -1093,7 +1293,8 @@ async fn test_notification_with_topic() {
     assert_eq!(resp.status(), 200);
 
     // Get and verify
-    let resp = server.client
+    let resp = server
+        .client
         .get(server.url("/topic-notif?notification"))
         .send()
         .await
@@ -1102,8 +1303,14 @@ async fn test_notification_with_topic() {
     assert_eq!(resp.status(), 200);
     let body = resp.text().await.unwrap();
 
-    assert!(body.contains("TopicConfiguration"), "Should have TopicConfiguration");
-    assert!(body.contains("image-uploads"), "Should contain configuration ID");
+    assert!(
+        body.contains("TopicConfiguration"),
+        "Should have TopicConfiguration"
+    );
+    assert!(
+        body.contains("image-uploads"),
+        "Should contain configuration ID"
+    );
     assert!(body.contains("arn:aws:sns"), "Should contain SNS topic ARN");
 }
 
@@ -1112,7 +1319,12 @@ async fn test_notification_delete() {
     let server = TestServer::new().await;
 
     // Create bucket
-    server.client.put(server.url("/delete-notif")).send().await.unwrap();
+    server
+        .client
+        .put(server.url("/delete-notif"))
+        .send()
+        .await
+        .unwrap();
 
     // Put notification configuration
     let notification_xml = r#"<?xml version="1.0" encoding="UTF-8"?>
@@ -1124,7 +1336,8 @@ async fn test_notification_delete() {
     </HpcChannelConfiguration>
 </NotificationConfiguration>"#;
 
-    server.client
+    server
+        .client
         .put(server.url("/delete-notif?notification"))
         .header("Content-Type", "application/xml")
         .body(notification_xml)
@@ -1133,16 +1346,21 @@ async fn test_notification_delete() {
         .unwrap();
 
     // Verify it was set
-    let resp = server.client
+    let resp = server
+        .client
         .get(server.url("/delete-notif?notification"))
         .send()
         .await
         .unwrap();
     let body = resp.text().await.unwrap();
-    assert!(body.contains("hpc.test"), "Should have the notification config");
+    assert!(
+        body.contains("hpc.test"),
+        "Should have the notification config"
+    );
 
     // Delete notification configuration
-    let resp = server.client
+    let resp = server
+        .client
         .delete(server.url("/delete-notif?notification"))
         .send()
         .await
@@ -1151,7 +1369,8 @@ async fn test_notification_delete() {
     assert_eq!(resp.status(), 204);
 
     // Verify it was deleted (should return empty config)
-    let resp = server.client
+    let resp = server
+        .client
         .get(server.url("/delete-notif?notification"))
         .send()
         .await
@@ -1159,7 +1378,10 @@ async fn test_notification_delete() {
 
     assert_eq!(resp.status(), 200);
     let body = resp.text().await.unwrap();
-    assert!(!body.contains("hpc.test"), "Should not have the notification config anymore");
+    assert!(
+        !body.contains("hpc.test"),
+        "Should not have the notification config anymore"
+    );
 }
 
 // =============================================================================
@@ -1171,10 +1393,16 @@ async fn test_lazy_get_basic() {
     let server = TestServer::new().await;
 
     // Create bucket and object
-    server.client.put(server.url("/lazy-test")).send().await.unwrap();
+    server
+        .client
+        .put(server.url("/lazy-test"))
+        .send()
+        .await
+        .unwrap();
 
     let content = b"test object data for lazy get";
-    server.client
+    server
+        .client
         .put(server.url("/lazy-test/checkpoint.bin"))
         .body(content.to_vec())
         .send()
@@ -1182,7 +1410,8 @@ async fn test_lazy_get_basic() {
         .unwrap();
 
     // Request specific fields (note: with LocalBackend, get_fields returns empty FieldData)
-    let resp = server.client
+    let resp = server
+        .client
         .post(server.url("/api/v1/lazy/lazy-test/checkpoint.bin"))
         .json(&serde_json::json!({
             "fields": ["epoch", "step", "optimizer_state"]
@@ -1211,10 +1440,16 @@ async fn test_lazy_get_nonexistent_object() {
     let server = TestServer::new().await;
 
     // Create bucket
-    server.client.put(server.url("/lazy-error")).send().await.unwrap();
+    server
+        .client
+        .put(server.url("/lazy-error"))
+        .send()
+        .await
+        .unwrap();
 
     // Try to lazy get from nonexistent object
-    let resp = server.client
+    let resp = server
+        .client
         .post(server.url("/api/v1/lazy/lazy-error/nonexistent.bin"))
         .json(&serde_json::json!({
             "fields": ["field1"]
@@ -1236,11 +1471,17 @@ async fn test_collective_read_basic() {
     let server = TestServer::new().await;
 
     // Create bucket and multiple objects
-    server.client.put(server.url("/collective-test")).send().await.unwrap();
+    server
+        .client
+        .put(server.url("/collective-test"))
+        .send()
+        .await
+        .unwrap();
 
     for i in 0..4 {
         let content = format!("shard data {}", i);
-        server.client
+        server
+            .client
             .put(server.url(&format!("/collective-test/shard_{}.pt", i)))
             .body(content)
             .send()
@@ -1249,7 +1490,8 @@ async fn test_collective_read_basic() {
     }
 
     // Collective read across 2 ranks
-    let resp = server.client
+    let resp = server
+        .client
         .post(server.url("/api/v1/collective/read"))
         .json(&serde_json::json!({
             "keys": [
@@ -1290,11 +1532,17 @@ async fn test_collective_read_single_rank() {
     let server = TestServer::new().await;
 
     // Create bucket and objects
-    server.client.put(server.url("/single-rank")).send().await.unwrap();
+    server
+        .client
+        .put(server.url("/single-rank"))
+        .send()
+        .await
+        .unwrap();
 
     for i in 0..3 {
         let content = format!("object {}", i);
-        server.client
+        server
+            .client
             .put(server.url(&format!("/single-rank/obj_{}.bin", i)))
             .body(content)
             .send()
@@ -1303,7 +1551,8 @@ async fn test_collective_read_single_rank() {
     }
 
     // Read with single rank (all objects go to rank 0)
-    let resp = server.client
+    let resp = server
+        .client
         .post(server.url("/api/v1/collective/read"))
         .json(&serde_json::json!({
             "keys": [
@@ -1332,10 +1581,16 @@ async fn test_collective_read_zero_ranks_error() {
     let server = TestServer::new().await;
 
     // Create bucket
-    server.client.put(server.url("/zero-ranks")).send().await.unwrap();
+    server
+        .client
+        .put(server.url("/zero-ranks"))
+        .send()
+        .await
+        .unwrap();
 
     // Try with zero ranks
-    let resp = server.client
+    let resp = server
+        .client
         .post(server.url("/api/v1/collective/read"))
         .json(&serde_json::json!({
             "keys": [
@@ -1356,7 +1611,8 @@ async fn test_collective_read_empty_keys() {
     let server = TestServer::new().await;
 
     // Collective read with empty keys
-    let resp = server.client
+    let resp = server
+        .client
         .post(server.url("/api/v1/collective/read"))
         .json(&serde_json::json!({
             "keys": [],
@@ -1382,10 +1638,16 @@ async fn test_gpu_hash() {
     let server = TestServer::new().await;
 
     // Create bucket and object
-    server.client.put(server.url("/gpu-hash-test")).send().await.unwrap();
+    server
+        .client
+        .put(server.url("/gpu-hash-test"))
+        .send()
+        .await
+        .unwrap();
 
     let content = b"test data for GPU hashing";
-    server.client
+    server
+        .client
         .put(server.url("/gpu-hash-test/data.bin"))
         .body(content.to_vec())
         .send()
@@ -1393,7 +1655,8 @@ async fn test_gpu_hash() {
         .unwrap();
 
     // Request GPU hash
-    let resp = server.client
+    let resp = server
+        .client
         .post(server.url("/api/v1/gpu/hash"))
         .json(&serde_json::json!({
             "bucket": "gpu-hash-test",
@@ -1424,7 +1687,8 @@ async fn test_gpu_hash() {
 async fn test_gpu_capabilities() {
     let server = TestServer::new().await;
 
-    let resp = server.client
+    let resp = server
+        .client
         .get(server.url("/api/v1/gpu/capabilities"))
         .send()
         .await
@@ -1444,7 +1708,8 @@ async fn test_gpu_capabilities() {
 async fn test_gpu_stats() {
     let server = TestServer::new().await;
 
-    let resp = server.client
+    let resp = server
+        .client
         .get(server.url("/api/v1/gpu/stats"))
         .send()
         .await
@@ -1474,7 +1739,8 @@ async fn test_gpu_stats() {
 async fn test_zk_prove() {
     let server = TestServer::new().await;
 
-    let resp = server.client
+    let resp = server
+        .client
         .post(server.url("/api/v1/zk/prove"))
         .json(&serde_json::json!({
             "proof_type": "simulated",
@@ -1507,7 +1773,8 @@ async fn test_zk_verify() {
     let server = TestServer::new().await;
 
     // First generate a proof
-    let prove_resp = server.client
+    let prove_resp = server
+        .client
         .post(server.url("/api/v1/zk/prove"))
         .json(&serde_json::json!({
             "proof_type": "simulated",
@@ -1522,7 +1789,8 @@ async fn test_zk_verify() {
     let proof = prove_body["proof"].as_str().unwrap();
 
     // Now verify it
-    let resp = server.client
+    let resp = server
+        .client
         .post(server.url("/api/v1/zk/verify"))
         .json(&serde_json::json!({
             "proof": proof,
@@ -1548,10 +1816,16 @@ async fn test_zk_verified_read() {
     let server = TestServer::new().await;
 
     // Create bucket and object
-    server.client.put(server.url("/zk-verify-test")).send().await.unwrap();
+    server
+        .client
+        .put(server.url("/zk-verify-test"))
+        .send()
+        .await
+        .unwrap();
 
     let content = b"data with merkle proof";
-    server.client
+    server
+        .client
         .put(server.url("/zk-verify-test/verified.bin"))
         .body(content.to_vec())
         .send()
@@ -1559,7 +1833,8 @@ async fn test_zk_verified_read() {
         .unwrap();
 
     // Request verified read
-    let resp = server.client
+    let resp = server
+        .client
         .post(server.url("/api/v1/zk/verified-read"))
         .json(&serde_json::json!({
             "bucket": "zk-verify-test",
@@ -1590,7 +1865,8 @@ async fn test_zk_verified_read() {
 async fn test_zk_proof_types() {
     let server = TestServer::new().await;
 
-    let resp = server.client
+    let resp = server
+        .client
         .get(server.url("/api/v1/zk/proof-types"))
         .send()
         .await
@@ -1607,7 +1883,8 @@ async fn test_zk_proof_types() {
     assert!(!supported.is_empty());
 
     // Check for expected proof types
-    let names: Vec<&str> = supported.iter()
+    let names: Vec<&str> = supported
+        .iter()
         .map(|t| t["name"].as_str().unwrap())
         .collect();
 
@@ -1620,7 +1897,8 @@ async fn test_zk_proof_types() {
 async fn test_zk_stats() {
     let server = TestServer::new().await;
 
-    let resp = server.client
+    let resp = server
+        .client
         .get(server.url("/api/v1/zk/stats"))
         .send()
         .await

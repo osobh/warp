@@ -54,9 +54,7 @@ fn parse_size(size: &str) -> Result<u64> {
         .ok_or_else(|| anyhow::anyhow!("Invalid size format"))?;
 
     let (num_str, suffix) = size.split_at(split_pos);
-    let num: u64 = num_str
-        .parse()
-        .context("Invalid numeric value in size")?;
+    let num: u64 = num_str.parse().context("Invalid numeric value in size")?;
 
     let multiplier = match suffix {
         "B" => 1,
@@ -64,7 +62,10 @@ fn parse_size(size: &str) -> Result<u64> {
         "M" | "MB" => 1024 * 1024,
         "G" | "GB" => 1024 * 1024 * 1024,
         "T" | "TB" => 1024 * 1024 * 1024 * 1024,
-        _ => anyhow::bail!("Invalid size suffix '{}'. Use B, K/KB, M/MB, G/GB, or T/TB", suffix),
+        _ => anyhow::bail!(
+            "Invalid size suffix '{}'. Use B, K/KB, M/MB, G/GB, or T/TB",
+            suffix
+        ),
     };
 
     Ok(num * multiplier)
@@ -259,9 +260,7 @@ fn bench_compression(data: &[u8], algo: &str) -> Result<(f64, u64, f64)> {
     };
 
     let start = Instant::now();
-    let compressed = compressor
-        .compress(data)
-        .context("Compression failed")?;
+    let compressed = compressor.compress(data).context("Compression failed")?;
     let elapsed = start.elapsed();
 
     let ratio = compressed.len() as f64 / data.len() as f64;
@@ -296,13 +295,11 @@ async fn bench_gpu_compression(data: &[u8]) -> Option<GpuBenchResults> {
     };
 
     // Zstd
-    let zstd_compressor = match GpuZstdCompressor::with_context_and_level(
-        std::sync::Arc::new(ctx.clone()),
-        3
-    ) {
-        Ok(c) => c,
-        Err(_) => return None,
-    };
+    let zstd_compressor =
+        match GpuZstdCompressor::with_context_and_level(std::sync::Arc::new(ctx.clone()), 3) {
+            Ok(c) => c,
+            Err(_) => return None,
+        };
 
     let start = Instant::now();
     let compressed = match zstd_compressor.compress(data) {

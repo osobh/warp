@@ -65,19 +65,18 @@ pub mod version;
 pub use chunk::{Chunk, ChunkFlags, ChunkId, ChunkWeight};
 pub use config::{ChonkersConfig, LayerConfig};
 pub use dedup::{
-    ChunkMetadata, ChunkRegistry, ChunkStore, GarbageCollector, GcConfig, GcEvent,
-    GcEventHandler, GcStats, LoggingGcHandler, MemoryChunkStore,
+    ChunkMetadata, ChunkRegistry, ChunkStore, GarbageCollector, GcConfig, GcEvent, GcEventHandler,
+    GcStats, LoggingGcHandler, MemoryChunkStore,
 };
 pub use error::{Error, Result};
 pub use layer::Layer;
 pub use phases::{BalancingPhase, CaterpillarPhase, DiffbitPhase};
 pub use tree::{
-    ChonkerNode, ChonkerTree, EditOp, FileTreeStore, MemoryTreeStore,
-    TreeDiff, TreeSnapshot, TreeStore, VersionId,
+    ChonkerNode, ChonkerTree, EditOp, FileTreeStore, MemoryTreeStore, TreeDiff, TreeSnapshot,
+    TreeStore, VersionId,
 };
 pub use version::{
-    ChunkMove, Delta, DeltaBuilder, DeltaStats, TimelineBuilder, VersionInfo,
-    VersionTimeline,
+    ChunkMove, Delta, DeltaBuilder, DeltaStats, TimelineBuilder, VersionInfo, VersionTimeline,
 };
 
 use rayon::prelude::*;

@@ -2,9 +2,7 @@
 //!
 //! Run with: cargo bench -p warp-ec
 
-use criterion::{
-    black_box, criterion_group, criterion_main, BenchmarkId, Criterion, Throughput,
-};
+use criterion::{BenchmarkId, Criterion, Throughput, black_box, criterion_group, criterion_main};
 use rand::Rng;
 use warp_ec::{ErasureConfig, ErasureDecoder, ErasureEncoder};
 
@@ -260,9 +258,11 @@ fn bench_encode_with_metadata(c: &mut Criterion) {
         });
 
         // Encode with metadata (adds shard IDs)
-        group.bench_with_input(BenchmarkId::new("encode_with_metadata", name), size, |b, _| {
-            b.iter(|| encoder.encode_with_metadata(black_box(&data)))
-        });
+        group.bench_with_input(
+            BenchmarkId::new("encode_with_metadata", name),
+            size,
+            |b, _| b.iter(|| encoder.encode_with_metadata(black_box(&data))),
+        );
     }
 
     group.finish();

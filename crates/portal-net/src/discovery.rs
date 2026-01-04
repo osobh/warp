@@ -9,7 +9,7 @@ use mdns_sd::{ServiceDaemon, ServiceInfo};
 use std::collections::HashMap;
 use std::net::{IpAddr, SocketAddr};
 use std::sync::Arc;
-use tokio::sync::{mpsc, RwLock};
+use tokio::sync::{RwLock, mpsc};
 
 use crate::types::{MdnsConfig, VirtualIp};
 use crate::{PortalNetError, Result};
@@ -153,7 +153,7 @@ impl MdnsDiscovery {
             IpAddr::V6(_) => {
                 return Err(PortalNetError::Configuration(
                     "IPv6 endpoints not supported for mDNS".to_string(),
-                ))
+                ));
             }
         };
 
@@ -198,8 +198,7 @@ impl MdnsDiscovery {
             while let Ok(event) = receiver.recv_async().await {
                 match event {
                     mdns_sd::ServiceEvent::ServiceResolved(info) => {
-                        if let Some(discovery_event) = Self::process_resolved(&info, &state).await
-                        {
+                        if let Some(discovery_event) = Self::process_resolved(&info, &state).await {
                             let _ = tx.send(discovery_event).await;
                         }
                     }
@@ -353,13 +352,26 @@ mod tests {
         assert_eq!(edge.virtual_ip, VirtualIp::new(100));
         assert!(edge.validate().is_ok());
 
-        let hex = LocalEdgeInfo::new([0xAB; 32], VirtualIp::new(50), "127.0.0.1:51820".parse().unwrap()).public_key_hex();
+        let hex = LocalEdgeInfo::new(
+            [0xAB; 32],
+            VirtualIp::new(50),
+            "127.0.0.1:51820".parse().unwrap(),
+        )
+        .public_key_hex();
         assert_eq!(hex.len(), 64);
         assert_eq!(hex, "ab".repeat(32));
 
-        let edge1 = LocalEdgeInfo::new([1u8; 32], VirtualIp::new(100), "192.168.1.10:51820".parse().unwrap());
+        let edge1 = LocalEdgeInfo::new(
+            [1u8; 32],
+            VirtualIp::new(100),
+            "192.168.1.10:51820".parse().unwrap(),
+        );
         let edge2 = edge1.clone();
-        let edge3 = LocalEdgeInfo::new([2u8; 32], VirtualIp::new(100), "192.168.1.10:51820".parse().unwrap());
+        let edge3 = LocalEdgeInfo::new(
+            [2u8; 32],
+            VirtualIp::new(100),
+            "192.168.1.10:51820".parse().unwrap(),
+        );
         assert_eq!(edge1, edge2);
         assert_ne!(edge1, edge3);
 
@@ -377,7 +389,9 @@ mod tests {
         };
         assert_eq!(event1.public_key(), &[1u8; 32]);
 
-        let event2 = DiscoveryEvent::PeerLost { public_key: [2u8; 32] };
+        let event2 = DiscoveryEvent::PeerLost {
+            public_key: [2u8; 32],
+        };
         assert_eq!(event2.public_key(), &[2u8; 32]);
 
         let event3 = event1.clone();
@@ -531,14 +545,17 @@ mod tests {
         discovery.stop().await.unwrap();
     }
 
-
     #[test]
     fn test_constants_and_debug() {
         assert_eq!(SERVICE_TYPE, "_portal._udp.local.");
         assert_eq!(TXT_KEY_PUBLIC_KEY, "public_key");
         assert_eq!(TXT_KEY_VIRTUAL_IP, "virtual_ip");
 
-        let edge = LocalEdgeInfo::new([1u8; 32], VirtualIp::new(100), "192.168.1.10:51820".parse().unwrap());
+        let edge = LocalEdgeInfo::new(
+            [1u8; 32],
+            VirtualIp::new(100),
+            "192.168.1.10:51820".parse().unwrap(),
+        );
         let debug_str = format!("{:?}", edge);
         assert!(debug_str.contains("LocalEdgeInfo"));
 
@@ -649,7 +666,6 @@ mod tests {
         );
         assert!(discovery.register(&edge).await.is_ok());
     }
-
 
     #[tokio::test]
     async fn test_mdns_discovery_browse_timeout() {

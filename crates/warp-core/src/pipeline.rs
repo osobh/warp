@@ -1,7 +1,7 @@
 //! Transfer pipeline with parallel chunk processing
 
-use crate::scheduler::ChunkScheduler;
 use crate::Result;
+use crate::scheduler::ChunkScheduler;
 use std::sync::Arc;
 use tokio::sync::Semaphore;
 use warp_compress::Compressor;
@@ -31,6 +31,10 @@ impl TransferPipeline {
 
     /// Schedule chunks with priorities
     pub fn schedule_chunks(&mut self, chunks: Vec<(u64, i32)>) {
+        debug_assert!(
+            !chunks.is_empty(),
+            "schedule_chunks called with empty chunk list"
+        );
         for (chunk_id, priority) in chunks {
             self.scheduler.schedule(chunk_id, priority);
         }
@@ -47,6 +51,11 @@ impl TransferPipeline {
     }
 
     /// Process chunks in parallel with a processor function
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the concurrency semaphore is closed (should not happen
+    /// under normal operation, but handles edge cases gracefully).
     pub async fn process_chunks<F, Fut>(
         &self,
         chunk_count: usize,
@@ -56,11 +65,16 @@ impl TransferPipeline {
         F: FnMut(u64) -> Fut,
         Fut: std::future::Future<Output = Result<()>> + Send + 'static,
     {
+        debug_assert!(chunk_count > 0, "process_chunks called with chunk_count 0");
         let mut handles = Vec::new();
 
         for chunk_id in 0..chunk_count {
-            let permit = self.semaphore.clone().acquire_owned().await
-                .expect("semaphore closed unexpectedly");
+            let permit = self
+                .semaphore
+                .clone()
+                .acquire_owned()
+                .await
+                .map_err(|_| crate::Error::Session("concurrency semaphore closed".into()))?;
             let fut = processor(chunk_id as u64);
 
             let handle = tokio::spawn(async move {
@@ -82,6 +96,14 @@ impl TransferPipeline {
                 )))),
             }
         }
+
+        debug_assert_eq!(
+            results.len(),
+            chunk_count,
+            "results count {} must match chunk_count {}",
+            results.len(),
+            chunk_count
+        );
 
         Ok(results)
     }

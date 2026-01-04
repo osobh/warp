@@ -38,9 +38,9 @@ use serde::{Deserialize, Serialize};
 use tokio::sync::RwLock;
 use tracing::{debug, info, warn};
 
-use crate::types::{ChunkId, EdgeIdx};
 use crate::Result;
 use crate::SchedError;
+use crate::types::{ChunkId, EdgeIdx};
 
 /// Communication pattern for chunk transfers.
 ///
@@ -117,8 +117,8 @@ impl TransportType {
         match self {
             Self::SharedMemory => 1,
             Self::NvLink => 2,
-            Self::DpuInline => 3,   // DPU inline very low latency
-            Self::DpuRdma => 5,     // DPU RDMA slightly higher
+            Self::DpuInline => 3, // DPU inline very low latency
+            Self::DpuRdma => 5,   // DPU RDMA slightly higher
             Self::Pcie => 5,
             Self::GpuDirect => 8,
             Self::Rdma => 10,
@@ -132,7 +132,7 @@ impl TransportType {
     pub fn bandwidth_gbps(&self) -> u32 {
         match self {
             Self::NvLink => 600,
-            Self::DpuRdma => 400,   // BlueField-3 400Gbps
+            Self::DpuRdma => 400, // BlueField-3 400Gbps
             Self::SharedMemory => 400,
             Self::InfiniBand => 400,
             Self::DpuInline => 200, // DPU with inline processing
@@ -361,14 +361,21 @@ impl EdgeNodeInfo {
     }
 
     /// Set DPU configuration.
-    pub fn with_dpu(mut self, count: u32, dpu_type: DpuType, capabilities: DpuCapabilities) -> Self {
+    pub fn with_dpu(
+        mut self,
+        count: u32,
+        dpu_type: DpuType,
+        capabilities: DpuCapabilities,
+    ) -> Self {
         self.dpu_count = count;
         self.dpu_type = dpu_type;
         // Auto-add DPU transports based on capabilities (before move)
         if capabilities.has_rdma && !self.transports.contains(&TransportType::DpuRdma) {
             self.transports.push(TransportType::DpuRdma);
         }
-        if capabilities.has_any_acceleration() && !self.transports.contains(&TransportType::DpuInline) {
+        if capabilities.has_any_acceleration()
+            && !self.transports.contains(&TransportType::DpuInline)
+        {
             self.transports.push(TransportType::DpuInline);
         }
         self.dpu_capabilities = capabilities;
@@ -498,6 +505,16 @@ impl NetworkLink {
 ///
 /// Provides GPU-aware chunk placement using SLAI's transport topology
 /// and fair-share scheduling.
+///
+/// # Concurrency Model
+///
+/// Uses eventual consistency for placement decisions:
+/// - Edge and link state is protected by RwLock
+/// - Placement queries may see slightly stale data during concurrent updates
+/// - This is acceptable since placement decisions are advisory and will be
+///   re-evaluated if the chosen edge becomes unavailable
+/// - For correctness, the caller should handle placement failures gracefully
+///   and retry with fresh data if needed
 pub struct BrainLink {
     /// Edge nodes.
     edges: Arc<RwLock<HashMap<EdgeIdx, EdgeNodeInfo>>>,
@@ -601,11 +618,7 @@ impl BrainLink {
         }
 
         // Take top 3 candidates
-        let source_edges: Vec<EdgeIdx> = candidates
-            .iter()
-            .take(3)
-            .map(|(idx, _)| *idx)
-            .collect();
+        let source_edges: Vec<EdgeIdx> = candidates.iter().take(3).map(|(idx, _)| *idx).collect();
 
         // Determine best transport
         let links = self.links.read().await;
@@ -768,7 +781,10 @@ impl BrainLink {
         let gpu_edges = edges.values().filter(|e| e.gpu_count > 0).count();
         let dpu_edges = edges.values().filter(|e| e.has_dpu()).count();
         let dpu_inline_edges = edges.values().filter(|e| e.has_dpu_inline()).count();
-        let high_perf_edges = edges.values().filter(|e| e.has_high_perf_transport()).count();
+        let high_perf_edges = edges
+            .values()
+            .filter(|e| e.has_high_perf_transport())
+            .count();
 
         let total_links = links.len();
         let healthy_links = links.values().filter(|l| l.healthy).count();
@@ -863,12 +879,13 @@ mod tests {
         // Register some edges
         brain
             .register_edge(
-                EdgeNodeInfo::new(EdgeIdx(1), "node-1")
-                    .with_gpus(4, 16 * 1024 * 1024 * 1024),
+                EdgeNodeInfo::new(EdgeIdx(1), "node-1").with_gpus(4, 16 * 1024 * 1024 * 1024),
             )
             .await;
         brain
-            .register_edge(EdgeNodeInfo::new(EdgeIdx(2), "node-2").with_gpus(8, 32 * 1024 * 1024 * 1024))
+            .register_edge(
+                EdgeNodeInfo::new(EdgeIdx(2), "node-2").with_gpus(8, 32 * 1024 * 1024 * 1024),
+            )
             .await;
 
         let request = ChunkPlacementRequest {
@@ -1004,11 +1021,13 @@ mod tests {
             .register_edge(EdgeNodeInfo::new(EdgeIdx(2), "node-2"))
             .await;
 
-        brain.add_link(NetworkLink::new(
-            EdgeIdx(1),
-            EdgeIdx(2),
-            vec![TransportType::Tcp],
-        )).await;
+        brain
+            .add_link(NetworkLink::new(
+                EdgeIdx(1),
+                EdgeIdx(2),
+                vec![TransportType::Tcp],
+            ))
+            .await;
 
         let stats = brain.stats().await;
 
@@ -1059,8 +1078,11 @@ mod tests {
 
     #[test]
     fn test_edge_with_dpu() {
-        let edge = EdgeNodeInfo::new(EdgeIdx(1), "dpu-node")
-            .with_dpu(2, DpuType::BlueField, DpuCapabilities::bluefield3());
+        let edge = EdgeNodeInfo::new(EdgeIdx(1), "dpu-node").with_dpu(
+            2,
+            DpuType::BlueField,
+            DpuCapabilities::bluefield3(),
+        );
 
         assert!(edge.has_dpu());
         assert!(edge.has_dpu_inline());
@@ -1074,11 +1096,14 @@ mod tests {
 
     #[test]
     fn test_dpu_placement_score() {
-        let edge_without_dpu = EdgeNodeInfo::new(EdgeIdx(1), "node-1")
-            .with_transport(TransportType::Rdma);
+        let edge_without_dpu =
+            EdgeNodeInfo::new(EdgeIdx(1), "node-1").with_transport(TransportType::Rdma);
 
-        let edge_with_dpu = EdgeNodeInfo::new(EdgeIdx(2), "node-2")
-            .with_dpu(1, DpuType::BlueField, DpuCapabilities::bluefield3());
+        let edge_with_dpu = EdgeNodeInfo::new(EdgeIdx(2), "node-2").with_dpu(
+            1,
+            DpuType::BlueField,
+            DpuCapabilities::bluefield3(),
+        );
 
         let request = ChunkPlacementRequest {
             chunk_size: 1024 * 1024,
@@ -1089,13 +1114,21 @@ mod tests {
         let score_with = edge_with_dpu.placement_score(&request);
 
         // DPU edge should have higher score
-        assert!(score_with > score_without, "DPU edge ({}) should score higher than non-DPU edge ({})", score_with, score_without);
+        assert!(
+            score_with > score_without,
+            "DPU edge ({}) should score higher than non-DPU edge ({})",
+            score_with,
+            score_without
+        );
     }
 
     #[test]
     fn test_dpu_transport_preference() {
-        let edge = EdgeNodeInfo::new(EdgeIdx(1), "dpu-node")
-            .with_dpu(1, DpuType::BlueField, DpuCapabilities::bluefield3());
+        let edge = EdgeNodeInfo::new(EdgeIdx(1), "dpu-node").with_dpu(
+            1,
+            DpuType::BlueField,
+            DpuCapabilities::bluefield3(),
+        );
 
         // Request requiring DPU transport
         let dpu_request = ChunkPlacementRequest {
@@ -1129,10 +1162,11 @@ mod tests {
 
         // Register edge with DPU
         brain
-            .register_edge(
-                EdgeNodeInfo::new(EdgeIdx(2), "dpu-node")
-                    .with_dpu(2, DpuType::BlueField, DpuCapabilities::bluefield3()),
-            )
+            .register_edge(EdgeNodeInfo::new(EdgeIdx(2), "dpu-node").with_dpu(
+                2,
+                DpuType::BlueField,
+                DpuCapabilities::bluefield3(),
+            ))
             .await;
 
         let stats = brain.stats().await;
@@ -1151,16 +1185,18 @@ mod tests {
             .register_edge(EdgeNodeInfo::new(EdgeIdx(1), "cpu-node"))
             .await;
         brain
-            .register_edge(
-                EdgeNodeInfo::new(EdgeIdx(2), "dpu-node-1")
-                    .with_dpu(1, DpuType::BlueField, DpuCapabilities::bluefield3()),
-            )
+            .register_edge(EdgeNodeInfo::new(EdgeIdx(2), "dpu-node-1").with_dpu(
+                1,
+                DpuType::BlueField,
+                DpuCapabilities::bluefield3(),
+            ))
             .await;
         brain
-            .register_edge(
-                EdgeNodeInfo::new(EdgeIdx(3), "dpu-node-2")
-                    .with_dpu(2, DpuType::BlueField, DpuCapabilities::bluefield3()),
-            )
+            .register_edge(EdgeNodeInfo::new(EdgeIdx(3), "dpu-node-2").with_dpu(
+                2,
+                DpuType::BlueField,
+                DpuCapabilities::bluefield3(),
+            ))
             .await;
 
         assert_eq!(brain.dpu_edge_count().await, 2);

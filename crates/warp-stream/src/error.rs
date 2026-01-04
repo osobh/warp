@@ -13,10 +13,7 @@ pub enum StreamError {
     },
 
     /// Backpressure limit exceeded
-    BackpressureExceeded {
-        queue_size: usize,
-        max_size: usize,
-    },
+    BackpressureExceeded { queue_size: usize, max_size: usize },
 
     /// Channel closed unexpectedly
     ChannelClosed(&'static str),
@@ -49,12 +46,26 @@ pub enum StreamError {
 impl fmt::Display for StreamError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::Timeout { stage, elapsed_ms, limit_ms } => {
-                write!(f, "Pipeline stage '{}' timed out: {}ms > {}ms limit",
-                       stage, elapsed_ms, limit_ms)
+            Self::Timeout {
+                stage,
+                elapsed_ms,
+                limit_ms,
+            } => {
+                write!(
+                    f,
+                    "Pipeline stage '{}' timed out: {}ms > {}ms limit",
+                    stage, elapsed_ms, limit_ms
+                )
             }
-            Self::BackpressureExceeded { queue_size, max_size } => {
-                write!(f, "Backpressure exceeded: queue {} > max {}", queue_size, max_size)
+            Self::BackpressureExceeded {
+                queue_size,
+                max_size,
+            } => {
+                write!(
+                    f,
+                    "Backpressure exceeded: queue {} > max {}",
+                    queue_size, max_size
+                )
             }
             Self::ChannelClosed(name) => {
                 write!(f, "Channel '{}' closed unexpectedly", name)

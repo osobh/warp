@@ -1,7 +1,7 @@
 //! Scheduler module
 
-use std::collections::BinaryHeap;
 use std::cmp::Ordering;
+use std::collections::BinaryHeap;
 
 /// Chunk scheduling priority
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -36,17 +36,17 @@ impl ChunkScheduler {
             queue: BinaryHeap::new(),
         }
     }
-    
+
     /// Add a chunk to the schedule
     pub fn schedule(&mut self, chunk_index: u64, score: i32) {
         self.queue.push(ChunkPriority { chunk_index, score });
     }
-    
+
     /// Get the next chunk to process
     pub fn next(&mut self) -> Option<u64> {
         self.queue.pop().map(|p| p.chunk_index)
     }
-    
+
     /// Check if scheduler is empty
     pub fn is_empty(&self) -> bool {
         self.queue.is_empty()

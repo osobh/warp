@@ -11,8 +11,8 @@
 
 use std::time::{Duration, Instant};
 use warp_sched::{
-    ChunkId, ChunkState, CostConfig, CpuChunkScheduler, CpuCostMatrix, CpuStateBuffers,
-    EdgeIdx, EdgeStateGpu, ScheduleRequest, SchedulerConfig,
+    ChunkId, ChunkState, CostConfig, CpuChunkScheduler, CpuCostMatrix, CpuStateBuffers, EdgeIdx,
+    EdgeStateGpu, ScheduleRequest, SchedulerConfig,
 };
 
 /// Helper to create test state with specified number of chunks and edges
@@ -56,7 +56,10 @@ fn stress_large_scale_scheduling() {
     let num_chunks = 100_000;
     let num_edges = 1_000;
 
-    println!("Creating state with {} chunks, {} edges...", num_chunks, num_edges);
+    println!(
+        "Creating state with {} chunks, {} edges...",
+        num_chunks, num_edges
+    );
     let start = Instant::now();
     let state = create_large_state(num_chunks, num_edges);
     println!("State created in {:?}", start.elapsed());
@@ -97,13 +100,7 @@ fn stress_rapid_ticks() {
 
     // Set up initial state
     for i in 0..num_edges {
-        let edge = EdgeStateGpu::new(
-            EdgeIdx::new(i as u32),
-            1_000_000_000,
-            10_000,
-            0.95,
-            100,
-        );
+        let edge = EdgeStateGpu::new(EdgeIdx::new(i as u32), 1_000_000_000, 10_000, 0.95, 100);
         scheduler.state_mut().add_edge(i as u32, edge).unwrap();
     }
 
@@ -113,7 +110,9 @@ fn stress_rapid_ticks() {
         hash[..8].copy_from_slice(&(i as u64).to_le_bytes());
         let chunk = ChunkState::new(hash, 256 * 1024, 128, 3);
         scheduler.state_mut().add_chunk(chunk).unwrap();
-        scheduler.state_mut().add_replica(i as u32, EdgeIdx::new((i % num_edges) as u32));
+        scheduler
+            .state_mut()
+            .add_replica(i as u32, EdgeIdx::new((i % num_edges) as u32));
     }
 
     println!("Running {} ticks...", num_ticks);
@@ -137,7 +136,8 @@ fn stress_rapid_ticks() {
     assert!(
         avg_tick < threshold,
         "Average tick too slow: {:?} (threshold: {:?})",
-        avg_tick, threshold
+        avg_tick,
+        threshold
     );
 
     assert_eq!(scheduler.metrics().tick_count, num_ticks as u64);
@@ -152,13 +152,7 @@ fn stress_request_bursts() {
 
     // Set up edges
     for i in 0..num_edges {
-        let edge = EdgeStateGpu::new(
-            EdgeIdx::new(i as u32),
-            1_000_000_000,
-            10_000,
-            0.95,
-            100,
-        );
+        let edge = EdgeStateGpu::new(EdgeIdx::new(i as u32), 1_000_000_000, 10_000, 0.95, 100);
         scheduler.state_mut().add_edge(i as u32, edge).unwrap();
     }
 
@@ -185,7 +179,10 @@ fn stress_request_bursts() {
 
     let elapsed = start.elapsed();
     println!("100 bursts processed in {:?}", elapsed);
-    println!("Total scheduled: {} chunks", scheduler.metrics().scheduled_chunks);
+    println!(
+        "Total scheduled: {} chunks",
+        scheduler.metrics().scheduled_chunks
+    );
 
     assert_eq!(scheduler.metrics().scheduled_chunks, 100_000);
     assert!(
@@ -204,13 +201,7 @@ fn stress_memory_stability() {
 
     // Set up edges
     for i in 0..num_edges {
-        let edge = EdgeStateGpu::new(
-            EdgeIdx::new(i as u32),
-            1_000_000_000,
-            10_000,
-            0.95,
-            100,
-        );
+        let edge = EdgeStateGpu::new(EdgeIdx::new(i as u32), 1_000_000_000, 10_000, 0.95, 100);
         scheduler.state_mut().add_edge(i as u32, edge).unwrap();
     }
 
@@ -257,13 +248,7 @@ fn stress_failover_handling() {
 
     // Set up edges
     for i in 0..num_edges {
-        let edge = EdgeStateGpu::new(
-            EdgeIdx::new(i as u32),
-            1_000_000_000,
-            10_000,
-            0.95,
-            100,
-        );
+        let edge = EdgeStateGpu::new(EdgeIdx::new(i as u32), 1_000_000_000, 10_000, 0.95, 100);
         scheduler.state_mut().add_edge(i as u32, edge).unwrap();
     }
 
@@ -318,13 +303,7 @@ fn stress_cost_matrix_dynamic_health() {
 
     // Add edges
     for i in 0..num_edges {
-        let edge = EdgeStateGpu::new(
-            EdgeIdx::new(i as u32),
-            1_000_000_000,
-            10_000,
-            0.95,
-            100,
-        );
+        let edge = EdgeStateGpu::new(EdgeIdx::new(i as u32), 1_000_000_000, 10_000, 0.95, 100);
         state.add_edge(i as u32, edge).unwrap();
     }
 
@@ -393,10 +372,10 @@ fn stress_mixed_workload() {
     for cycle in 0..200 {
         // Variable batch sizes
         let batch_size = match cycle % 4 {
-            0 => 10,    // Small batch
-            1 => 100,   // Medium batch
-            2 => 500,   // Large batch
-            _ => 1000,  // Burst
+            0 => 10,   // Small batch
+            1 => 100,  // Medium batch
+            2 => 500,  // Large batch
+            _ => 1000, // Burst
         };
 
         let chunks: Vec<[u8; 32]> = (0..batch_size)
@@ -409,9 +388,9 @@ fn stress_mixed_workload() {
             .collect();
 
         let priority = match cycle % 3 {
-            0 => 64,   // Low priority
-            1 => 128,  // Normal
-            _ => 255,  // High priority
+            0 => 64,  // Low priority
+            1 => 128, // Normal
+            _ => 255, // High priority
         };
 
         let request = ScheduleRequest::new(chunks, priority, 3);
@@ -426,7 +405,8 @@ fn stress_mixed_workload() {
 
     let elapsed = start.elapsed();
     println!("Mixed workload completed in {:?}", elapsed);
-    println!("Metrics: scheduled={}, ticks={}, failed={}",
+    println!(
+        "Metrics: scheduled={}, ticks={}, failed={}",
         scheduler.metrics().scheduled_chunks,
         scheduler.metrics().tick_count,
         scheduler.metrics().failed_chunks

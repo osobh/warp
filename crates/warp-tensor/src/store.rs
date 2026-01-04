@@ -12,12 +12,12 @@ use tokio::sync::Semaphore;
 use warp_store::Store;
 
 use crate::checkpoint::{Checkpoint, CheckpointManager, CheckpointMeta};
-use crate::config::{TensorConfig, ChunkConfig};
+use crate::config::{ChunkConfig, TensorConfig};
 use crate::error::{TensorError, TensorResult};
-use crate::format::{TensorFormat, WarpNativeReader, WarpNativeWriter, FormatReader, FormatWriter};
-use crate::model::{ModelStore, ModelMetadata, ModelVersion};
-use crate::shard::{shard_tensor, create_sharded_meta, ShardedTensor, ShardStrategy, TensorShard};
-use crate::tensor::{TensorData, TensorMeta, LazyTensor};
+use crate::format::{FormatReader, FormatWriter, TensorFormat, WarpNativeReader, WarpNativeWriter};
+use crate::model::{ModelMetadata, ModelStore, ModelVersion};
+use crate::shard::{ShardStrategy, ShardedTensor, TensorShard, create_sharded_meta, shard_tensor};
+use crate::tensor::{LazyTensor, TensorData, TensorMeta};
 
 /// Tensor store - main interface for tensor storage
 pub struct TensorStore {
@@ -70,9 +70,11 @@ impl TensorStore {
 
     /// Save a checkpoint to storage
     pub async fn save_checkpoint(&self, checkpoint: &Checkpoint) -> TensorResult<()> {
-        let _permit = self.semaphore.acquire().await.map_err(|_| {
-            TensorError::ConfigError("semaphore closed".to_string())
-        })?;
+        let _permit = self
+            .semaphore
+            .acquire()
+            .await
+            .map_err(|_| TensorError::ConfigError("semaphore closed".to_string()))?;
 
         // Serialize tensors
         let writer = WarpNativeWriter::new();
@@ -81,11 +83,17 @@ impl TensorStore {
         let data = writer.write(&tensor_refs)?;
 
         // Store the checkpoint data
-        let key = format!("{}/checkpoints/{}.warp", self.config.prefix, checkpoint.meta.name);
+        let key = format!(
+            "{}/checkpoints/{}.warp",
+            self.config.prefix, checkpoint.meta.name
+        );
         self.put_object(&key, data).await?;
 
         // Store metadata separately for lazy loading
-        let meta_key = format!("{}/checkpoints/{}.meta", self.config.prefix, checkpoint.meta.name);
+        let meta_key = format!(
+            "{}/checkpoints/{}.meta",
+            self.config.prefix, checkpoint.meta.name
+        );
         let meta_bytes = rmp_serde::to_vec(&checkpoint.meta)
             .map_err(|e| TensorError::Serialization(e.to_string()))?;
         self.put_object(&meta_key, Bytes::from(meta_bytes)).await?;
@@ -98,9 +106,11 @@ impl TensorStore {
 
     /// Load a checkpoint from storage
     pub async fn load_checkpoint(&self, name: &str) -> TensorResult<Checkpoint> {
-        let _permit = self.semaphore.acquire().await.map_err(|_| {
-            TensorError::ConfigError("semaphore closed".to_string())
-        })?;
+        let _permit = self
+            .semaphore
+            .acquire()
+            .await
+            .map_err(|_| TensorError::ConfigError("semaphore closed".to_string()))?;
 
         // Load data
         let key = format!("{}/checkpoints/{}.warp", self.config.prefix, name);
@@ -124,19 +134,28 @@ impl TensorStore {
         let meta_key = format!("{}/checkpoints/{}.meta", self.config.prefix, name);
         let data = self.get_object(&meta_key).await?;
 
-        let meta: CheckpointMeta = rmp_serde::from_slice(&data)
-            .map_err(|e| TensorError::Serialization(e.to_string()))?;
+        let meta: CheckpointMeta =
+            rmp_serde::from_slice(&data).map_err(|e| TensorError::Serialization(e.to_string()))?;
 
         Ok(meta)
     }
 
     /// Load a specific tensor from a checkpoint
-    pub async fn load_tensor(&self, checkpoint_name: &str, tensor_name: &str) -> TensorResult<TensorData> {
-        let _permit = self.semaphore.acquire().await.map_err(|_| {
-            TensorError::ConfigError("semaphore closed".to_string())
-        })?;
+    pub async fn load_tensor(
+        &self,
+        checkpoint_name: &str,
+        tensor_name: &str,
+    ) -> TensorResult<TensorData> {
+        let _permit = self
+            .semaphore
+            .acquire()
+            .await
+            .map_err(|_| TensorError::ConfigError("semaphore closed".to_string()))?;
 
-        let key = format!("{}/checkpoints/{}.warp", self.config.prefix, checkpoint_name);
+        let key = format!(
+            "{}/checkpoints/{}.warp",
+            self.config.prefix, checkpoint_name
+        );
         let data = self.get_object(&key).await?;
 
         let reader = WarpNativeReader::new();
@@ -145,9 +164,11 @@ impl TensorStore {
 
     /// Save a single tensor
     pub async fn save_tensor(&self, tensor: &TensorData) -> TensorResult<String> {
-        let _permit = self.semaphore.acquire().await.map_err(|_| {
-            TensorError::ConfigError("semaphore closed".to_string())
-        })?;
+        let _permit = self
+            .semaphore
+            .acquire()
+            .await
+            .map_err(|_| TensorError::ConfigError("semaphore closed".to_string()))?;
 
         let key = format!("{}/tensors/{}.warp", self.config.prefix, tensor.name());
 
@@ -177,10 +198,19 @@ impl TensorStore {
         }
 
         // Save shard metadata
-        let meta = create_sharded_meta(tensor, ShardStrategy::FixedSize, self.config.chunk.chunk_size, &shards);
-        let meta_key = format!("{}/tensors/{}.shard_meta", self.config.prefix, tensor.name());
-        let meta_bytes = rmp_serde::to_vec(&meta)
-            .map_err(|e| TensorError::Serialization(e.to_string()))?;
+        let meta = create_sharded_meta(
+            tensor,
+            ShardStrategy::FixedSize,
+            self.config.chunk.chunk_size,
+            &shards,
+        );
+        let meta_key = format!(
+            "{}/tensors/{}.shard_meta",
+            self.config.prefix,
+            tensor.name()
+        );
+        let meta_bytes =
+            rmp_serde::to_vec(&meta).map_err(|e| TensorError::Serialization(e.to_string()))?;
         self.put_object(&meta_key, Bytes::from(meta_bytes)).await?;
 
         Ok(meta_key)
@@ -188,9 +218,11 @@ impl TensorStore {
 
     /// Load a tensor by name
     pub async fn get_tensor(&self, name: &str) -> TensorResult<TensorData> {
-        let _permit = self.semaphore.acquire().await.map_err(|_| {
-            TensorError::ConfigError("semaphore closed".to_string())
-        })?;
+        let _permit = self
+            .semaphore
+            .acquire()
+            .await
+            .map_err(|_| TensorError::ConfigError("semaphore closed".to_string()))?;
 
         // Check cache first
         if let Some(cached_data) = self.data_cache.get(name) {

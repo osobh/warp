@@ -112,8 +112,12 @@ mod tests {
 
         let content = b"same content";
 
-        let token1 = client1.compute_token_with_server(content, &server1).unwrap();
-        let token2 = client2.compute_token_with_server(content, &server2).unwrap();
+        let token1 = client1
+            .compute_token_with_server(content, &server1)
+            .unwrap();
+        let token2 = client2
+            .compute_token_with_server(content, &server2)
+            .unwrap();
 
         // Different server keys produce different tokens
         assert_ne!(token1, token2);

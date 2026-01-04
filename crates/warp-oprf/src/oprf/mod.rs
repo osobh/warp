@@ -56,7 +56,11 @@ pub struct BlindedInput {
 impl BlindedInput {
     /// Create a new blinded input
     pub fn new(element: Vec<u8>, suite: CipherSuite, mode: OprfMode) -> Self {
-        Self { element, suite, mode }
+        Self {
+            element,
+            suite,
+            mode,
+        }
     }
 }
 
@@ -242,11 +246,8 @@ mod tests {
 
     #[test]
     fn test_blinded_input() {
-        let blinded = BlindedInput::new(
-            vec![1, 2, 3],
-            CipherSuite::default(),
-            OprfMode::Verifiable,
-        );
+        let blinded =
+            BlindedInput::new(vec![1, 2, 3], CipherSuite::default(), OprfMode::Verifiable);
         assert_eq!(blinded.element, vec![1, 2, 3]);
         assert_eq!(blinded.mode, OprfMode::Verifiable);
     }

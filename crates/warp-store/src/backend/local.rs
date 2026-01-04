@@ -21,9 +21,13 @@ use tokio::fs;
 use tokio::io::AsyncWriteExt;
 use tracing::{debug, trace};
 
-use super::{StorageBackend, HpcStorageBackend, StorageProof, ChunkedStream, MultipartUpload, PartInfo};
+use super::{
+    ChunkedStream, HpcStorageBackend, MultipartUpload, PartInfo, StorageBackend, StorageProof,
+};
 use crate::key::ObjectKey;
-use crate::object::{ListOptions, ObjectData, ObjectEntry, ObjectList, ObjectMeta, PutOptions, StorageClass};
+use crate::object::{
+    ListOptions, ObjectData, ObjectEntry, ObjectList, ObjectMeta, PutOptions, StorageClass,
+};
 use crate::{Error, Result};
 use serde::{Deserialize, Serialize};
 
@@ -48,10 +52,7 @@ pub struct LocalBackend {
 impl LocalBackend {
     /// Create a new local backend
     pub async fn new(root: &Path) -> Result<Self> {
-        debug_assert!(
-            !root.as_os_str().is_empty(),
-            "root path must not be empty"
-        );
+        debug_assert!(!root.as_os_str().is_empty(), "root path must not be empty");
 
         // Create root directories
         let buckets_dir = root.join("buckets");
@@ -102,7 +103,8 @@ impl LocalBackend {
 
     /// Get the path to a part file
     fn part_path(&self, key: &ObjectKey, upload_id: &str, part_number: u32) -> PathBuf {
-        self.upload_path(key, upload_id).join(format!("part.{:05}", part_number))
+        self.upload_path(key, upload_id)
+            .join(format!("part.{:05}", part_number))
     }
 
     /// Get the path to upload metadata
@@ -129,12 +131,10 @@ impl StorageBackend for LocalBackend {
 
         match fs::read(&path).await {
             Ok(data) => Ok(ObjectData::from(data)),
-            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
-                Err(Error::ObjectNotFound {
-                    bucket: key.bucket().to_string(),
-                    key: key.key().to_string(),
-                })
-            }
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => Err(Error::ObjectNotFound {
+                bucket: key.bucket().to_string(),
+                key: key.key().to_string(),
+            }),
             Err(e) => Err(e.into()),
         }
     }
@@ -148,7 +148,7 @@ impl StorageBackend for LocalBackend {
         // Check if_none_match condition
         if opts.if_none_match && data_path.exists() {
             return Err(Error::PermissionDenied(
-                "object already exists and if_none_match is set".to_string()
+                "object already exists and if_none_match is set".to_string(),
             ));
         }
 
@@ -255,7 +255,8 @@ impl StorageBackend for LocalBackend {
                     if let Some(ref delim) = opts.delimiter {
                         let after_prefix = &key[prefix.len()..];
                         if let Some(pos) = after_prefix.find(delim) {
-                            let common_prefix = format!("{}{}{}", prefix, &after_prefix[..pos], delim);
+                            let common_prefix =
+                                format!("{}{}{}", prefix, &after_prefix[..pos], delim);
                             if !common_prefixes.contains(&common_prefix) {
                                 common_prefixes.push(common_prefix);
                             }
@@ -266,7 +267,8 @@ impl StorageBackend for LocalBackend {
                 } else {
                     // It's a file
                     let metadata = entry.metadata().await?;
-                    let modified = metadata.modified()
+                    let modified = metadata
+                        .modified()
                         .map(|t| chrono::DateTime::<Utc>::from(t))
                         .unwrap_or_else(|_| Utc::now());
 
@@ -319,12 +321,10 @@ impl StorageBackend for LocalBackend {
                 let object_data = ObjectData::from(data);
                 Ok(ObjectMeta::new(&object_data))
             }
-            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
-                Err(Error::ObjectNotFound {
-                    bucket: key.bucket().to_string(),
-                    key: key.key().to_string(),
-                })
-            }
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => Err(Error::ObjectNotFound {
+                bucket: key.bucket().to_string(),
+                key: key.key().to_string(),
+            }),
             Err(e) => Err(e.into()),
         }
     }
@@ -540,7 +540,8 @@ impl HpcStorageBackend for LocalBackend {
         gpu_buffer: &warp_gpu::GpuBuffer<u8>,
     ) -> Result<ObjectMeta> {
         // For local backend, copy from GPU to CPU then store
-        let buffer = gpu_buffer.copy_to_host()
+        let buffer = gpu_buffer
+            .copy_to_host()
             .map_err(|e| crate::Error::Backend(format!("GPU copy failed: {}", e)))?;
 
         let data = ObjectData::from(buffer);
@@ -564,7 +565,10 @@ mod tests {
         // Put object
         let key = ObjectKey::new("test", "hello.txt").unwrap();
         let data = ObjectData::from(b"Hello, World!".to_vec());
-        let meta = backend.put(&key, data.clone(), PutOptions::default()).await.unwrap();
+        let meta = backend
+            .put(&key, data.clone(), PutOptions::default())
+            .await
+            .unwrap();
 
         assert_eq!(meta.size, 13);
 
@@ -598,15 +602,24 @@ mod tests {
         for i in 0..5 {
             let key = ObjectKey::new("test", &format!("data/{}.txt", i)).unwrap();
             let data = ObjectData::from(format!("content {}", i).into_bytes());
-            backend.put(&key, data, PutOptions::default()).await.unwrap();
+            backend
+                .put(&key, data, PutOptions::default())
+                .await
+                .unwrap();
         }
 
         // List all
-        let list = backend.list("test", "", ListOptions::default()).await.unwrap();
+        let list = backend
+            .list("test", "", ListOptions::default())
+            .await
+            .unwrap();
         assert_eq!(list.key_count, 5);
 
         // List with prefix
-        let list = backend.list("test", "data/", ListOptions::default()).await.unwrap();
+        let list = backend
+            .list("test", "data/", ListOptions::default())
+            .await
+            .unwrap();
         assert_eq!(list.key_count, 5);
     }
 
@@ -619,7 +632,10 @@ mod tests {
 
         let key = ObjectKey::new("test", "file.bin").unwrap();
         let data = ObjectData::from(b"test data for verification".to_vec());
-        backend.put(&key, data, PutOptions::default()).await.unwrap();
+        backend
+            .put(&key, data, PutOptions::default())
+            .await
+            .unwrap();
 
         // Get with proof
         let (retrieved, proof) = backend.verified_get(&key).await.unwrap();
@@ -638,7 +654,10 @@ mod tests {
 
         let key = ObjectKey::new("test", "large.bin").unwrap();
         let data = ObjectData::from(vec![42u8; 1000]);
-        backend.put(&key, data, PutOptions::default()).await.unwrap();
+        backend
+            .put(&key, data, PutOptions::default())
+            .await
+            .unwrap();
 
         // Stream in chunks
         let mut stream = backend.stream_chunked(&key, 100).await.unwrap();
@@ -671,8 +690,14 @@ mod tests {
         assert_eq!(upload.key.key(), "multipart.bin");
 
         // Upload parts
-        let part1 = backend.upload_part(&upload, 1, ObjectData::from(b"Hello, ".to_vec())).await.unwrap();
-        let part2 = backend.upload_part(&upload, 2, ObjectData::from(b"World!".to_vec())).await.unwrap();
+        let part1 = backend
+            .upload_part(&upload, 1, ObjectData::from(b"Hello, ".to_vec()))
+            .await
+            .unwrap();
+        let part2 = backend
+            .upload_part(&upload, 2, ObjectData::from(b"World!".to_vec()))
+            .await
+            .unwrap();
 
         assert_eq!(part1.part_number, 1);
         assert_eq!(part1.size, 7);
@@ -680,7 +705,10 @@ mod tests {
         assert_eq!(part2.size, 6);
 
         // Complete upload
-        let meta = backend.complete_multipart(&upload, vec![part1, part2]).await.unwrap();
+        let meta = backend
+            .complete_multipart(&upload, vec![part1, part2])
+            .await
+            .unwrap();
         assert_eq!(meta.size, 13);
 
         // Verify object
@@ -701,12 +729,24 @@ mod tests {
         let upload = backend.create_multipart(&key).await.unwrap();
 
         // Upload parts out of order
-        let part3 = backend.upload_part(&upload, 3, ObjectData::from(b"C".to_vec())).await.unwrap();
-        let part1 = backend.upload_part(&upload, 1, ObjectData::from(b"A".to_vec())).await.unwrap();
-        let part2 = backend.upload_part(&upload, 2, ObjectData::from(b"B".to_vec())).await.unwrap();
+        let part3 = backend
+            .upload_part(&upload, 3, ObjectData::from(b"C".to_vec()))
+            .await
+            .unwrap();
+        let part1 = backend
+            .upload_part(&upload, 1, ObjectData::from(b"A".to_vec()))
+            .await
+            .unwrap();
+        let part2 = backend
+            .upload_part(&upload, 2, ObjectData::from(b"B".to_vec()))
+            .await
+            .unwrap();
 
         // Complete - parts should be sorted
-        let meta = backend.complete_multipart(&upload, vec![part3, part1, part2]).await.unwrap();
+        let meta = backend
+            .complete_multipart(&upload, vec![part3, part1, part2])
+            .await
+            .unwrap();
         assert_eq!(meta.size, 3);
 
         // Verify correct order
@@ -727,7 +767,10 @@ mod tests {
         let upload = backend.create_multipart(&key).await.unwrap();
 
         // Upload a part
-        backend.upload_part(&upload, 1, ObjectData::from(b"data".to_vec())).await.unwrap();
+        backend
+            .upload_part(&upload, 1, ObjectData::from(b"data".to_vec()))
+            .await
+            .unwrap();
 
         // Abort upload
         backend.abort_multipart(&upload).await.unwrap();
@@ -755,7 +798,10 @@ mod tests {
         let mut parts = Vec::new();
         for i in 1..=10 {
             let data: Vec<u8> = (0..100_000).map(|j| ((i + j) % 256) as u8).collect();
-            let part = backend.upload_part(&upload, i as u32, ObjectData::from(data)).await.unwrap();
+            let part = backend
+                .upload_part(&upload, i as u32, ObjectData::from(data))
+                .await
+                .unwrap();
             assert_eq!(part.size, 100_000);
             parts.push(part);
         }

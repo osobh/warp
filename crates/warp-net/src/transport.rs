@@ -4,15 +4,21 @@ use crate::codec::Frame;
 use crate::frames::Capabilities;
 use crate::pool::global_pool;
 use crate::protocol::{NegotiatedParams, ProtocolState};
-use crate::tls::{client_config, generate_self_signed, server_config};
 #[cfg(any(test, feature = "insecure-tls"))]
 use crate::tls::client_config_insecure;
+use crate::tls::{client_config, generate_self_signed, server_config};
 use crate::{Error, Result};
 use bytes::Bytes;
 use quinn::{Connection, Endpoint, RecvStream, SendStream};
 use std::net::SocketAddr;
 use std::sync::Arc;
 use tokio::sync::Mutex;
+
+/// Control stream pair - always updated atomically to prevent TOCTOU races
+struct ControlStreams {
+    send: Option<SendStream>,
+    recv: Option<RecvStream>,
+}
 
 /// Protocol version
 const PROTOCOL_VERSION: u32 = 1;
@@ -27,8 +33,8 @@ pub struct WarpConnection {
     local_caps: Capabilities,
     remote_caps: Arc<Mutex<Option<Capabilities>>>,
     params: Arc<Mutex<Option<NegotiatedParams>>>,
-    control_send: Arc<Mutex<Option<SendStream>>>,
-    control_recv: Arc<Mutex<Option<RecvStream>>>,
+    /// Control streams protected by single mutex to prevent TOCTOU races
+    control: Arc<Mutex<ControlStreams>>,
 }
 
 impl WarpConnection {
@@ -40,8 +46,10 @@ impl WarpConnection {
             local_caps,
             remote_caps: Arc::new(Mutex::new(None)),
             params: Arc::new(Mutex::new(None)),
-            control_send: Arc::new(Mutex::new(None)),
-            control_recv: Arc::new(Mutex::new(None)),
+            control: Arc::new(Mutex::new(ControlStreams {
+                send: None,
+                recv: None,
+            })),
         }
     }
 
@@ -79,19 +87,27 @@ impl WarpConnection {
     }
 
     /// Open the control stream (client side)
+    ///
+    /// Both send and recv are set atomically under a single lock to prevent TOCTOU races.
     async fn open_control_stream(&self) -> Result<()> {
         let (send, recv) = self.open_stream().await?;
-        *self.control_send.lock().await = Some(send);
-        *self.control_recv.lock().await = Some(recv);
+        let mut control = self.control.lock().await;
+        control.send = Some(send);
+        control.recv = Some(recv);
         Ok(())
     }
 
     /// Accept the control stream (server side)
+    ///
+    /// Both send and recv are set atomically under a single lock to prevent TOCTOU races.
     async fn accept_control_stream(&self) -> Result<()> {
-        let (send, recv) = self.connection.accept_bi().await
-            .map_err(|e| Error::Connection(format!("Failed to accept control stream: {}", e)))?;
-        *self.control_send.lock().await = Some(send);
-        *self.control_recv.lock().await = Some(recv);
+        let (send, recv) =
+            self.connection.accept_bi().await.map_err(|e| {
+                Error::Connection(format!("Failed to accept control stream: {}", e))
+            })?;
+        let mut control = self.control.lock().await;
+        control.send = Some(send);
+        control.recv = Some(recv);
         Ok(())
     }
 
@@ -104,8 +120,9 @@ impl WarpConnection {
 
         tracing::trace!("Sending frame: {:?}", frame.frame_type());
 
-        let mut send_lock = self.control_send.lock().await;
-        let send = send_lock
+        let mut control = self.control.lock().await;
+        let send = control
+            .send
             .as_mut()
             .ok_or_else(|| Error::Protocol("Control stream not open".into()))?;
 
@@ -113,7 +130,7 @@ impl WarpConnection {
             .await
             .map_err(|e| Error::Connection(format!("Failed to send frame: {}", e)))?;
 
-        drop(send_lock);
+        drop(control);
         // pooled_buf returned to pool on drop
 
         Ok(())
@@ -121,8 +138,9 @@ impl WarpConnection {
 
     /// Receive a frame from the control stream
     pub async fn recv_frame(&self) -> Result<Frame> {
-        let mut recv_lock = self.control_recv.lock().await;
-        let recv = recv_lock
+        let mut control = self.control.lock().await;
+        let recv = control
+            .recv
             .as_mut()
             .ok_or_else(|| Error::Protocol("Control stream not open".into()))?;
 
@@ -250,10 +268,7 @@ impl WarpConnection {
     pub async fn send_chunk(&self, chunk_id: u32, data: Bytes) -> Result<()> {
         let (mut send, _recv) = self.open_stream().await?;
 
-        let frame = Frame::Chunk {
-            chunk_id,
-            data,
-        };
+        let frame = Frame::Chunk { chunk_id, data };
 
         // Use pooled buffer - size based on typical chunk header + small data
         let pool = global_pool();
@@ -465,9 +480,7 @@ impl WarpEndpoint {
     /// Accept an incoming connection (server only)
     pub async fn accept(&self) -> Result<WarpConnection> {
         if !self.is_server {
-            return Err(Error::Connection(
-                "Cannot accept on client endpoint".into(),
-            ));
+            return Err(Error::Connection("Cannot accept on client endpoint".into()));
         }
 
         let connecting = self

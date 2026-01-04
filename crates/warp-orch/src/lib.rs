@@ -16,43 +16,42 @@
 //! - **Preposition**: Predictive pre-positioning execution
 
 pub mod adaptive_erasure;
-pub mod types;
-pub mod pool;
-pub mod progress;
 pub mod download;
-pub mod upload;
 pub mod orchestrator;
-pub mod reconcile;
+pub mod pool;
 pub mod predict;
-pub mod triggers;
 pub mod preposition;
+pub mod progress;
+pub mod reconcile;
+pub mod triggers;
+pub mod types;
+pub mod upload;
 
-pub use types::{
-    TransferId, TransferState, TransferStatus, TransferDirection,
-    TransferRequest, TransferResult, ChunkTransfer, EdgeTransfer,
+pub use adaptive_erasure::{
+    AdaptiveErasure, AdaptiveErasureConfig, AdaptiveErasureStats, ErasureParameters, NetworkMetrics,
 };
-pub use pool::{ConnectionPool, PoolConfig, PooledConnection};
-pub use progress::{ProgressTracker, TransferProgress, ProgressUpdate};
-pub use download::{SwarmDownloader, DownloadConfig, DownloadSession};
-pub use upload::{ActiveChunkUpload, DistributedUploader, UploadConfig, UploadSession};
+pub use download::{DownloadConfig, DownloadSession, SwarmDownloader};
 pub use orchestrator::{Orchestrator, OrchestratorConfig};
-pub use reconcile::{
-    DriftConfig, DriftDetector, DriftMetrics, ReoptConfig, ReoptDecision,
-    ReoptEvaluator, ReoptTrigger,
-};
+pub use pool::{ConnectionPool, PoolConfig, PooledConnection};
 pub use predict::{
-    AccessAnalytics, AccessPattern, AccessRecord, PatternConfig, PatternDetector,
-    PrepositionPriority, PrepositionRequest, Predictor, PredictorConfig,
+    AccessAnalytics, AccessPattern, AccessRecord, PatternConfig, PatternDetector, Predictor,
+    PredictorConfig, PrepositionPriority, PrepositionRequest,
+};
+pub use preposition::{
+    EdgeInfo, PrepositionConfig, PrepositionExecutor, PrepositionManager, PrepositionMetrics,
+    PrepositionOp, PrepositionPlanner, PrepositionStatus,
+};
+pub use progress::{ProgressTracker, ProgressUpdate, TransferProgress};
+pub use reconcile::{
+    DriftConfig, DriftDetector, DriftMetrics, ReoptConfig, ReoptDecision, ReoptEvaluator,
+    ReoptTrigger,
 };
 pub use triggers::{TriggerConfig, TriggerGenerator};
-pub use preposition::{
-    PrepositionConfig, PrepositionOp, PrepositionStatus, PrepositionMetrics,
-    EdgeInfo, PrepositionPlanner, PrepositionExecutor, PrepositionManager,
+pub use types::{
+    ChunkTransfer, EdgeTransfer, TransferDirection, TransferId, TransferRequest, TransferResult,
+    TransferState, TransferStatus,
 };
-pub use adaptive_erasure::{
-    AdaptiveErasure, AdaptiveErasureConfig, AdaptiveErasureStats,
-    ErasureParameters, NetworkMetrics,
-};
+pub use upload::{ActiveChunkUpload, DistributedUploader, UploadConfig, UploadSession};
 
 use thiserror::Error;
 

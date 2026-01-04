@@ -40,9 +40,9 @@ impl ModelPreset {
     #[must_use]
     pub fn block_size(&self) -> usize {
         match self {
-            Self::Rgb16x => 64 * 1024,    // 64KB blocks for images
-            Self::Stereo5x => 32 * 1024,  // 32KB blocks for audio
-            Self::Generic => 64 * 1024,   // 64KB default
+            Self::Rgb16x => 64 * 1024,   // 64KB blocks for images
+            Self::Stereo5x => 32 * 1024, // 32KB blocks for audio
+            Self::Generic => 64 * 1024,  // 64KB default
             Self::Custom => 64 * 1024,
         }
     }

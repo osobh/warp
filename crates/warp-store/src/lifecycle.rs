@@ -34,7 +34,7 @@ use std::time::Duration;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use tokio::sync::RwLock;
-use tracing::{debug, info, warn, error, instrument};
+use tracing::{debug, error, info, instrument, warn};
 
 use crate::backend::StorageBackend;
 use crate::bucket::{
@@ -268,7 +268,10 @@ impl<B: StorageBackend> LifecycleExecutor<B> {
             stats.objects_scanned += list.objects.len() as u64;
 
             for object in &list.objects {
-                if let Err(e) = self.process_object(bucket_name, object, &rules, now, stats).await {
+                if let Err(e) = self
+                    .process_object(bucket_name, object, &rules, now, stats)
+                    .await
+                {
                     warn!(
                         bucket = %bucket_name,
                         key = %object.key,
@@ -323,14 +326,17 @@ impl<B: StorageBackend> LifecycleExecutor<B> {
                 if object.is_latest {
                     self.expire_object(bucket_name, object, stats).await?;
                 } else {
-                    self.expire_noncurrent_version(bucket_name, object, stats).await?;
+                    self.expire_noncurrent_version(bucket_name, object, stats)
+                        .await?;
                 }
             }
             LifecycleAction::Transition(target_class) => {
                 if object.is_latest {
-                    self.transition_object(bucket_name, object, target_class, stats).await?;
+                    self.transition_object(bucket_name, object, target_class, stats)
+                        .await?;
                 } else {
-                    self.transition_noncurrent_version(bucket_name, object, target_class, stats).await?;
+                    self.transition_noncurrent_version(bucket_name, object, target_class, stats)
+                        .await?;
                 }
             }
             LifecycleAction::None => {}
@@ -340,7 +346,11 @@ impl<B: StorageBackend> LifecycleExecutor<B> {
     }
 
     /// Evaluate lifecycle rules against an object and determine action
-    fn evaluate_rules(&self, rules: &[LifecycleRule], context: &EvaluationContext) -> LifecycleAction {
+    fn evaluate_rules(
+        &self,
+        rules: &[LifecycleRule],
+        context: &EvaluationContext,
+    ) -> LifecycleAction {
         for rule in rules {
             if !rule.enabled {
                 continue;
@@ -355,9 +365,10 @@ impl<B: StorageBackend> LifecycleExecutor<B> {
 
             // Check tag filters
             if !rule.tags.is_empty() {
-                let tags_match = rule.tags.iter().all(|(k, v)| {
-                    context.tags.get(k).map(|tv| tv == v).unwrap_or(false)
-                });
+                let tags_match = rule
+                    .tags
+                    .iter()
+                    .all(|(k, v)| context.tags.get(k).map(|tv| tv == v).unwrap_or(false));
                 if !tags_match {
                     continue;
                 }
@@ -381,13 +392,17 @@ impl<B: StorageBackend> LifecycleExecutor<B> {
             } else {
                 // For noncurrent versions
                 if let Some(ref nc_expiration) = rule.noncurrent_expiration {
-                    if let Some(action) = self.evaluate_noncurrent_expiration(nc_expiration, context) {
+                    if let Some(action) =
+                        self.evaluate_noncurrent_expiration(nc_expiration, context)
+                    {
                         return action;
                     }
                 }
 
                 for nc_transition in &rule.noncurrent_transitions {
-                    if let Some(action) = self.evaluate_noncurrent_transition(nc_transition, context) {
+                    if let Some(action) =
+                        self.evaluate_noncurrent_transition(nc_transition, context)
+                    {
                         return action;
                     }
                 }
@@ -746,11 +761,13 @@ impl LifecycleRuleBuilder {
         days: u32,
         storage_class: StorageClass,
     ) -> Self {
-        self.rule.noncurrent_transitions.push(NoncurrentTransitionAction {
-            noncurrent_days: days,
-            newer_noncurrent_versions: None,
-            storage_class,
-        });
+        self.rule
+            .noncurrent_transitions
+            .push(NoncurrentTransitionAction {
+                noncurrent_days: days,
+                newer_noncurrent_versions: None,
+                storage_class,
+            });
         self
     }
 
@@ -865,7 +882,10 @@ mod tests {
     fn test_lifecycle_config_defaults() {
         let config = LifecycleConfig::default();
 
-        assert_eq!(config.evaluation_interval, Duration::from_secs(24 * 60 * 60));
+        assert_eq!(
+            config.evaluation_interval,
+            Duration::from_secs(24 * 60 * 60)
+        );
         assert_eq!(config.batch_size, 1000);
         assert_eq!(config.max_concurrent, 10);
         assert!(!config.dry_run);

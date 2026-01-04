@@ -35,8 +35,8 @@
 
 use chacha20poly1305::aead::generic_array::GenericArray;
 use chacha20poly1305::{
-    aead::{Aead, KeyInit},
     ChaCha20Poly1305,
+    aead::{Aead, KeyInit},
 };
 
 use crate::{Error, Result};

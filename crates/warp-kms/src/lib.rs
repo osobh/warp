@@ -33,18 +33,22 @@
 
 #![warn(missing_docs)]
 
+mod envelope;
 mod error;
 mod key;
 mod local;
-mod envelope;
 
 #[cfg(feature = "aws")]
 mod aws;
 
+pub use envelope::{
+    ChunkedEncryptedData, EncryptedChunk, EncryptedData, EnvelopeEncryption, StreamingEnvelope,
+};
 pub use error::{KmsError, KmsResult};
-pub use key::{DataKey, KeyAlgorithm, KeyMetadata, KeyOrigin, KeyState, KeyUsage, KeyVersion, MasterKey};
+pub use key::{
+    DataKey, KeyAlgorithm, KeyMetadata, KeyOrigin, KeyState, KeyUsage, KeyVersion, MasterKey,
+};
 pub use local::LocalKms;
-pub use envelope::{ChunkedEncryptedData, EncryptedChunk, EncryptedData, EnvelopeEncryption, StreamingEnvelope};
 
 #[cfg(feature = "aws")]
 pub use aws::AwsKms;
@@ -114,7 +118,10 @@ mod tests {
         assert!(!data_key.ciphertext.is_empty());
 
         // Decrypt the data key
-        let decrypted = kms.decrypt_data_key(&key_id, &data_key.ciphertext).await.unwrap();
+        let decrypted = kms
+            .decrypt_data_key(&key_id, &data_key.ciphertext)
+            .await
+            .unwrap();
         assert_eq!(decrypted, data_key.plaintext);
     }
 

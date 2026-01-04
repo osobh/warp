@@ -37,7 +37,9 @@ use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use tracing::debug;
 
-use warp_oprf::dedup::{BlindDedupClient, BlindDedupServer, DedupIndex, DedupReference, DedupToken};
+use warp_oprf::dedup::{
+    BlindDedupClient, BlindDedupServer, DedupIndex, DedupReference, DedupToken,
+};
 use warp_oprf::oprf::{BlindedInput, Evaluation};
 
 use crate::error::{Error, Result};
@@ -203,10 +205,7 @@ impl SledDedupIndex {
 
 #[async_trait]
 impl DedupIndex for SledDedupIndex {
-    async fn lookup(
-        &self,
-        token: &DedupToken,
-    ) -> warp_oprf::error::Result<Option<DedupReference>> {
+    async fn lookup(&self, token: &DedupToken) -> warp_oprf::error::Result<Option<DedupReference>> {
         let tree = self.tree.clone();
         let token_bytes = token.as_bytes().to_vec();
 

@@ -209,7 +209,9 @@ mod tests {
         assert_eq!(decoded, table);
 
         for i in 0..20 {
-            let entry = decoded.get_by_path(&format!("path/to/file{}.dat", i)).unwrap();
+            let entry = decoded
+                .get_by_path(&format!("path/to/file{}.dat", i))
+                .unwrap();
             assert_eq!(entry.size, i * 1000);
             assert_eq!(entry.mode, 0o644 + (i % 2) as u32);
             assert_eq!(entry.mtime, 1700000000 + i as i64);

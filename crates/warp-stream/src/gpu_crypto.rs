@@ -93,8 +93,7 @@ impl GpuCryptoContext {
     /// Try to initialize GPU cipher
     fn try_init_gpu(_key: &[u8; 32]) -> Result<warp_gpu::ChaCha20Poly1305> {
         // Try to create GPU context
-        let ctx = warp_gpu::GpuContext::new()
-            .map_err(StreamError::GpuError)?;
+        let ctx = warp_gpu::GpuContext::new().map_err(StreamError::GpuError)?;
 
         // Create ChaCha20Poly1305 cipher on GPU
         let cipher = warp_gpu::ChaCha20Poly1305::new(ctx.context().clone())
@@ -120,10 +119,13 @@ impl GpuCryptoContext {
 
     /// Encrypt using GPU
     fn encrypt_gpu(&self, plaintext: &[u8], key: &[u8; 32], nonce: &[u8; 12]) -> Result<Vec<u8>> {
-        let cipher = self.gpu_cipher.as_ref()
+        let cipher = self
+            .gpu_cipher
+            .as_ref()
             .ok_or_else(|| StreamError::CryptoError("GPU cipher not initialized".into()))?;
 
-        cipher.encrypt(plaintext, key, nonce)
+        cipher
+            .encrypt(plaintext, key, nonce)
             .map_err(StreamError::GpuError)
     }
 
@@ -133,7 +135,8 @@ impl GpuCryptoContext {
 
         let nonce_ga = GenericArray::from_slice(&self.cpu_cipher.nonce);
 
-        self.cpu_cipher.cipher
+        self.cpu_cipher
+            .cipher
             .encrypt(nonce_ga, plaintext)
             .map_err(|e| StreamError::CryptoError(format!("CPU encryption failed: {}", e)))
     }
@@ -150,10 +153,13 @@ impl GpuCryptoContext {
 
     /// Decrypt using GPU
     fn decrypt_gpu(&self, ciphertext: &[u8], key: &[u8; 32], nonce: &[u8; 12]) -> Result<Vec<u8>> {
-        let cipher = self.gpu_cipher.as_ref()
+        let cipher = self
+            .gpu_cipher
+            .as_ref()
             .ok_or_else(|| StreamError::CryptoError("GPU cipher not initialized".into()))?;
 
-        cipher.decrypt(ciphertext, key, nonce)
+        cipher
+            .decrypt(ciphertext, key, nonce)
             .map_err(StreamError::GpuError)
     }
 
@@ -163,7 +169,8 @@ impl GpuCryptoContext {
 
         let nonce_ga = GenericArray::from_slice(&self.cpu_cipher.nonce);
 
-        self.cpu_cipher.cipher
+        self.cpu_cipher
+            .cipher
             .decrypt(nonce_ga, ciphertext)
             .map_err(|e| StreamError::CryptoError(format!("CPU decryption failed: {}", e)))
     }

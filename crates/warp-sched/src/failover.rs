@@ -264,7 +264,15 @@ impl CpuFailoverManager {
             .map(|t| t.retry_count)
             .unwrap_or(0);
 
-        let action = self.decide_action(chunk_id, edge_idx, reason, retry_count, state, paths, cost_matrix);
+        let action = self.decide_action(
+            chunk_id,
+            edge_idx,
+            reason,
+            retry_count,
+            state,
+            paths,
+            cost_matrix,
+        );
 
         let decision = FailoverDecision::new(chunk_id, reason, action, edge_idx, retry_count);
 
@@ -317,7 +325,9 @@ impl CpuFailoverManager {
         }
 
         // Try to find alternative route using PathSelector for optimal selection
-        if let Some(alternative) = self.find_alternative_edges(chunk_id, edge_idx, state, paths, cost_matrix) {
+        if let Some(alternative) =
+            self.find_alternative_edges(chunk_id, edge_idx, state, paths, cost_matrix)
+        {
             return FailoverAction::Reroute {
                 new_edges: alternative,
             };
@@ -435,12 +445,7 @@ impl FailoverManager {
     }
 
     /// Reports a transfer failure.
-    pub fn report_failure(
-        &mut self,
-        chunk_id: ChunkId,
-        edge_idx: EdgeIdx,
-        reason: FailoverReason,
-    ) {
+    pub fn report_failure(&mut self, chunk_id: ChunkId, edge_idx: EdgeIdx, reason: FailoverReason) {
         self.cpu.report_failure(chunk_id, edge_idx, reason);
     }
 
@@ -459,7 +464,8 @@ impl FailoverManager {
         paths: &PathSelector,
         cost_matrix: &CostMatrix,
     ) -> FailoverDecision {
-        self.cpu.decide(chunk_id, edge_idx, reason, state, paths, cost_matrix)
+        self.cpu
+            .decide(chunk_id, edge_idx, reason, state, paths, cost_matrix)
     }
 
     /// Marks a transfer as complete.
@@ -538,7 +544,11 @@ mod tests {
         PathSelector::new(path_config)
     }
 
-    fn create_test_cost_matrix(state: &mut CpuStateBuffers, num_chunks: usize, num_edges: usize) -> CostMatrix {
+    fn create_test_cost_matrix(
+        state: &mut CpuStateBuffers,
+        num_chunks: usize,
+        num_edges: usize,
+    ) -> CostMatrix {
         use crate::cost::CostConfig;
 
         // Add replicas for all chunks to all edges so PathSelector can find them
@@ -592,15 +602,21 @@ mod tests {
     #[test]
     fn test_failover_actions() {
         // Test Retry
-        let retry = FailoverAction::Retry { edge_idx: EdgeIdx::from(5u32) };
+        let retry = FailoverAction::Retry {
+            edge_idx: EdgeIdx::from(5u32),
+        };
         assert!(matches!(retry, FailoverAction::Retry { .. }));
 
         // Test Reroute
-        let reroute = FailoverAction::Reroute { new_edges: vec![EdgeIdx::from(1u32)] };
+        let reroute = FailoverAction::Reroute {
+            new_edges: vec![EdgeIdx::from(1u32)],
+        };
         assert!(matches!(reroute, FailoverAction::Reroute { .. }));
 
         // Test Abort
-        let abort = FailoverAction::Abort { reason: "Test".to_string() };
+        let abort = FailoverAction::Abort {
+            reason: "Test".to_string(),
+        };
         assert!(matches!(abort, FailoverAction::Abort { .. }));
     }
 
@@ -609,7 +625,9 @@ mod tests {
         let decision = FailoverDecision::new(
             ChunkId::from(10),
             FailoverReason::Timeout,
-            FailoverAction::Retry { edge_idx: EdgeIdx::from(5u32) },
+            FailoverAction::Retry {
+                edge_idx: EdgeIdx::from(5u32),
+            },
             EdgeIdx::from(5u32),
             1,
         );
@@ -629,9 +647,20 @@ mod tests {
         assert!(manager.active_transfers.contains_key(&ChunkId::from(5)));
 
         // Report failure
-        manager.report_failure(ChunkId::from(5), EdgeIdx::from(10u32), FailoverReason::TransferFailed);
+        manager.report_failure(
+            ChunkId::from(5),
+            EdgeIdx::from(10u32),
+            FailoverReason::TransferFailed,
+        );
         assert!(manager.failed_edges.contains_key(&EdgeIdx::from(10u32)));
-        assert_eq!(manager.active_transfers.get(&ChunkId::from(5)).unwrap().retry_count, 1);
+        assert_eq!(
+            manager
+                .active_transfers
+                .get(&ChunkId::from(5))
+                .unwrap()
+                .retry_count,
+            1
+        );
 
         // Complete
         manager.complete_transfer(ChunkId::from(5));
@@ -647,8 +676,12 @@ mod tests {
         assert_eq!(mgr1.check_timeouts(&state).len(), 0);
 
         // With timeout
-        let mut mgr2 = CpuFailoverManager::new(FailoverConfig { timeout_ms: 10, max_retries: 2,
-            cooldown_ms: 5000, health_threshold: 0.5 });
+        let mut mgr2 = CpuFailoverManager::new(FailoverConfig {
+            timeout_ms: 10,
+            max_retries: 2,
+            cooldown_ms: 5000,
+            health_threshold: 0.5,
+        });
         mgr2.track_transfer(ChunkId::from(5), EdgeIdx::from(3u32));
         std::thread::sleep(Duration::from_millis(20));
         let decisions = mgr2.check_timeouts(&state);
@@ -688,7 +721,9 @@ mod tests {
         let cost_matrix = create_test_cost_matrix(&mut state, 10, 10);
 
         // Mark edge as failed to trigger reroute
-        manager.failed_edges.insert(EdgeIdx::from(3u32), Instant::now());
+        manager
+            .failed_edges
+            .insert(EdgeIdx::from(3u32), Instant::now());
 
         let decision = manager.decide(
             ChunkId::from(5),
@@ -747,7 +782,9 @@ mod tests {
 
         // Cooldown check
         assert!(!manager.is_edge_in_cooldown(EdgeIdx::from(3u32)));
-        manager.failed_edges.insert(EdgeIdx::from(3u32), Instant::now());
+        manager
+            .failed_edges
+            .insert(EdgeIdx::from(3u32), Instant::now());
         assert!(manager.is_edge_in_cooldown(EdgeIdx::from(3u32)));
     }
 
@@ -796,8 +833,12 @@ mod tests {
         });
 
         // Add some failed edges
-        manager.failed_edges.insert(EdgeIdx::from(1u32), Instant::now());
-        manager.failed_edges.insert(EdgeIdx::from(2u32), Instant::now());
+        manager
+            .failed_edges
+            .insert(EdgeIdx::from(1u32), Instant::now());
+        manager
+            .failed_edges
+            .insert(EdgeIdx::from(2u32), Instant::now());
 
         assert_eq!(manager.failed_edges.len(), 2);
 
@@ -820,9 +861,21 @@ mod tests {
         manager.track_transfer(ChunkId::from(3), EdgeIdx::from(4u32));
 
         // Report failures
-        manager.report_failure(ChunkId::from(1), EdgeIdx::from(2u32), FailoverReason::TransferFailed);
-        manager.report_failure(ChunkId::from(2), EdgeIdx::from(3u32), FailoverReason::EdgeOffline);
-        manager.report_failure(ChunkId::from(3), EdgeIdx::from(4u32), FailoverReason::EdgeUnhealthy);
+        manager.report_failure(
+            ChunkId::from(1),
+            EdgeIdx::from(2u32),
+            FailoverReason::TransferFailed,
+        );
+        manager.report_failure(
+            ChunkId::from(2),
+            EdgeIdx::from(3u32),
+            FailoverReason::EdgeOffline,
+        );
+        manager.report_failure(
+            ChunkId::from(3),
+            EdgeIdx::from(4u32),
+            FailoverReason::EdgeUnhealthy,
+        );
 
         assert_eq!(manager.failed_edges.len(), 3);
         assert_eq!(manager.active_transfers.len(), 3);
@@ -839,11 +892,21 @@ mod tests {
         manager.track_transfer(ChunkId::from(5), EdgeIdx::from(10u32));
         assert!(manager.cpu.active_transfers.contains_key(&ChunkId::from(5)));
 
-        manager.report_failure(ChunkId::from(5), EdgeIdx::from(10u32), FailoverReason::TransferFailed);
+        manager.report_failure(
+            ChunkId::from(5),
+            EdgeIdx::from(10u32),
+            FailoverReason::TransferFailed,
+        );
         assert!(manager.cpu.failed_edges.contains_key(&EdgeIdx::from(10u32)));
 
-        let decision = manager.decide(ChunkId::from(5), EdgeIdx::from(3u32),
-            FailoverReason::TransferFailed, &state, &paths, &cost_matrix);
+        let decision = manager.decide(
+            ChunkId::from(5),
+            EdgeIdx::from(3u32),
+            FailoverReason::TransferFailed,
+            &state,
+            &paths,
+            &cost_matrix,
+        );
         assert_eq!(decision.chunk_id, ChunkId::from(5));
 
         manager.complete_transfer(ChunkId::from(5));
@@ -859,18 +922,39 @@ mod tests {
         assert!(serde_json::to_string(&config).is_ok());
 
         let reason = FailoverReason::Timeout;
-        let action = FailoverAction::Retry { edge_idx: EdgeIdx::from(5u32) };
-        let decision = FailoverDecision::new(ChunkId::from(10), reason, action.clone(),
-            EdgeIdx::from(5u32), 1);
-        let metrics = FailoverMetrics { total_failovers: 100, retries: 50, reroutes: 30,
-            aborts: 20, avg_recovery_time_us: 1000 };
+        let action = FailoverAction::Retry {
+            edge_idx: EdgeIdx::from(5u32),
+        };
+        let decision = FailoverDecision::new(
+            ChunkId::from(10),
+            reason,
+            action.clone(),
+            EdgeIdx::from(5u32),
+            1,
+        );
+        let metrics = FailoverMetrics {
+            total_failovers: 100,
+            retries: 50,
+            reroutes: 30,
+            aborts: 20,
+            avg_recovery_time_us: 1000,
+        };
 
         // All types should serialize/deserialize correctly
-        assert_eq!(reason, serde_json::from_str(&serde_json::to_string(&reason).unwrap()).unwrap());
-        assert_eq!(action, serde_json::from_str(&serde_json::to_string(&action).unwrap()).unwrap());
-        assert_eq!(decision, serde_json::from_str(&serde_json::to_string(&decision).unwrap()).unwrap());
-        let decoded_metrics: FailoverMetrics = serde_json::from_str(
-            &serde_json::to_string(&metrics).unwrap()).unwrap();
+        assert_eq!(
+            reason,
+            serde_json::from_str(&serde_json::to_string(&reason).unwrap()).unwrap()
+        );
+        assert_eq!(
+            action,
+            serde_json::from_str(&serde_json::to_string(&action).unwrap()).unwrap()
+        );
+        assert_eq!(
+            decision,
+            serde_json::from_str(&serde_json::to_string(&decision).unwrap()).unwrap()
+        );
+        let decoded_metrics: FailoverMetrics =
+            serde_json::from_str(&serde_json::to_string(&metrics).unwrap()).unwrap();
         assert_eq!(metrics.total_failovers, decoded_metrics.total_failovers);
     }
 
@@ -895,10 +979,21 @@ mod tests {
 
         // Mark all edges as unhealthy
         for i in 0..state.edge_count() {
-            let unhealthy = crate::EdgeStateGpu::new(EdgeIdx::from(i as u32), 100_000_000, 10_000, 0.1, 10);
+            let unhealthy =
+                crate::EdgeStateGpu::new(EdgeIdx::from(i as u32), 100_000_000, 10_000, 0.1, 10);
             let _ = state.update_edge(EdgeIdx::from(i as u32), unhealthy);
         }
-        assert!(manager.find_alternative_edges(ChunkId::from(5), EdgeIdx::from(3u32), &state, &paths, &cost_matrix).is_none());
+        assert!(
+            manager
+                .find_alternative_edges(
+                    ChunkId::from(5),
+                    EdgeIdx::from(3u32),
+                    &state,
+                    &paths,
+                    &cost_matrix
+                )
+                .is_none()
+        );
 
         // Test all in cooldown
         let mut manager2 = CpuFailoverManager::new(create_test_config());
@@ -915,9 +1010,21 @@ mod tests {
         cost_matrix2.compute(&state2);
 
         for i in 0..state2.edge_count() {
-            manager2.failed_edges.insert(EdgeIdx::from(i as u32), Instant::now());
+            manager2
+                .failed_edges
+                .insert(EdgeIdx::from(i as u32), Instant::now());
         }
-        assert!(manager2.find_alternative_edges(ChunkId::from(5), EdgeIdx::from(3u32), &state2, &paths, &cost_matrix2).is_none());
+        assert!(
+            manager2
+                .find_alternative_edges(
+                    ChunkId::from(5),
+                    EdgeIdx::from(3u32),
+                    &state2,
+                    &paths,
+                    &cost_matrix2
+                )
+                .is_none()
+        );
     }
 
     #[test]

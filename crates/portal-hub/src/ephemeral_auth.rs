@@ -67,15 +67,10 @@ impl EphemeralRelayToken {
         signing_key: &SigningKey,
         ttl_minutes: Option<i64>,
     ) -> Self {
-        let expires_at = Utc::now() + Duration::minutes(
-            ttl_minutes.unwrap_or(EPHEMERAL_TOKEN_EXPIRATION_MINUTES)
-        );
-        let message = Self::canonical_message(
-            ephemeral_identity_id,
-            &session_id,
-            sponsor_id,
-            expires_at,
-        );
+        let expires_at = Utc::now()
+            + Duration::minutes(ttl_minutes.unwrap_or(EPHEMERAL_TOKEN_EXPIRATION_MINUTES));
+        let message =
+            Self::canonical_message(ephemeral_identity_id, &session_id, sponsor_id, expires_at);
         let signature = signing_key.sign(&message);
 
         Self {
@@ -129,7 +124,9 @@ impl EphemeralRelayToken {
         if now >= self.expires_at {
             std::time::Duration::ZERO
         } else {
-            (self.expires_at - now).to_std().unwrap_or(std::time::Duration::ZERO)
+            (self.expires_at - now)
+                .to_std()
+                .unwrap_or(std::time::Duration::ZERO)
         }
     }
 
@@ -428,7 +425,9 @@ impl EphemeralRelayAuth {
         }
 
         // Get identity
-        let identity = self.identities.get(&token.ephemeral_identity_id)
+        let identity = self
+            .identities
+            .get(&token.ephemeral_identity_id)
             .ok_or_else(|| {
                 tracing::debug!(
                     ephemeral_id = %token.ephemeral_identity_id,
@@ -478,7 +477,9 @@ impl EphemeralRelayAuth {
 
         // Update statistics
         identity.total_relays.fetch_add(1, Ordering::Relaxed);
-        identity.total_bytes.fetch_add(payload_size as u64, Ordering::Relaxed);
+        identity
+            .total_bytes
+            .fetch_add(payload_size as u64, Ordering::Relaxed);
         self.total_relays.fetch_add(1, Ordering::Relaxed);
 
         Ok(RelayAuthorization {
@@ -516,7 +517,8 @@ impl EphemeralRelayAuth {
 
     /// Revoke all identities in a session
     pub fn revoke_session(&self, session_id: &str) -> Vec<Uuid> {
-        let identity_ids: Vec<Uuid> = self.session_index
+        let identity_ids: Vec<Uuid> = self
+            .session_index
             .get(session_id)
             .map(|ids| ids.clone())
             .unwrap_or_default();
@@ -532,7 +534,8 @@ impl EphemeralRelayAuth {
     /// Cleanup expired identities
     pub fn cleanup_expired(&self) -> Vec<Uuid> {
         let now = Utc::now();
-        let expired: Vec<Uuid> = self.identities
+        let expired: Vec<Uuid> = self
+            .identities
             .iter()
             .filter(|entry| entry.value().expires_at <= now)
             .map(|entry| *entry.key())
@@ -547,8 +550,9 @@ impl EphemeralRelayAuth {
 
     /// Get statistics for an ephemeral identity
     pub fn get_stats(&self, ephemeral_identity_id: Uuid) -> Option<EphemeralRelayStats> {
-        self.identities.get(&ephemeral_identity_id).map(|identity| {
-            EphemeralRelayStats {
+        self.identities
+            .get(&ephemeral_identity_id)
+            .map(|identity| EphemeralRelayStats {
                 ephemeral_identity_id,
                 session_id: identity.session_id.clone(),
                 sponsor_id: identity.sponsor_id,
@@ -556,8 +560,7 @@ impl EphemeralRelayAuth {
                 total_bytes: identity.total_bytes.load(Ordering::Relaxed),
                 created_at: identity.created_at,
                 expires_at: identity.expires_at,
-            }
-        })
+            })
     }
 
     /// Get all identities in a session
@@ -696,12 +699,8 @@ mod tests {
 
         // Create expired token
         let expires_at = Utc::now() - Duration::minutes(1);
-        let message = EphemeralRelayToken::canonical_message(
-            identity_id,
-            "test",
-            Uuid::new_v4(),
-            expires_at,
-        );
+        let message =
+            EphemeralRelayToken::canonical_message(identity_id, "test", Uuid::new_v4(), expires_at);
         let signature = signing_key.sign(&message);
 
         let token = EphemeralRelayToken {
@@ -759,14 +758,16 @@ mod tests {
         let session_id = "test-session".to_string();
         let sponsor_id = Uuid::new_v4();
 
-        let token = auth.register(
-            identity_id,
-            session_id,
-            sponsor_id,
-            verifying_key,
-            EphemeralRelayPermissions::default(),
-            30,
-        ).unwrap();
+        let token = auth
+            .register(
+                identity_id,
+                session_id,
+                sponsor_id,
+                verifying_key,
+                EphemeralRelayPermissions::default(),
+                30,
+            )
+            .unwrap();
 
         assert_eq!(token.ephemeral_identity_id, identity_id);
 
@@ -787,14 +788,16 @@ mod tests {
         let mut perms = EphemeralRelayPermissions::default();
         perms.add_target("allowed-target".to_string()).unwrap();
 
-        let token = auth.register(
-            Uuid::new_v4(),
-            "session".to_string(),
-            Uuid::new_v4(),
-            verifying_key,
-            perms,
-            30,
-        ).unwrap();
+        let token = auth
+            .register(
+                Uuid::new_v4(),
+                "session".to_string(),
+                Uuid::new_v4(),
+                verifying_key,
+                perms,
+                30,
+            )
+            .unwrap();
 
         // Allowed target
         let result = auth.authorize_relay(&token, "allowed-target", 100).await;
@@ -813,14 +816,16 @@ mod tests {
         let mut perms = EphemeralRelayPermissions::default();
         perms.max_payload_size = 100;
 
-        let token = auth.register(
-            Uuid::new_v4(),
-            "session".to_string(),
-            Uuid::new_v4(),
-            verifying_key,
-            perms,
-            30,
-        ).unwrap();
+        let token = auth
+            .register(
+                Uuid::new_v4(),
+                "session".to_string(),
+                Uuid::new_v4(),
+                verifying_key,
+                perms,
+                30,
+            )
+            .unwrap();
 
         // Too large
         let result = auth.authorize_relay(&token, "target", 200).await;
@@ -840,7 +845,8 @@ mod tests {
             verifying_key,
             EphemeralRelayPermissions::default(),
             30,
-        ).unwrap();
+        )
+        .unwrap();
 
         assert!(auth.revoke(identity_id).is_ok());
         assert!(auth.get_stats(identity_id).is_none());
@@ -861,7 +867,8 @@ mod tests {
                 verifying_key,
                 EphemeralRelayPermissions::default(),
                 30,
-            ).unwrap();
+            )
+            .unwrap();
         }
 
         let revoked = auth.revoke_session(&session_id);
@@ -881,7 +888,8 @@ mod tests {
             verifying_key,
             EphemeralRelayPermissions::default(),
             30,
-        ).unwrap();
+        )
+        .unwrap();
 
         let stats = auth.service_stats();
         assert_eq!(stats.total_registered, 1);
@@ -905,14 +913,16 @@ mod tests {
         let (_, verifying_key) = create_test_key();
         let identity_id = Uuid::new_v4();
 
-        let token = auth.register(
-            identity_id,
-            "session".to_string(),
-            Uuid::new_v4(),
-            verifying_key,
-            EphemeralRelayPermissions::default(),
-            30,
-        ).unwrap();
+        let token = auth
+            .register(
+                identity_id,
+                "session".to_string(),
+                Uuid::new_v4(),
+                verifying_key,
+                EphemeralRelayPermissions::default(),
+                30,
+            )
+            .unwrap();
 
         // Revoke
         auth.revoke(identity_id).unwrap();

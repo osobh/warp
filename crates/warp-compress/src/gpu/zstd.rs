@@ -14,7 +14,7 @@
 use crate::{Compressor, Error, Result};
 use std::sync::Arc;
 use tracing::{debug, warn};
-use warp_gpu::{GpuContext, PinnedMemoryPool, GpuCompressor as GpuCompressorTrait, GpuOp};
+use warp_gpu::{GpuCompressor as GpuCompressorTrait, GpuContext, GpuOp, PinnedMemoryPool};
 
 /// GPU-accelerated Zstandard compressor
 ///
@@ -48,8 +48,10 @@ impl GpuZstdCompressor {
     /// # Errors
     /// Returns an error if GPU initialization fails or level is invalid
     pub fn with_level(level: i32) -> Result<Self> {
-        let context = Arc::new(GpuContext::new()
-            .map_err(|e| Error::Gpu(format!("Failed to initialize GPU context: {}", e)))?);
+        let context = Arc::new(
+            GpuContext::new()
+                .map_err(|e| Error::Gpu(format!("Failed to initialize GPU context: {}", e)))?,
+        );
 
         let memory_pool = Arc::new(PinnedMemoryPool::with_defaults(context.context().clone()));
 
@@ -130,7 +132,8 @@ impl GpuZstdCompressor {
         }
 
         // Acquire pinned buffer from pool for efficient transfer
-        let mut pinned_input = self.memory_pool
+        let mut pinned_input = self
+            .memory_pool
             .acquire(input.len())
             .map_err(|e| Error::Gpu(format!("Failed to acquire pinned buffer: {}", e)))?;
 
@@ -140,7 +143,8 @@ impl GpuZstdCompressor {
 
         // Transfer data to GPU using stream-based API
         debug!("Transferring {} bytes to GPU for compression", input.len());
-        let d_input = self.context
+        let d_input = self
+            .context
             .host_to_device(pinned_input.as_slice())
             .map_err(|e| Error::Gpu(format!("Failed to copy data to GPU: {}", e)))?;
 
@@ -149,7 +153,8 @@ impl GpuZstdCompressor {
 
         // Process data on GPU
         // In a full nvCOMP implementation, compression would happen here on GPU
-        let processed = self.context
+        let processed = self
+            .context
             .device_to_host(&d_input)
             .map_err(|e| Error::Gpu(format!("Failed to copy data from GPU: {}", e)))?;
 
@@ -188,7 +193,8 @@ impl GpuZstdCompressor {
         }
 
         // Acquire pinned buffer for efficient transfer
-        let mut pinned_data = self.memory_pool
+        let mut pinned_data = self
+            .memory_pool
             .acquire(decompressed.len())
             .map_err(|e| Error::Gpu(format!("Failed to acquire pinned buffer: {}", e)))?;
 
@@ -201,7 +207,8 @@ impl GpuZstdCompressor {
             "Transferring {} bytes to GPU for post-processing",
             decompressed.len()
         );
-        let d_data = self.context
+        let d_data = self
+            .context
             .host_to_device(pinned_data.as_slice())
             .map_err(|e| Error::Gpu(format!("Failed to copy data to GPU: {}", e)))?;
 
@@ -209,7 +216,8 @@ impl GpuZstdCompressor {
         self.memory_pool.release(pinned_data);
 
         // Copy back from GPU
-        let result = self.context
+        let result = self
+            .context
             .device_to_host(&d_data)
             .map_err(|e| Error::Gpu(format!("Failed to copy data from GPU: {}", e)))?;
 
@@ -233,10 +241,7 @@ impl Compressor for GpuZstdCompressor {
 
         // Use CPU for small inputs to avoid transfer overhead
         if !self.should_use_gpu(input.len()) {
-            debug!(
-                "Input too small for GPU ({} bytes), using CPU",
-                input.len()
-            );
+            debug!("Input too small for GPU ({} bytes), using CPU", input.len());
             return self.cpu_fallback.compress(input);
         }
 
@@ -257,10 +262,7 @@ impl Compressor for GpuZstdCompressor {
 
         // Use CPU for small inputs
         if !self.should_use_gpu(input.len()) {
-            debug!(
-                "Input too small for GPU ({} bytes), using CPU",
-                input.len()
-            );
+            debug!("Input too small for GPU ({} bytes), using CPU", input.len());
             return self.cpu_fallback.decompress(input);
         }
 
@@ -409,23 +411,17 @@ mod tests {
             let context = Arc::new(context);
             let memory_pool = Arc::new(PinnedMemoryPool::with_defaults(context.context().clone()));
 
-            assert!(GpuZstdCompressor::with_context_and_level(
-                context.clone(),
-                memory_pool.clone(),
-                0
-            )
-            .is_err());
-
-            assert!(GpuZstdCompressor::with_context_and_level(
-                context.clone(),
-                memory_pool.clone(),
-                23
-            )
-            .is_err());
+            assert!(
+                GpuZstdCompressor::with_context_and_level(context.clone(), memory_pool.clone(), 0)
+                    .is_err()
+            );
 
             assert!(
-                GpuZstdCompressor::with_context_and_level(context, memory_pool, -1).is_err()
+                GpuZstdCompressor::with_context_and_level(context.clone(), memory_pool.clone(), 23)
+                    .is_err()
             );
+
+            assert!(GpuZstdCompressor::with_context_and_level(context, memory_pool, -1).is_err());
         }
     }
 
@@ -493,12 +489,9 @@ mod tests {
             let memory_pool = Arc::new(PinnedMemoryPool::with_defaults(context.context().clone()));
 
             // Create two compressors sharing the same context and pool
-            let comp1 = GpuZstdCompressor::with_context_and_level(
-                context.clone(),
-                memory_pool.clone(),
-                3,
-            )
-            .unwrap();
+            let comp1 =
+                GpuZstdCompressor::with_context_and_level(context.clone(), memory_pool.clone(), 3)
+                    .unwrap();
 
             let comp2 =
                 GpuZstdCompressor::with_context_and_level(context.clone(), memory_pool.clone(), 3)
@@ -545,7 +538,10 @@ mod tests {
             // Check memory pool statistics
             let stats = compressor.memory_pool().statistics();
             assert!(stats.allocations > 0);
-            assert!(stats.cache_hits > 0, "Expected cache hits from buffer reuse");
+            assert!(
+                stats.cache_hits > 0,
+                "Expected cache hits from buffer reuse"
+            );
         }
     }
 }

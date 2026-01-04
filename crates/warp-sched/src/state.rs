@@ -92,17 +92,13 @@ impl CpuStateBuffers {
 
         // Check if already exists
         if self.chunk_index.contains_key(&hash) {
-            return Err(SchedError::InvalidState(
-                "chunk already exists".to_string(),
-            ));
+            return Err(SchedError::InvalidState("chunk already exists".to_string()));
         }
 
         // Find next available slot
         let id = self.next_chunk_id;
         if id as usize >= self.max_chunks {
-            return Err(SchedError::BufferOverflow(
-                "chunk buffer full".to_string(),
-            ));
+            return Err(SchedError::BufferOverflow("chunk buffer full".to_string()));
         }
 
         self.chunks[id as usize] = Some(state);
@@ -585,8 +581,14 @@ mod tests {
 
         buffers.update_chunks_batch(&updates).unwrap();
 
-        assert_eq!(buffers.get_chunk(id1).unwrap().status, ChunkStatus::InTransfer);
-        assert_eq!(buffers.get_chunk(id2).unwrap().status, ChunkStatus::Completed);
+        assert_eq!(
+            buffers.get_chunk(id1).unwrap().status,
+            ChunkStatus::InTransfer
+        );
+        assert_eq!(
+            buffers.get_chunk(id2).unwrap().status,
+            ChunkStatus::Completed
+        );
     }
 
     #[test]
@@ -605,8 +607,20 @@ mod tests {
 
         buffers.update_edges_batch(&updates).unwrap();
 
-        assert_eq!(buffers.get_edge(EdgeIdx(0)).unwrap().available_bandwidth_bps, 1_500_000_000);
-        assert_eq!(buffers.get_edge(EdgeIdx(1)).unwrap().available_bandwidth_bps, 2_500_000_000);
+        assert_eq!(
+            buffers
+                .get_edge(EdgeIdx(0))
+                .unwrap()
+                .available_bandwidth_bps,
+            1_500_000_000
+        );
+        assert_eq!(
+            buffers
+                .get_edge(EdgeIdx(1))
+                .unwrap()
+                .available_bandwidth_bps,
+            2_500_000_000
+        );
     }
 
     #[test]
@@ -662,8 +676,12 @@ mod tests {
     fn test_capacity_limit_edges() {
         let mut buffers = CpuStateBuffers::new(10, 2);
 
-        buffers.add_edge(100, make_edge_state(100, 1_000_000_000, 0.95)).unwrap();
-        buffers.add_edge(200, make_edge_state(200, 2_000_000_000, 0.90)).unwrap();
+        buffers
+            .add_edge(100, make_edge_state(100, 1_000_000_000, 0.95))
+            .unwrap();
+        buffers
+            .add_edge(200, make_edge_state(200, 2_000_000_000, 0.90))
+            .unwrap();
 
         let result = buffers.add_edge(300, make_edge_state(300, 3_000_000_000, 0.85));
         assert!(result.is_err());
@@ -739,7 +757,9 @@ mod tests {
     fn test_gpu_buffers_snapshot() {
         let mut buffers = GpuStateBuffers::new(10, 10);
         buffers.add_chunk(make_chunk_state(1, 1024, 128)).unwrap();
-        buffers.add_edge(100, make_edge_state(100, 1_000_000_000, 0.95)).unwrap();
+        buffers
+            .add_edge(100, make_edge_state(100, 1_000_000_000, 0.95))
+            .unwrap();
 
         let snapshot = buffers.snapshot();
         assert_eq!(snapshot.chunk_count, 1);

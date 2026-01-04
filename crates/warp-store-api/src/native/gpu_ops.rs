@@ -8,19 +8,19 @@
 //! These endpoints require the `gpu` feature to be enabled.
 
 use axum::{
+    Json,
     extract::{Path, State},
     http::StatusCode,
     response::IntoResponse,
-    Json,
 };
 use serde::{Deserialize, Serialize};
 use std::time::Instant;
 
-use warp_store::backend::StorageBackend;
 use warp_store::ObjectKey;
+use warp_store::backend::StorageBackend;
 
-use crate::error::{ApiError, ApiResult};
 use crate::AppState;
+use crate::error::{ApiError, ApiResult};
 
 // =============================================================================
 // GPU Hash Operations
@@ -66,7 +66,7 @@ pub async fn gpu_hash<B: StorageBackend>(
     State(state): State<AppState<B>>,
     Json(req): Json<GpuHashRequest>,
 ) -> ApiResult<Json<GpuHashResponse>> {
-    use warp_gpu::{GpuContext, Blake3Hasher, GpuOp};
+    use warp_gpu::{Blake3Hasher, GpuContext, GpuOp};
 
     if req.algorithm != "blake3" {
         return Err(ApiError::InvalidRequest(format!(
@@ -206,14 +206,16 @@ pub async fn gpu_encrypt<B: StorageBackend>(
     State(state): State<AppState<B>>,
     Json(req): Json<GpuEncryptRequest>,
 ) -> ApiResult<Json<GpuEncryptResponse>> {
-    use warp_gpu::{GpuContext, ChaCha20Poly1305, GpuOp};
+    use warp_gpu::{ChaCha20Poly1305, GpuContext, GpuOp};
     use warp_store::{ObjectData, PutOptions};
 
     // Parse encryption key
     let key_bytes = hex::decode(&req.encryption_key)
         .map_err(|_| ApiError::InvalidRequest("Invalid encryption key hex".into()))?;
     if key_bytes.len() != 32 {
-        return Err(ApiError::InvalidRequest("Encryption key must be 32 bytes".into()));
+        return Err(ApiError::InvalidRequest(
+            "Encryption key must be 32 bytes".into(),
+        ));
     }
     let mut key = [0u8; 32];
     key.copy_from_slice(&key_bytes);
@@ -230,7 +232,8 @@ pub async fn gpu_encrypt<B: StorageBackend>(
         n
     } else {
         let mut n = [0u8; 12];
-        getrandom::getrandom(&mut n).map_err(|_| ApiError::Internal("Failed to generate nonce".into()))?;
+        getrandom::getrandom(&mut n)
+            .map_err(|_| ApiError::Internal("Failed to generate nonce".into()))?;
         n
     };
 
@@ -268,11 +271,14 @@ pub async fn gpu_encrypt<B: StorageBackend>(
     // Store encrypted object
     let dest_key = ObjectKey::new(&req.bucket, &req.dest_key)?;
     let encrypted_size = ciphertext.len() as u64;
-    state.store.put_with_options(
-        &dest_key,
-        ObjectData::from(ciphertext),
-        PutOptions::with_content_type("application/octet-stream"),
-    ).await?;
+    state
+        .store
+        .put_with_options(
+            &dest_key,
+            ObjectData::from(ciphertext),
+            PutOptions::with_content_type("application/octet-stream"),
+        )
+        .await?;
 
     let time_ms = elapsed.as_millis() as u64;
     let throughput_gbps = if elapsed.as_secs_f64() > 0.0 {
@@ -294,17 +300,19 @@ pub async fn gpu_encrypt<B: StorageBackend>(
 }
 
 #[cfg(feature = "gpu")]
-fn cpu_encrypt(data: &[u8], key: &[u8; 32], nonce: &[u8; 12]) -> Result<(Vec<u8>, [u8; 16], bool), ApiError> {
-    use chacha20poly1305::{ChaCha20Poly1305 as CpuChaCha, KeyInit, AeadInPlace};
+fn cpu_encrypt(
+    data: &[u8],
+    key: &[u8; 32],
+    nonce: &[u8; 12],
+) -> Result<(Vec<u8>, [u8; 16], bool), ApiError> {
     use chacha20poly1305::aead::generic_array::GenericArray;
+    use chacha20poly1305::{AeadInPlace, ChaCha20Poly1305 as CpuChaCha, KeyInit};
 
     let cipher = CpuChaCha::new(GenericArray::from_slice(key));
     let mut buffer = data.to_vec();
-    let tag = cipher.encrypt_in_place_detached(
-        GenericArray::from_slice(nonce),
-        &[],
-        &mut buffer,
-    ).map_err(|_| ApiError::Internal("Encryption failed".into()))?;
+    let tag = cipher
+        .encrypt_in_place_detached(GenericArray::from_slice(nonce), &[], &mut buffer)
+        .map_err(|_| ApiError::Internal("Encryption failed".into()))?;
 
     let mut tag_bytes = [0u8; 16];
     tag_bytes.copy_from_slice(tag.as_slice());
@@ -412,9 +420,7 @@ pub struct GpuStats {
 }
 
 /// Get GPU stats
-pub async fn gpu_stats<B: StorageBackend>(
-    State(_state): State<AppState<B>>,
-) -> Json<GpuStats> {
+pub async fn gpu_stats<B: StorageBackend>(State(_state): State<AppState<B>>) -> Json<GpuStats> {
     #[cfg(feature = "gpu")]
     let (gpu_enabled, gpu_available) = {
         use warp_gpu::GpuContext;
@@ -428,9 +434,6 @@ pub async fn gpu_stats<B: StorageBackend>(
         gpu_enabled,
         gpu_available,
         gpu_threshold_bytes: 65536, // 64KB default threshold
-        supported_ops: vec![
-            "blake3".to_string(),
-            "chacha20-poly1305".to_string(),
-        ],
+        supported_ops: vec!["blake3".to_string(), "chacha20-poly1305".to_string()],
     })
 }

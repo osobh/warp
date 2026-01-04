@@ -216,7 +216,9 @@ impl ContentClassifier {
                 let score = Self::score_for_neural(entropy, 0.7, confidence);
                 SuitabilityScore::neural_suitable(content_type, score, entropy, confidence)
             }
-            ContentType::Text => SuitabilityScore::lossless_preferred(content_type, entropy, confidence),
+            ContentType::Text => {
+                SuitabilityScore::lossless_preferred(content_type, entropy, confidence)
+            }
             ContentType::Unknown => {
                 // Conservative - prefer lossless for unknown data
                 SuitabilityScore::lossless_preferred(content_type, entropy, confidence)

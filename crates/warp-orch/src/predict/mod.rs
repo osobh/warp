@@ -328,7 +328,8 @@ impl PatternDetector {
             let avg_burst_size = self.records.len() / burst_count;
 
             // Calculate average interval between bursts
-            let avg_interval = large_gaps.iter().map(|&&g| g).sum::<u64>() / large_gaps.len() as u64;
+            let avg_interval =
+                large_gaps.iter().map(|&&g| g).sum::<u64>() / large_gaps.len() as u64;
 
             if avg_burst_size >= 5 {
                 return Some(AccessPattern::Bursty {
@@ -592,7 +593,11 @@ impl Predictor {
             .collect();
 
         candidates.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
-        candidates.into_iter().take(count).map(|(id, _)| id).collect()
+        candidates
+            .into_iter()
+            .take(count)
+            .map(|(id, _)| id)
+            .collect()
     }
 }
 
@@ -620,11 +625,7 @@ impl AccessAnalytics {
         let unique_chunks = detector.access_counts.len();
 
         let avg_latency_ms = if !detector.records.is_empty() {
-            detector
-                .records
-                .iter()
-                .map(|r| r.latency_ms)
-                .sum::<u64>() as f64
+            detector.records.iter().map(|r| r.latency_ms).sum::<u64>() as f64
                 / detector.records.len() as f64
         } else {
             0.0
@@ -673,7 +674,6 @@ impl AccessAnalytics {
         }
     }
 }
-
 
 #[cfg(test)]
 mod tests;

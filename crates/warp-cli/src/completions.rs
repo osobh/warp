@@ -5,7 +5,7 @@
 
 use anyhow::{Context, Result};
 use clap::CommandFactory;
-use clap_complete::{generate, Shell};
+use clap_complete::{Shell, generate};
 use std::io::Write;
 use std::path::{Path, PathBuf};
 

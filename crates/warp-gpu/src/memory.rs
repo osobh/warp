@@ -19,8 +19,8 @@
 
 use crate::{Error, Result};
 use cudarc::driver::CudaContext;
-use std::sync::{Arc, Mutex};
 use std::collections::VecDeque;
+use std::sync::{Arc, Mutex};
 use tracing::{debug, trace, warn};
 
 /// A pinned (page-locked) host memory buffer
@@ -83,6 +83,12 @@ impl PinnedBuffer {
     /// # Errors
     /// Returns error if src.len() > capacity
     pub fn copy_from_slice(&mut self, src: &[u8]) -> Result<()> {
+        debug_assert!(
+            src.len() <= self.capacity,
+            "copy_from_slice: source length {} exceeds buffer capacity {}",
+            src.len(),
+            self.capacity
+        );
         if src.len() > self.capacity {
             return Err(Error::InvalidOperation(format!(
                 "Source size {} exceeds buffer capacity {}",
@@ -141,10 +147,10 @@ impl Default for PoolConfig {
         Self {
             max_total_memory: Self::default_max_memory(),
             size_classes: vec![
-                64 * 1024,      // 64KB
-                1024 * 1024,    // 1MB
-                16 * 1024 * 1024,  // 16MB
-                64 * 1024 * 1024,  // 64MB
+                64 * 1024,        // 64KB
+                1024 * 1024,      // 1MB
+                16 * 1024 * 1024, // 16MB
+                64 * 1024 * 1024, // 64MB
             ],
             max_buffers_per_class: 4,
             track_statistics: true,
@@ -208,6 +214,14 @@ impl PinnedMemoryPool {
             config.max_total_memory / (1024 * 1024)
         );
 
+        debug_assert_eq!(
+            pools.len(),
+            config.size_classes.len(),
+            "pool count {} must match size_class count {}",
+            pools.len(),
+            config.size_classes.len()
+        );
+
         Self {
             config,
             pools,
@@ -229,6 +243,7 @@ impl PinnedMemoryPool {
     /// # Returns
     /// A pooled buffer that can be returned via `release`
     pub fn acquire(&self, size: usize) -> Result<PinnedBuffer> {
+        debug_assert!(size > 0, "acquire() called with size 0");
         let size_class_idx = self.find_size_class(size);
 
         if let Some(idx) = size_class_idx {
@@ -324,14 +339,16 @@ impl PinnedMemoryPool {
 
     /// Find the smallest size class that fits the requested size
     fn find_size_class(&self, size: usize) -> Option<usize> {
-        self.config.size_classes
+        self.config
+            .size_classes
             .iter()
             .position(|&class_size| class_size >= size)
     }
 
     /// Find the exact size class matching the size
     fn find_exact_size_class(&self, size: usize) -> Option<usize> {
-        self.config.size_classes
+        self.config
+            .size_classes
             .iter()
             .position(|&class_size| class_size == size)
     }

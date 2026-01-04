@@ -1,8 +1,8 @@
 //! Tensor cache with GPU-optimized eviction
 
 use std::collections::HashMap;
-use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Duration, Instant};
 
 use dashmap::DashMap;
@@ -177,7 +177,8 @@ impl TensorCache {
     /// Select tensors for eviction to free at least `bytes_needed`
     pub fn select_for_eviction(&self, bytes_needed: u64) -> Vec<TensorId> {
         // Clean up expired protections
-        self.prefetch_protected.retain(|_, expiry| Instant::now() < *expiry);
+        self.prefetch_protected
+            .retain(|_, expiry| Instant::now() < *expiry);
 
         // Calculate eviction scores
         let mut candidates: Vec<(TensorId, f64, u64)> = self

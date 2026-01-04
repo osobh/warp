@@ -6,7 +6,7 @@
 
 use axum::{
     extract::{Path, State},
-    http::{header, StatusCode},
+    http::{StatusCode, header},
     response::{IntoResponse, Response},
 };
 use bytes::Bytes;
@@ -15,8 +15,8 @@ use serde::{Deserialize, Serialize};
 use warp_store::backend::StorageBackend;
 use warp_store::version::VersioningMode;
 
-use crate::error::{ApiError, ApiResult};
 use crate::AppState;
+use crate::error::{ApiError, ApiResult};
 
 // =============================================================================
 // XML Types for S3 Versioning API

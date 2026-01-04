@@ -403,12 +403,7 @@ impl ExportInfo {
     }
 
     /// Set block sizes
-    pub fn block_sizes(
-        mut self,
-        min: u32,
-        preferred: u32,
-        max: u32,
-    ) -> Self {
+    pub fn block_sizes(mut self, min: u32, preferred: u32, max: u32) -> Self {
         self.min_block_size = min;
         self.preferred_block_size = preferred;
         self.max_block_size = max;
@@ -457,8 +452,7 @@ mod tests {
 
     #[test]
     fn test_export_info() {
-        let info = ExportInfo::new("test", 1024 * 1024 * 1024)
-            .block_sizes(512, 4096, 1024 * 1024);
+        let info = ExportInfo::new("test", 1024 * 1024 * 1024).block_sizes(512, 4096, 1024 * 1024);
 
         assert_eq!(info.name, "test");
         assert_eq!(info.size, 1024 * 1024 * 1024);

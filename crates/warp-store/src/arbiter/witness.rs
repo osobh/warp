@@ -1,8 +1,8 @@
 //! Witness node implementation for quorum tiebreaking
 
 use std::collections::HashMap;
-use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Duration, Instant, SystemTime};
 
 use dashmap::DashMap;
@@ -10,7 +10,7 @@ use parking_lot::RwLock;
 use tokio::sync::broadcast;
 use tracing::{debug, info, warn};
 
-use super::vote::{NodeId, ElectionId, Vote, VoteTracker, QuorumStatus};
+use super::vote::{ElectionId, NodeId, QuorumStatus, Vote, VoteTracker};
 use crate::replication::DomainId;
 
 /// State of a witness node
@@ -264,7 +264,8 @@ impl WitnessNode {
         info!(node_id = self.node_id, "Witness node started");
 
         // Register ourselves with vote tracker
-        self.vote_tracker.register_node(self.node_id, self.config.domain_id, true);
+        self.vote_tracker
+            .register_node(self.node_id, self.config.domain_id, true);
 
         // Start heartbeat loop
         self.spawn_heartbeat_loop();
@@ -293,15 +294,12 @@ impl WitnessNode {
 
     /// Register a peer
     pub fn register_peer(&self, node_id: NodeId, is_storage: bool, domain_id: DomainId) {
-        self.peers.insert(node_id, PeerInfo::new(node_id, is_storage, domain_id));
-        self.vote_tracker.register_node(node_id, domain_id, !is_storage);
+        self.peers
+            .insert(node_id, PeerInfo::new(node_id, is_storage, domain_id));
+        self.vote_tracker
+            .register_node(node_id, domain_id, !is_storage);
 
-        debug!(
-            node_id,
-            is_storage,
-            domain_id,
-            "Registered peer"
-        );
+        debug!(node_id, is_storage, domain_id, "Registered peer");
     }
 
     /// Remove a peer
@@ -332,17 +330,15 @@ impl WitnessNode {
         let sequence = self.sequence.fetch_add(1, Ordering::SeqCst);
         let state = *self.state.read();
 
-        let known_peers: Vec<NodeId> = self.peers
+        let known_peers: Vec<NodeId> = self
+            .peers
             .iter()
             .filter(|p| p.is_alive(self.config.peer_timeout))
             .map(|p| p.node_id)
             .collect();
 
         // Get current election if any
-        let current_election = self.active_elections
-            .iter()
-            .next()
-            .map(|e| e.election_id);
+        let current_election = self.active_elections.iter().next().map(|e| e.election_id);
 
         // Get last vote
         let last_vote = self.votes_cast.read().last().cloned();
@@ -361,20 +357,20 @@ impl WitnessNode {
     /// Participate in an election
     pub fn join_election(&self, election_id: ElectionId, term: u64) {
         if self.active_elections.len() >= self.config.max_elections {
-            warn!(
-                election_id,
-                "Too many active elections, rejecting"
-            );
+            warn!(election_id, "Too many active elections, rejecting");
             return;
         }
 
-        self.active_elections.insert(election_id, ElectionParticipation {
+        self.active_elections.insert(
             election_id,
-            term,
-            joined_at: Instant::now(),
-            vote: None,
-            seen_votes: HashMap::new(),
-        });
+            ElectionParticipation {
+                election_id,
+                term,
+                joined_at: Instant::now(),
+                vote: None,
+                seen_votes: HashMap::new(),
+            },
+        );
 
         *self.state.write() = WitnessState::Voting;
 
@@ -400,18 +396,18 @@ impl WitnessNode {
         // Submit to vote tracker
         self.vote_tracker.cast_vote(vote.clone());
 
-        info!(
-            election_id,
-            candidate,
-            term,
-            "Cast vote"
-        );
+        info!(election_id, candidate, term, "Cast vote");
 
         Some(vote)
     }
 
     /// Auto-vote based on configuration
-    pub fn auto_vote(&self, election_id: ElectionId, candidates: &[NodeId], term: u64) -> Option<Vote> {
+    pub fn auto_vote(
+        &self,
+        election_id: ElectionId,
+        candidates: &[NodeId],
+        term: u64,
+    ) -> Option<Vote> {
         if !self.config.auto_vote {
             return None;
         }

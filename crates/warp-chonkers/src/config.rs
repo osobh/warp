@@ -35,12 +35,12 @@ impl Default for ChonkersConfig {
     fn default() -> Self {
         Self {
             num_layers: 3,
-            base_target_size: 4096,       // 4 KB base
-            layer_multiplier: 4,           // 4x per layer: 4KB, 16KB, 64KB
-            min_size_ratio: 0.25,          // min = 25% of target
-            max_size_ratio: 4.0,           // max = 400% of target
-            min_period_length: 64,         // minimum period to detect
-            min_repetitions: 3,            // need at least 3 repetitions
+            base_target_size: 4096, // 4 KB base
+            layer_multiplier: 4,    // 4x per layer: 4KB, 16KB, 64KB
+            min_size_ratio: 0.25,   // min = 25% of target
+            max_size_ratio: 4.0,    // max = 400% of target
+            min_period_length: 64,  // minimum period to detect
+            min_repetitions: 3,     // need at least 3 repetitions
         }
     }
 }
@@ -76,7 +76,7 @@ impl ChonkersConfig {
     pub fn small_files() -> Self {
         Self {
             num_layers: 2,
-            base_target_size: 2048,        // 2 KB
+            base_target_size: 2048, // 2 KB
             layer_multiplier: 4,
             ..Default::default()
         }
@@ -91,8 +91,8 @@ impl ChonkersConfig {
     pub fn large_files() -> Self {
         Self {
             num_layers: 4,
-            base_target_size: 8192,        // 8 KB
-            layer_multiplier: 4,           // 8KB, 32KB, 128KB, 512KB
+            base_target_size: 8192, // 8 KB
+            layer_multiplier: 4,    // 8KB, 32KB, 128KB, 512KB
             ..Default::default()
         }
     }
@@ -101,9 +101,9 @@ impl ChonkersConfig {
     pub fn backup() -> Self {
         Self {
             num_layers: 3,
-            base_target_size: 16384,       // 16 KB
+            base_target_size: 16384, // 16 KB
             layer_multiplier: 4,
-            min_period_length: 128,        // larger periods for backup
+            min_period_length: 128, // larger periods for backup
             ..Default::default()
         }
     }
@@ -228,8 +228,8 @@ mod tests {
         assert_eq!(layer.min_size, 1024);
         assert_eq!(layer.max_size, 16384);
 
-        assert!(!layer.is_valid_size(500));   // too small
-        assert!(layer.is_valid_size(2000));   // valid
+        assert!(!layer.is_valid_size(500)); // too small
+        assert!(layer.is_valid_size(2000)); // valid
         assert!(!layer.is_valid_size(20000)); // too large
 
         assert!(layer.is_kitten(500));
