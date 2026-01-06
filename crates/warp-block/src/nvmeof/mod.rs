@@ -104,8 +104,8 @@ pub mod transport;
 
 // Re-exports
 pub use capsule::{
-    CommandCapsule, ConnectData, ControllerCapabilities, ControllerConfiguration,
-    ControllerStatus, IcReq, IcResp, PduHeader, PduType, PropertyOffset, ResponseCapsule,
+    CommandCapsule, ConnectData, ControllerCapabilities, ControllerConfiguration, ControllerStatus,
+    IcReq, IcResp, PduHeader, PduType, PropertyOffset, ResponseCapsule,
 };
 pub use command::{
     AdminOpcode, FabricsType, FeatureId, IdentifyCns, IdentifyController, IdentifyNamespace,

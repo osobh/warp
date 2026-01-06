@@ -321,8 +321,7 @@ impl IoQueue {
 
         trace!(
             "Submitted I/O command on queue {}, cid={}",
-            self.config.qid,
-            cid
+            self.config.qid, cid
         );
         Ok(cid)
     }
@@ -349,8 +348,7 @@ impl IoQueue {
 
         trace!(
             "Completed I/O command on queue {}, cid={}",
-            self.config.qid,
-            cid
+            self.config.qid, cid
         );
         Ok(())
     }

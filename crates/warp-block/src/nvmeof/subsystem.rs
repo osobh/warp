@@ -4,8 +4,8 @@
 //! and host access control.
 
 use std::collections::{HashMap, HashSet};
-use std::sync::atomic::{AtomicBool, AtomicU16, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, AtomicU16, Ordering};
 
 use parking_lot::RwLock;
 use tracing::{debug, info, warn};

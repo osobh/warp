@@ -4,8 +4,8 @@
 //! lifecycle, command processing, and state management.
 
 use std::net::SocketAddr;
-use std::sync::atomic::{AtomicBool, AtomicU16, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, AtomicU16, Ordering};
 use std::time::{Duration, Instant};
 
 use async_trait::async_trait;
@@ -187,9 +187,7 @@ impl NvmeOfConnection {
 
         trace!(
             "Processing command: opcode={:#04x}, cid={}, nsid={}",
-            opcode,
-            cid,
-            cmd.nsid
+            opcode, cid, cmd.nsid
         );
 
         // Check if it's a fabrics command

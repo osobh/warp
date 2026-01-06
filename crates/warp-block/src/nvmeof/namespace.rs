@@ -3,8 +3,8 @@
 //! This module provides the NvmeOfNamespace which maps NVMe namespaces
 //! to WARP block volumes.
 
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use async_trait::async_trait;
 use bytes::Bytes;
@@ -235,11 +235,7 @@ impl NvmeOfNamespace {
 
         trace!(
             "Namespace {} read: slba={}, nlb={}, offset={}, length={}",
-            self.nsid,
-            slba,
-            nlb,
-            offset,
-            length
+            self.nsid, slba, nlb, offset, length
         );
 
         let data = self.volume.read(offset, length as usize).await?;
@@ -336,11 +332,7 @@ impl NvmeOfNamespace {
 
         trace!(
             "Namespace {} write_zeroes: slba={}, nlb={}, offset={}, length={}",
-            self.nsid,
-            slba,
-            nlb,
-            offset,
-            length
+            self.nsid, slba, nlb, offset, length
         );
 
         // Create zero buffer
@@ -372,11 +364,7 @@ impl NvmeOfNamespace {
 
         trace!(
             "Namespace {} trim: slba={}, nlb={}, offset={}, length={}",
-            self.nsid,
-            slba,
-            nlb,
-            offset,
-            length
+            self.nsid, slba, nlb, offset, length
         );
 
         // Delegate to volume's trim if supported

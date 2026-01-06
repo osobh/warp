@@ -13,7 +13,7 @@ nvmeof = []
 # NVMe-oF with RDMA transport (simulated, no hardware dependency)
 nvmeof-rdma = ["nvmeof"]
 # NVMe-oF with QUIC transport
-nvmeof-quic = ["nvmeof", "dep:quinn"]
+nvmeof-quic = ["nvmeof", "dep:quinn", "dep:rustls", "dep:rcgen", "dep:rustls-pki-types"]
 # Full NVMe-oF support (all transports)
 nvmeof-full = ["nvmeof", "nvmeof-rdma", "nvmeof-quic"]
 # RDMA transport with actual hardware support (requires ibverbs)
@@ -42,7 +42,16 @@ tracing = { workspace = true }
 
 # Optional: QUIC transport
 quinn = { version = "0.11", optional = true }
+rustls = { version = "0.23", default-features = false, features = ["ring", "std"], optional = true }
+rcgen = { version = "0.13", optional = true }
+rustls-pki-types = { version = "1.0", optional = true }
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["test-util"] }
 tempfile = { workspace = true }
+criterion = { version = "0.5", features = ["html_reports"] }
+
+[[bench]]
+name = "nvmeof_bench"
+harness = false
+required-features = ["nvmeof"]

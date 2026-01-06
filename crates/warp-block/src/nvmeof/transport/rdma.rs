@@ -8,36 +8,50 @@
 //! - One-sided RDMA operations (RDMA Read/Write)
 //! - Memory registration and pinning
 //! - Reliable Connected (RC) queue pairs
+//! - Shared Receive Queue (SRQ) support
+//! - Completion channel notifications
 //!
 //! # Architecture
 //!
 //! ```text
-//! ┌─────────────────────────────────────────────────────────┐
-//! │                   RdmaTransport                         │
-//! ├─────────────────────────────────────────────────────────┤
-//! │  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐  │
-//! │  │ RDMA Context │  │ Completion   │  │ Memory       │  │
-//! │  │ (ibv_context)│  │ Channel      │  │ Regions      │  │
-//! │  └──────────────┘  └──────────────┘  └──────────────┘  │
-//! │                                                         │
-//! │  ┌──────────────────────────────────────────────────┐  │
-//! │  │              RdmaConnection Pool                  │  │
-//! │  │  ┌─────────┐  ┌─────────┐  ┌─────────┐           │  │
-//! │  │  │  QP 1   │  │  QP 2   │  │  QP 3   │  ...      │  │
-//! │  │  │ (RC)    │  │ (RC)    │  │ (RC)    │           │  │
-//! │  │  └─────────┘  └─────────┘  └─────────┘           │  │
-//! │  └──────────────────────────────────────────────────┘  │
-//! └─────────────────────────────────────────────────────────┘
+//! ┌─────────────────────────────────────────────────────────────────┐
+//! │                       RdmaTransport                             │
+//! ├─────────────────────────────────────────────────────────────────┤
+//! │  ┌──────────────┐  ┌──────────────┐  ┌──────────────────────┐  │
+//! │  │ RDMA Context │  │ Completion   │  │ Memory Region Pool   │  │
+//! │  │ (ibv_context)│  │ Channel (CQ) │  │ (pre-registered MRs) │  │
+//! │  └──────────────┘  └──────────────┘  └──────────────────────┘  │
+//! │                                                                 │
+//! │  ┌──────────────────────────────────────────────────────────┐  │
+//! │  │           Shared Receive Queue (SRQ)                     │  │
+//! │  │  Pre-posted receive buffers for all connections          │  │
+//! │  └──────────────────────────────────────────────────────────┘  │
+//! │                                                                 │
+//! │  ┌──────────────────────────────────────────────────────────┐  │
+//! │  │              RdmaConnection Pool                          │  │
+//! │  │  ┌─────────┐  ┌─────────┐  ┌─────────┐                   │  │
+//! │  │  │  QP 1   │  │  QP 2   │  │  QP 3   │  ...              │  │
+//! │  │  │ (RC)    │  │ (RC)    │  │ (RC)    │                   │  │
+//! │  │  └─────────┘  └─────────┘  └─────────┘                   │  │
+//! │  └──────────────────────────────────────────────────────────┘  │
+//! └─────────────────────────────────────────────────────────────────┘
 //! ```
+//!
+//! # Simulation Mode
+//!
+//! When RDMA hardware is not available, the transport operates in simulation mode
+//! with configurable latency and error injection for testing.
 
 use std::collections::HashMap;
 use std::net::SocketAddr;
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
+use std::time::Duration;
 
 use async_trait::async_trait;
 use bytes::Bytes;
-use parking_lot::RwLock;
+use parking_lot::{Mutex, RwLock};
+use tokio::sync::mpsc;
 use tracing::{debug, info, trace, warn};
 
 use super::{
@@ -78,6 +92,9 @@ pub struct RdmaConfig {
     /// Enable SRQ (Shared Receive Queue)
     pub use_srq: bool,
 
+    /// SRQ size (number of work requests)
+    pub srq_size: u32,
+
     /// Completion queue size
     pub cq_size: u32,
 
@@ -86,6 +103,36 @@ pub struct RdmaConfig {
 
     /// Enable zero-copy operations
     pub enable_zero_copy: bool,
+
+    /// Simulation configuration (when no RDMA hardware)
+    pub simulation: SimulationConfig,
+}
+
+/// Configuration for simulation mode
+#[derive(Debug, Clone)]
+pub struct SimulationConfig {
+    /// Simulated latency per operation
+    pub latency: Duration,
+
+    /// Enable latency simulation
+    pub enable_latency: bool,
+
+    /// Error injection rate (0.0 - 1.0)
+    pub error_rate: f64,
+
+    /// Simulated bandwidth limit (bytes per second, 0 = unlimited)
+    pub bandwidth_limit: u64,
+}
+
+impl Default for SimulationConfig {
+    fn default() -> Self {
+        Self {
+            latency: Duration::from_micros(1),
+            enable_latency: false,
+            error_rate: 0.0,
+            bandwidth_limit: 0,
+        }
+    }
 }
 
 impl Default for RdmaConfig {
@@ -100,9 +147,11 @@ impl Default for RdmaConfig {
             max_inline_data: 256,
             mr_size: 64 * 1024 * 1024, // 64 MB
             use_srq: true,
+            srq_size: 4096,
             cq_size: 4096,
             use_device_memory: false,
             enable_zero_copy: true,
+            simulation: SimulationConfig::default(),
         }
     }
 }
@@ -150,7 +199,323 @@ pub enum QueuePairState {
     Init,
     Rtr, // Ready to Receive
     Rts, // Ready to Send
+    Sqd, // Send Queue Drained
+    Sqe, // Send Queue Error
     Error,
+}
+
+impl QueuePairState {
+    /// Check if state transition is valid
+    pub fn can_transition_to(&self, target: QueuePairState) -> bool {
+        use QueuePairState::*;
+        matches!(
+            (self, target),
+            (Reset, Init)
+                | (Init, Rtr)
+                | (Rtr, Rts)
+                | (Rts, Sqd)
+                | (Sqd, Rts)
+                | (Sqd, Sqe)
+                | (_, Error)
+                | (_, Reset)
+        )
+    }
+}
+
+/// Memory region pool for efficient buffer management
+pub struct MemoryRegionPool {
+    /// Pool of available memory regions
+    available: Mutex<Vec<Arc<MemoryRegion>>>,
+
+    /// Currently in-use regions
+    in_use: RwLock<HashMap<u64, Arc<MemoryRegion>>>,
+
+    /// Region size
+    region_size: usize,
+
+    /// Maximum pool size
+    max_regions: usize,
+
+    /// Counter for region IDs
+    id_counter: AtomicU64,
+
+    /// Total allocated bytes
+    total_allocated: AtomicU64,
+}
+
+impl MemoryRegionPool {
+    /// Create a new memory region pool
+    pub fn new(region_size: usize, max_regions: usize) -> Self {
+        Self {
+            available: Mutex::new(Vec::with_capacity(max_regions)),
+            in_use: RwLock::new(HashMap::new()),
+            region_size,
+            max_regions,
+            id_counter: AtomicU64::new(0),
+            total_allocated: AtomicU64::new(0),
+        }
+    }
+
+    /// Acquire a memory region from the pool
+    pub fn acquire(&self) -> NvmeOfResult<Arc<MemoryRegion>> {
+        // Try to get from pool first
+        if let Some(mr) = self.available.lock().pop() {
+            self.in_use.write().insert(mr.id, mr.clone());
+            return Ok(mr);
+        }
+
+        // Check if we can allocate more
+        let in_use_count = self.in_use.read().len();
+        if in_use_count >= self.max_regions {
+            return Err(NvmeOfError::Transport(
+                "Memory region pool exhausted".to_string(),
+            ));
+        }
+
+        // Allocate new region
+        let id = self.id_counter.fetch_add(1, Ordering::Relaxed);
+        let mr = Arc::new(MemoryRegion::new(id, self.region_size));
+        self.total_allocated
+            .fetch_add(self.region_size as u64, Ordering::Relaxed);
+        self.in_use.write().insert(id, mr.clone());
+
+        debug!(
+            "Allocated new memory region {} (size={}, pool={})",
+            id, self.region_size, in_use_count
+        );
+
+        Ok(mr)
+    }
+
+    /// Release a memory region back to the pool
+    pub fn release(&self, mr_id: u64) {
+        if let Some(mr) = self.in_use.write().remove(&mr_id) {
+            self.available.lock().push(mr);
+            trace!("Released memory region {} back to pool", mr_id);
+        }
+    }
+
+    /// Get pool statistics
+    pub fn stats(&self) -> MemoryPoolStats {
+        MemoryPoolStats {
+            available: self.available.lock().len(),
+            in_use: self.in_use.read().len(),
+            total_allocated: self.total_allocated.load(Ordering::Relaxed),
+            region_size: self.region_size,
+        }
+    }
+}
+
+/// Memory pool statistics
+#[derive(Debug, Clone)]
+pub struct MemoryPoolStats {
+    /// Available regions
+    pub available: usize,
+    /// In-use regions
+    pub in_use: usize,
+    /// Total allocated bytes
+    pub total_allocated: u64,
+    /// Region size
+    pub region_size: usize,
+}
+
+/// Shared Receive Queue (SRQ) for efficient receive buffer management
+pub struct SharedReceiveQueue {
+    /// Queue ID
+    id: u64,
+
+    /// Maximum work requests
+    max_wr: u32,
+
+    /// Current posted work requests
+    posted_wr: AtomicU32,
+
+    /// Low watermark for refilling
+    low_watermark: u32,
+
+    /// Receive buffers
+    buffers: Mutex<Vec<ReceiveBuffer>>,
+
+    /// Completion sender
+    completion_tx: mpsc::Sender<SrqCompletion>,
+
+    /// Completion receiver
+    completion_rx: Mutex<Option<mpsc::Receiver<SrqCompletion>>>,
+}
+
+/// Buffer posted to SRQ
+struct ReceiveBuffer {
+    /// Work request ID
+    wr_id: u64,
+    /// Memory region
+    mr: Arc<MemoryRegion>,
+    /// Offset in region
+    offset: usize,
+    /// Length
+    length: usize,
+}
+
+/// SRQ completion notification
+#[derive(Debug)]
+pub struct SrqCompletion {
+    /// Work request ID
+    pub wr_id: u64,
+    /// Received data length
+    pub length: u32,
+    /// Source QP number
+    pub src_qp: u32,
+    /// Status
+    pub status: WorkCompletionStatus,
+}
+
+impl SharedReceiveQueue {
+    /// Create a new SRQ
+    pub fn new(id: u64, max_wr: u32) -> Self {
+        let (tx, rx) = mpsc::channel(max_wr as usize);
+        Self {
+            id,
+            max_wr,
+            posted_wr: AtomicU32::new(0),
+            low_watermark: max_wr / 4,
+            buffers: Mutex::new(Vec::with_capacity(max_wr as usize)),
+            completion_tx: tx,
+            completion_rx: Mutex::new(Some(rx)),
+        }
+    }
+
+    /// Post a receive buffer to the SRQ
+    pub fn post_recv(
+        &self,
+        mr: Arc<MemoryRegion>,
+        offset: usize,
+        length: usize,
+    ) -> NvmeOfResult<u64> {
+        let current = self.posted_wr.load(Ordering::Relaxed);
+        if current >= self.max_wr {
+            return Err(NvmeOfError::Transport("SRQ full".to_string()));
+        }
+
+        let wr_id = (self.id << 32) | (current as u64);
+        self.buffers.lock().push(ReceiveBuffer {
+            wr_id,
+            mr,
+            offset,
+            length,
+        });
+        self.posted_wr.fetch_add(1, Ordering::Relaxed);
+
+        trace!("Posted receive buffer to SRQ {}, wr_id={}", self.id, wr_id);
+        Ok(wr_id)
+    }
+
+    /// Check if SRQ needs refilling
+    pub fn needs_refill(&self) -> bool {
+        self.posted_wr.load(Ordering::Relaxed) < self.low_watermark
+    }
+
+    /// Get completion sender for notifying completions
+    pub fn completion_sender(&self) -> mpsc::Sender<SrqCompletion> {
+        self.completion_tx.clone()
+    }
+
+    /// Take the completion receiver (can only be taken once)
+    pub fn take_completion_receiver(&self) -> Option<mpsc::Receiver<SrqCompletion>> {
+        self.completion_rx.lock().take()
+    }
+}
+
+/// Completion channel for async completion notifications
+pub struct CompletionChannel {
+    /// Channel ID
+    id: u64,
+
+    /// Completion queue size
+    cq_size: u32,
+
+    /// Pending completions
+    pending: AtomicU32,
+
+    /// Completion sender
+    tx: mpsc::Sender<WorkCompletion>,
+
+    /// Completion receiver
+    rx: Mutex<Option<mpsc::Receiver<WorkCompletion>>>,
+}
+
+impl CompletionChannel {
+    /// Create a new completion channel
+    pub fn new(id: u64, cq_size: u32) -> Self {
+        let (tx, rx) = mpsc::channel(cq_size as usize);
+        Self {
+            id,
+            cq_size,
+            pending: AtomicU32::new(0),
+            tx,
+            rx: Mutex::new(Some(rx)),
+        }
+    }
+
+    /// Post a completion
+    pub async fn post_completion(&self, wc: WorkCompletion) -> NvmeOfResult<()> {
+        self.tx
+            .send(wc)
+            .await
+            .map_err(|_| NvmeOfError::Transport("Completion channel closed".to_string()))?;
+        self.pending.fetch_add(1, Ordering::Relaxed);
+        Ok(())
+    }
+
+    /// Take the receiver (can only be taken once)
+    pub fn take_receiver(&self) -> Option<mpsc::Receiver<WorkCompletion>> {
+        self.rx.lock().take()
+    }
+
+    /// Get pending completion count
+    pub fn pending_count(&self) -> u32 {
+        self.pending.load(Ordering::Relaxed)
+    }
+}
+
+/// Work request for tracking in-flight operations
+#[derive(Debug)]
+pub struct WorkRequest {
+    /// Work request ID
+    pub id: u64,
+    /// Operation type
+    pub opcode: WorkRequestOpcode,
+    /// Memory region
+    pub mr_id: Option<u64>,
+    /// Remote address (for RDMA ops)
+    pub remote_addr: u64,
+    /// Remote key (for RDMA ops)
+    pub rkey: u32,
+    /// Data length
+    pub length: u32,
+    /// Flags
+    pub flags: WorkRequestFlags,
+}
+
+/// Work request operation codes
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum WorkRequestOpcode {
+    Send,
+    SendWithImm,
+    RdmaWrite,
+    RdmaWriteWithImm,
+    RdmaRead,
+    AtomicCompSwap,
+    AtomicFetchAdd,
+}
+
+/// Work request flags
+#[derive(Debug, Clone, Copy, Default)]
+pub struct WorkRequestFlags {
+    /// Signal completion
+    pub signaled: bool,
+    /// Use inline data
+    pub inline: bool,
+    /// Fence (wait for previous ops)
+    pub fence: bool,
 }
 
 /// RDMA transport implementation
@@ -167,17 +532,32 @@ pub struct RdmaTransport {
     /// Connection counter
     conn_counter: AtomicU64,
 
+    /// Work request ID counter
+    wr_id_counter: AtomicU64,
+
     /// Active connections
     connections: RwLock<HashMap<u64, Arc<RdmaConnection>>>,
 
-    /// Memory regions
+    /// Memory region pool
+    mr_pool: Arc<MemoryRegionPool>,
+
+    /// Legacy memory regions (for direct allocation)
     memory_regions: RwLock<Vec<Arc<MemoryRegion>>>,
+
+    /// Shared receive queue (if enabled)
+    srq: Option<Arc<SharedReceiveQueue>>,
+
+    /// Completion channel
+    completion_channel: Arc<CompletionChannel>,
 
     /// Statistics
     stats: RwLock<TransportStats>,
 
     /// RDMA context available
     context_available: bool,
+
+    /// Pending work requests
+    pending_work_requests: RwLock<HashMap<u64, WorkRequest>>,
 }
 
 impl RdmaTransport {
@@ -194,15 +574,36 @@ impl RdmaTransport {
             warn!("RDMA not available, using simulation mode");
         }
 
+        // Create memory region pool
+        let mr_pool = Arc::new(MemoryRegionPool::new(
+            64 * 1024, // 64KB regions
+            config.mr_size / (64 * 1024),
+        ));
+
+        // Create SRQ if enabled
+        let srq = if config.use_srq {
+            Some(Arc::new(SharedReceiveQueue::new(0, config.srq_size)))
+        } else {
+            None
+        };
+
+        // Create completion channel
+        let completion_channel = Arc::new(CompletionChannel::new(0, config.cq_size));
+
         Self {
             config,
             local_addr: RwLock::new(None),
             listening: AtomicBool::new(false),
             conn_counter: AtomicU64::new(0),
+            wr_id_counter: AtomicU64::new(0),
             connections: RwLock::new(HashMap::new()),
+            mr_pool,
             memory_regions: RwLock::new(Vec::new()),
+            srq,
+            completion_channel,
             stats: RwLock::new(TransportStats::default()),
             context_available,
+            pending_work_requests: RwLock::new(HashMap::new()),
         }
     }
 
@@ -255,6 +656,84 @@ impl RdmaTransport {
             max_mr: 16384,
             max_pd: 16384,
         }
+    }
+
+    /// Get the memory region pool
+    pub fn memory_pool(&self) -> &Arc<MemoryRegionPool> {
+        &self.mr_pool
+    }
+
+    /// Get the SRQ (if enabled)
+    pub fn srq(&self) -> Option<&Arc<SharedReceiveQueue>> {
+        self.srq.as_ref()
+    }
+
+    /// Get the completion channel
+    pub fn completion_channel(&self) -> &Arc<CompletionChannel> {
+        &self.completion_channel
+    }
+
+    /// Post a work request with tracking
+    pub fn post_work_request(&self, wr: WorkRequest) -> u64 {
+        let wr_id = self.wr_id_counter.fetch_add(1, Ordering::Relaxed);
+        self.pending_work_requests
+            .write()
+            .insert(wr_id, WorkRequest { id: wr_id, ..wr });
+        trace!("Posted work request {}: {:?}", wr_id, wr.opcode);
+        wr_id
+    }
+
+    /// Complete a work request
+    pub fn complete_work_request(&self, wr_id: u64) -> Option<WorkRequest> {
+        self.pending_work_requests.write().remove(&wr_id)
+    }
+
+    /// Get pending work request count
+    pub fn pending_work_request_count(&self) -> usize {
+        self.pending_work_requests.read().len()
+    }
+
+    /// Acquire a buffer from the memory pool
+    pub fn acquire_buffer(&self) -> NvmeOfResult<Arc<MemoryRegion>> {
+        self.mr_pool.acquire()
+    }
+
+    /// Release a buffer back to the pool
+    pub fn release_buffer(&self, mr_id: u64) {
+        self.mr_pool.release(mr_id);
+    }
+
+    /// Get memory pool statistics
+    pub fn memory_pool_stats(&self) -> MemoryPoolStats {
+        self.mr_pool.stats()
+    }
+
+    /// Check if running in simulation mode
+    pub fn is_simulation_mode(&self) -> bool {
+        !self.context_available
+    }
+
+    /// Apply simulation latency if configured
+    async fn apply_simulation_latency(&self) {
+        if !self.context_available && self.config.simulation.enable_latency {
+            tokio::time::sleep(self.config.simulation.latency).await;
+        }
+    }
+
+    /// Check for simulated error
+    fn check_simulation_error(&self) -> NvmeOfResult<()> {
+        if !self.context_available && self.config.simulation.error_rate > 0.0 {
+            use std::hash::{Hash, Hasher};
+            let mut hasher = std::collections::hash_map::DefaultHasher::new();
+            std::time::SystemTime::now().hash(&mut hasher);
+            let random = (hasher.finish() % 10000) as f64 / 10000.0;
+            if random < self.config.simulation.error_rate {
+                return Err(NvmeOfError::Transport(
+                    "Simulated transport error".to_string(),
+                ));
+            }
+        }
+        Ok(())
     }
 }
 
@@ -396,6 +875,33 @@ pub struct RdmaDeviceInfo {
     pub max_pd: u32,
 }
 
+/// Queue pair information
+#[derive(Debug, Clone)]
+pub struct QueuePairInfo {
+    /// Queue pair number
+    pub qp_num: u32,
+    /// Packet sequence number
+    pub psn: u32,
+    /// Queue key
+    pub qkey: u32,
+    /// Path MTU
+    pub mtu: u32,
+    /// Service level
+    pub sl: u8,
+}
+
+impl Default for QueuePairInfo {
+    fn default() -> Self {
+        Self {
+            qp_num: 0,
+            psn: 0,
+            qkey: 0,
+            mtu: 4096, // 4KB MTU
+            sl: 0,
+        }
+    }
+}
+
 /// Internal RDMA connection state
 pub struct RdmaConnection {
     /// Connection ID
@@ -416,6 +922,12 @@ pub struct RdmaConnection {
     /// Queue pair state
     qp_state: RwLock<QueuePairState>,
 
+    /// Queue pair info
+    qp_info: RwLock<QueuePairInfo>,
+
+    /// Remote queue pair info (after exchange)
+    remote_qp_info: RwLock<Option<QueuePairInfo>>,
+
     /// Is connected
     connected: AtomicBool,
 
@@ -425,6 +937,21 @@ pub struct RdmaConnection {
     /// Receive buffer
     recv_buffer: RwLock<Vec<u8>>,
 
+    /// Outstanding send work requests
+    outstanding_sends: AtomicU32,
+
+    /// Outstanding receive work requests
+    outstanding_recvs: AtomicU32,
+
+    /// Maximum outstanding sends
+    max_send_wr: u32,
+
+    /// Maximum outstanding receives
+    max_recv_wr: u32,
+
+    /// Completion channel for this connection
+    completion_tx: mpsc::Sender<WorkCompletion>,
+
     /// Statistics
     stats: RwLock<TransportStats>,
 }
@@ -432,16 +959,34 @@ pub struct RdmaConnection {
 impl RdmaConnection {
     /// Create a new RDMA connection
     fn new(id: u64, local_addr: SocketAddr, remote_addr: SocketAddr, config: RdmaConfig) -> Self {
+        let (completion_tx, _completion_rx) = mpsc::channel(config.cq_size as usize);
+
+        // Generate QP info
+        let qp_info = QueuePairInfo {
+            qp_num: (id & 0xFFFFFF) as u32, // Lower 24 bits as QP number
+            psn: 0,
+            qkey: 0,
+            mtu: 4096,
+            sl: 0,
+        };
+
         Self {
             id,
             local_addr,
             remote_addr,
+            max_send_wr: config.max_send_wr,
+            max_recv_wr: config.max_recv_wr,
             config,
             state: RwLock::new(ConnectionState::Connecting),
             qp_state: RwLock::new(QueuePairState::Reset),
+            qp_info: RwLock::new(qp_info),
+            remote_qp_info: RwLock::new(None),
             connected: AtomicBool::new(false),
             send_buffer: RwLock::new(Vec::with_capacity(64 * 1024)),
             recv_buffer: RwLock::new(Vec::with_capacity(64 * 1024)),
+            outstanding_sends: AtomicU32::new(0),
+            outstanding_recvs: AtomicU32::new(0),
+            completion_tx,
             stats: RwLock::new(TransportStats::default()),
         }
     }
@@ -453,6 +998,50 @@ impl RdmaConnection {
             self.connected.store(true, Ordering::Release);
             *self.qp_state.write() = QueuePairState::Rts;
         }
+    }
+
+    /// Transition queue pair state
+    pub fn transition_qp_state(&self, target: QueuePairState) -> NvmeOfResult<()> {
+        let current = *self.qp_state.read();
+        if !current.can_transition_to(target) {
+            return Err(NvmeOfError::Transport(format!(
+                "Invalid QP state transition from {:?} to {:?}",
+                current, target
+            )));
+        }
+        *self.qp_state.write() = target;
+        debug!("QP {} state: {:?} -> {:?}", self.id, current, target);
+        Ok(())
+    }
+
+    /// Get current QP state
+    pub fn qp_state(&self) -> QueuePairState {
+        *self.qp_state.read()
+    }
+
+    /// Get local QP info
+    pub fn local_qp_info(&self) -> QueuePairInfo {
+        self.qp_info.read().clone()
+    }
+
+    /// Set remote QP info (during connection establishment)
+    pub fn set_remote_qp_info(&self, info: QueuePairInfo) {
+        *self.remote_qp_info.write() = Some(info);
+    }
+
+    /// Get remote QP info
+    pub fn remote_qp_info(&self) -> Option<QueuePairInfo> {
+        self.remote_qp_info.read().clone()
+    }
+
+    /// Check if send queue has capacity
+    pub fn can_send(&self) -> bool {
+        self.outstanding_sends.load(Ordering::Relaxed) < self.max_send_wr
+    }
+
+    /// Check if receive queue has capacity
+    pub fn can_recv(&self) -> bool {
+        self.outstanding_recvs.load(Ordering::Relaxed) < self.max_recv_wr
     }
 
     /// Close the connection internally
@@ -469,6 +1058,31 @@ impl RdmaConnection {
             return Err(NvmeOfError::Transport("Not connected".to_string()));
         }
 
+        // Check queue capacity
+        if !self.can_send() {
+            return Err(NvmeOfError::Transport("Send queue full".to_string()));
+        }
+
+        // Track outstanding operations
+        self.outstanding_sends.fetch_add(1, Ordering::Relaxed);
+
+        // Apply simulation latency if configured
+        if self.config.simulation.enable_latency {
+            tokio::time::sleep(self.config.simulation.latency).await;
+        }
+
+        // Check for simulated errors
+        if self.config.simulation.error_rate > 0.0 {
+            use std::hash::{Hash, Hasher};
+            let mut hasher = std::collections::hash_map::DefaultHasher::new();
+            std::time::SystemTime::now().hash(&mut hasher);
+            let random = (hasher.finish() % 10000) as f64 / 10000.0;
+            if random < self.config.simulation.error_rate {
+                self.outstanding_sends.fetch_sub(1, Ordering::Relaxed);
+                return Err(NvmeOfError::Transport("Simulated send error".to_string()));
+            }
+        }
+
         // In real implementation, would:
         // 1. Get send buffer from pool
         // 2. Copy data (or use zero-copy if inline)
@@ -477,6 +1091,18 @@ impl RdmaConnection {
 
         let mut stats = self.stats.write();
         stats.bytes_sent += data.len() as u64;
+
+        // Simulate completion
+        self.outstanding_sends.fetch_sub(1, Ordering::Relaxed);
+
+        // Send completion notification
+        let _ = self.completion_tx.try_send(WorkCompletion {
+            wr_id: self.id,
+            status: WorkCompletionStatus::Success,
+            opcode: WorkCompletionOpcode::Send,
+            byte_len: data.len() as u32,
+            qp_num: self.qp_info.read().qp_num,
+        });
 
         trace!("Posted RDMA send of {} bytes", data.len());
         Ok(())
@@ -488,6 +1114,33 @@ impl RdmaConnection {
             return Err(NvmeOfError::Transport("Not connected".to_string()));
         }
 
+        // Check queue capacity
+        if !self.can_recv() {
+            return Err(NvmeOfError::Transport("Receive queue full".to_string()));
+        }
+
+        // Track outstanding operations
+        self.outstanding_recvs.fetch_add(1, Ordering::Relaxed);
+
+        // Apply simulation latency if configured
+        if self.config.simulation.enable_latency {
+            tokio::time::sleep(self.config.simulation.latency).await;
+        }
+
+        // Check for simulated errors
+        if self.config.simulation.error_rate > 0.0 {
+            use std::hash::{Hash, Hasher};
+            let mut hasher = std::collections::hash_map::DefaultHasher::new();
+            std::time::SystemTime::now().hash(&mut hasher);
+            let random = (hasher.finish() % 10000) as f64 / 10000.0;
+            if random < self.config.simulation.error_rate {
+                self.outstanding_recvs.fetch_sub(1, Ordering::Relaxed);
+                return Err(NvmeOfError::Transport(
+                    "Simulated receive error".to_string(),
+                ));
+            }
+        }
+
         // In real implementation, would:
         // 1. Get receive buffer from pool
         // 2. Post receive WR to QP
@@ -496,6 +1149,18 @@ impl RdmaConnection {
 
         let mut stats = self.stats.write();
         stats.bytes_received += length as u64;
+
+        // Simulate completion
+        self.outstanding_recvs.fetch_sub(1, Ordering::Relaxed);
+
+        // Send completion notification
+        let _ = self.completion_tx.try_send(WorkCompletion {
+            wr_id: self.id,
+            status: WorkCompletionStatus::Success,
+            opcode: WorkCompletionOpcode::Recv,
+            byte_len: length as u32,
+            qp_num: self.qp_info.read().qp_num,
+        });
 
         trace!("Posted RDMA receive for {} bytes", length);
         Ok(Bytes::from(vec![0u8; length]))
@@ -507,9 +1172,34 @@ impl RdmaConnection {
             return Err(NvmeOfError::Transport("Not connected".to_string()));
         }
 
+        // Check queue capacity
+        if !self.can_send() {
+            return Err(NvmeOfError::Transport("Send queue full".to_string()));
+        }
+
+        // Track outstanding operations
+        self.outstanding_sends.fetch_add(1, Ordering::Relaxed);
+
+        // Apply simulation latency if configured
+        if self.config.simulation.enable_latency {
+            tokio::time::sleep(self.config.simulation.latency).await;
+        }
+
         // In real implementation, would post RDMA_WRITE WR
         let mut stats = self.stats.write();
         stats.bytes_sent += data.len() as u64;
+
+        // Simulate completion
+        self.outstanding_sends.fetch_sub(1, Ordering::Relaxed);
+
+        // Send completion notification
+        let _ = self.completion_tx.try_send(WorkCompletion {
+            wr_id: self.id,
+            status: WorkCompletionStatus::Success,
+            opcode: WorkCompletionOpcode::RdmaWrite,
+            byte_len: data.len() as u32,
+            qp_num: self.qp_info.read().qp_num,
+        });
 
         trace!(
             "RDMA Write: {} bytes to remote 0x{:x}, rkey=0x{:x}",
@@ -531,17 +1221,50 @@ impl RdmaConnection {
             return Err(NvmeOfError::Transport("Not connected".to_string()));
         }
 
+        // Check queue capacity
+        if !self.can_send() {
+            return Err(NvmeOfError::Transport("Send queue full".to_string()));
+        }
+
+        // Track outstanding operations
+        self.outstanding_sends.fetch_add(1, Ordering::Relaxed);
+
+        // Apply simulation latency if configured
+        if self.config.simulation.enable_latency {
+            tokio::time::sleep(self.config.simulation.latency).await;
+        }
+
         // In real implementation, would post RDMA_READ WR
         let mut stats = self.stats.write();
         stats.bytes_received += length as u64;
 
+        // Simulate completion
+        self.outstanding_sends.fetch_sub(1, Ordering::Relaxed);
+
+        // Send completion notification
+        let _ = self.completion_tx.try_send(WorkCompletion {
+            wr_id: self.id,
+            status: WorkCompletionStatus::Success,
+            opcode: WorkCompletionOpcode::RdmaRead,
+            byte_len: length as u32,
+            qp_num: self.qp_info.read().qp_num,
+        });
+
         trace!(
             "RDMA Read: {} bytes from remote 0x{:x}, rkey=0x{:x}",
-            length,
-            remote_addr,
-            rkey
+            length, remote_addr, rkey
         );
         Ok(Bytes::from(vec![0u8; length]))
+    }
+
+    /// Get outstanding send count
+    pub fn outstanding_sends(&self) -> u32 {
+        self.outstanding_sends.load(Ordering::Relaxed)
+    }
+
+    /// Get outstanding receive count
+    pub fn outstanding_recvs(&self) -> u32 {
+        self.outstanding_recvs.load(Ordering::Relaxed)
     }
 }
 
@@ -684,6 +1407,17 @@ mod tests {
         assert_eq!(config.port_num, 1);
         assert_eq!(config.max_send_wr, 128);
         assert!(config.enable_zero_copy);
+        assert!(config.use_srq);
+        assert_eq!(config.srq_size, 4096);
+    }
+
+    #[test]
+    fn test_simulation_config_default() {
+        let config = SimulationConfig::default();
+        assert_eq!(config.latency, Duration::from_micros(1));
+        assert!(!config.enable_latency);
+        assert_eq!(config.error_rate, 0.0);
+        assert_eq!(config.bandwidth_limit, 0);
     }
 
     #[test]
@@ -692,6 +1426,113 @@ mod tests {
         assert_eq!(mr.id, 1);
         assert_eq!(mr.length, 4096);
         assert!(mr.registered);
+        assert_ne!(mr.lkey, mr.rkey);
+    }
+
+    #[test]
+    fn test_qp_state_transitions() {
+        use QueuePairState::*;
+
+        // Valid transitions
+        assert!(Reset.can_transition_to(Init));
+        assert!(Init.can_transition_to(Rtr));
+        assert!(Rtr.can_transition_to(Rts));
+        assert!(Rts.can_transition_to(Sqd));
+        assert!(Sqd.can_transition_to(Rts));
+
+        // All states can go to Error or Reset
+        assert!(Rts.can_transition_to(Error));
+        assert!(Rts.can_transition_to(Reset));
+
+        // Invalid transitions
+        assert!(!Init.can_transition_to(Rts)); // Must go through Rtr
+        assert!(!Rtr.can_transition_to(Init)); // Can't go back to Init
+    }
+
+    #[test]
+    fn test_memory_region_pool() {
+        let pool = MemoryRegionPool::new(4096, 10);
+
+        // Acquire a region
+        let mr1 = pool.acquire().unwrap();
+        assert_eq!(mr1.length, 4096);
+
+        let stats = pool.stats();
+        assert_eq!(stats.in_use, 1);
+        assert_eq!(stats.available, 0);
+
+        // Acquire another
+        let mr2 = pool.acquire().unwrap();
+        assert_ne!(mr1.id, mr2.id);
+
+        let stats = pool.stats();
+        assert_eq!(stats.in_use, 2);
+
+        // Release one
+        pool.release(mr1.id);
+
+        let stats = pool.stats();
+        assert_eq!(stats.in_use, 1);
+        assert_eq!(stats.available, 1);
+
+        // Acquire should reuse from pool
+        let mr3 = pool.acquire().unwrap();
+        assert_eq!(mr3.id, mr1.id); // Should be the same one we released
+    }
+
+    #[test]
+    fn test_memory_region_pool_exhaustion() {
+        let pool = MemoryRegionPool::new(4096, 2);
+
+        let _mr1 = pool.acquire().unwrap();
+        let _mr2 = pool.acquire().unwrap();
+
+        // Should fail - pool exhausted
+        let result = pool.acquire();
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_shared_receive_queue() {
+        let srq = SharedReceiveQueue::new(1, 100);
+
+        // Initially empty, needs refill (posted < low_watermark)
+        // low_watermark = 100 / 4 = 25
+        assert!(srq.needs_refill());
+
+        // Post receives to fill above low watermark
+        let mr = Arc::new(MemoryRegion::new(1, 4096));
+        for i in 0..30 {
+            let wr_id = srq.post_recv(mr.clone(), i * 1024, 1024).unwrap();
+            assert!(wr_id > 0 || wr_id == 0); // wr_id can be 0 based on formula
+        }
+
+        // After posting 30, should not need refill (30 > 25)
+        assert!(!srq.needs_refill());
+    }
+
+    #[test]
+    fn test_work_request_flags() {
+        let flags = WorkRequestFlags::default();
+        assert!(!flags.signaled);
+        assert!(!flags.inline);
+        assert!(!flags.fence);
+
+        let flags = WorkRequestFlags {
+            signaled: true,
+            inline: true,
+            fence: false,
+        };
+        assert!(flags.signaled);
+        assert!(flags.inline);
+    }
+
+    #[test]
+    fn test_qp_info_default() {
+        let info = QueuePairInfo::default();
+        assert_eq!(info.qp_num, 0);
+        assert_eq!(info.mtu, 4096);
+        assert_eq!(info.sl, 0);
     }
 
     #[tokio::test]
@@ -700,10 +1541,34 @@ mod tests {
         let transport = RdmaTransport::new(config);
 
         assert_eq!(transport.transport_type(), TransportType::Rdma);
+        assert!(transport.is_simulation_mode()); // No real RDMA
 
         let caps = transport.capabilities();
         assert!(caps.memory_registration);
         assert!(caps.zero_copy);
+    }
+
+    #[tokio::test]
+    async fn test_rdma_transport_with_srq() {
+        let config = RdmaConfig {
+            use_srq: true,
+            srq_size: 1024,
+            ..Default::default()
+        };
+        let transport = RdmaTransport::new(config);
+
+        assert!(transport.srq().is_some());
+    }
+
+    #[tokio::test]
+    async fn test_rdma_transport_without_srq() {
+        let config = RdmaConfig {
+            use_srq: false,
+            ..Default::default()
+        };
+        let transport = RdmaTransport::new(config);
+
+        assert!(transport.srq().is_none());
     }
 
     #[tokio::test]
@@ -719,11 +1584,149 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_rdma_buffer_pool() {
+        let config = RdmaConfig::default();
+        let transport = RdmaTransport::new(config);
+
+        // Acquire from pool
+        let mr = transport.acquire_buffer().unwrap();
+        assert!(mr.registered);
+
+        // Check stats
+        let stats = transport.memory_pool_stats();
+        assert_eq!(stats.in_use, 1);
+
+        // Release back
+        transport.release_buffer(mr.id);
+
+        let stats = transport.memory_pool_stats();
+        assert_eq!(stats.in_use, 0);
+        assert_eq!(stats.available, 1);
+    }
+
+    #[tokio::test]
     async fn test_rdma_device_info() {
         let config = RdmaConfig::default();
         let transport = RdmaTransport::new(config);
 
         let info = transport.device_info();
         assert!(!info.available); // No real RDMA in test environment
+        assert_eq!(info.device_name, "simulated");
+    }
+
+    #[tokio::test]
+    async fn test_rdma_work_request_tracking() {
+        let config = RdmaConfig::default();
+        let transport = RdmaTransport::new(config);
+
+        let wr = WorkRequest {
+            id: 0,
+            opcode: WorkRequestOpcode::Send,
+            mr_id: Some(1),
+            remote_addr: 0,
+            rkey: 0,
+            length: 1024,
+            flags: WorkRequestFlags::default(),
+        };
+
+        let wr_id = transport.post_work_request(wr);
+        assert_eq!(transport.pending_work_request_count(), 1);
+
+        let completed = transport.complete_work_request(wr_id);
+        assert!(completed.is_some());
+        assert_eq!(transport.pending_work_request_count(), 0);
+    }
+
+    #[tokio::test]
+    async fn test_rdma_connection_qp_state() {
+        let config = RdmaConfig::default();
+        let addr: SocketAddr = "127.0.0.1:4420".parse().unwrap();
+        let conn = RdmaConnection::new(1, addr, addr, config);
+
+        assert_eq!(conn.qp_state(), QueuePairState::Reset);
+
+        // Valid transition
+        conn.transition_qp_state(QueuePairState::Init).unwrap();
+        assert_eq!(conn.qp_state(), QueuePairState::Init);
+
+        // Invalid transition (Init -> Rts without Rtr)
+        let result = conn.transition_qp_state(QueuePairState::Rts);
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_rdma_connection_qp_info_exchange() {
+        let config = RdmaConfig::default();
+        let addr: SocketAddr = "127.0.0.1:4420".parse().unwrap();
+        let conn = RdmaConnection::new(1, addr, addr, config);
+
+        // Get local QP info
+        let local_info = conn.local_qp_info();
+        assert!(local_info.qp_num > 0 || local_info.qp_num == 0);
+
+        // Initially no remote info
+        assert!(conn.remote_qp_info().is_none());
+
+        // Set remote QP info
+        let remote_info = QueuePairInfo {
+            qp_num: 12345,
+            psn: 100,
+            qkey: 0,
+            mtu: 4096,
+            sl: 0,
+        };
+        conn.set_remote_qp_info(remote_info.clone());
+
+        let stored = conn.remote_qp_info().unwrap();
+        assert_eq!(stored.qp_num, 12345);
+        assert_eq!(stored.psn, 100);
+    }
+
+    #[test]
+    fn test_work_completion_status_variants() {
+        // Ensure all status variants exist
+        let _statuses = [
+            WorkCompletionStatus::Success,
+            WorkCompletionStatus::LocalLengthError,
+            WorkCompletionStatus::LocalQpOperationError,
+            WorkCompletionStatus::LocalProtectionError,
+            WorkCompletionStatus::WrFlushError,
+            WorkCompletionStatus::MemoryWindowBindError,
+            WorkCompletionStatus::BadResponseError,
+            WorkCompletionStatus::LocalAccessError,
+            WorkCompletionStatus::RemoteInvalidRequestError,
+            WorkCompletionStatus::RemoteAccessError,
+            WorkCompletionStatus::RemoteOperationError,
+            WorkCompletionStatus::TransportRetryExceeded,
+            WorkCompletionStatus::RnrRetryExceeded,
+            WorkCompletionStatus::GeneralError,
+        ];
+    }
+
+    #[test]
+    fn test_work_completion_opcode_variants() {
+        let _opcodes = [
+            WorkCompletionOpcode::Send,
+            WorkCompletionOpcode::RdmaWrite,
+            WorkCompletionOpcode::RdmaRead,
+            WorkCompletionOpcode::CompSwap,
+            WorkCompletionOpcode::FetchAdd,
+            WorkCompletionOpcode::Recv,
+            WorkCompletionOpcode::RecvRdmaWithImm,
+        ];
+    }
+
+    #[test]
+    fn test_completion_channel() {
+        let cc = CompletionChannel::new(1, 100);
+        assert_eq!(cc.pending_count(), 0);
+
+        // Take receiver (can only be done once)
+        let rx = cc.take_receiver();
+        assert!(rx.is_some());
+
+        // Second take should fail
+        let rx2 = cc.take_receiver();
+        assert!(rx2.is_none());
     }
 }

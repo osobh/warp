@@ -56,8 +56,8 @@ pub use volume::{Volume, VolumeId, VolumeState};
 
 // NVMe-oF re-exports (always available for types, feature-gated for runtime)
 pub use nvmeof::{
-    generate_nqn, validate_nqn, NvmeOfConfig, NvmeOfError, NvmeOfResult, SubsystemConfig,
-    DISCOVERY_NQN, WARP_NQN_PREFIX,
+    DISCOVERY_NQN, NvmeOfConfig, NvmeOfError, NvmeOfResult, SubsystemConfig, WARP_NQN_PREFIX,
+    generate_nqn, validate_nqn,
 };
 
 #[cfg(feature = "nvmeof")]
