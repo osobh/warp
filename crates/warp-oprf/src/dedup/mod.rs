@@ -66,7 +66,7 @@ impl DedupToken {
 
     /// Convert to hex string for storage/display
     pub fn to_hex(&self) -> String {
-        hex::encode(&self.0)
+        hex::encode(self.0)
     }
 
     /// Parse from hex string

@@ -24,6 +24,7 @@ use crate::version::VersionId;
 
 /// Object Lock configuration for a bucket
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Default)]
 pub struct ObjectLockConfig {
     /// Whether Object Lock is enabled on the bucket
     pub enabled: bool,
@@ -32,14 +33,6 @@ pub struct ObjectLockConfig {
     pub default_retention: Option<DefaultRetention>,
 }
 
-impl Default for ObjectLockConfig {
-    fn default() -> Self {
-        Self {
-            enabled: false,
-            default_retention: None,
-        }
-    }
-}
 
 impl ObjectLockConfig {
     /// Create a new Object Lock configuration with lock enabled
@@ -235,19 +228,16 @@ impl ObjectRetention {
 
 /// Legal hold status
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Default)]
 pub enum LegalHoldStatus {
     /// Legal hold is active - object cannot be deleted
     On,
 
     /// Legal hold is not active
+    #[default]
     Off,
 }
 
-impl Default for LegalHoldStatus {
-    fn default() -> Self {
-        LegalHoldStatus::Off
-    }
-}
 
 impl std::fmt::Display for LegalHoldStatus {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {

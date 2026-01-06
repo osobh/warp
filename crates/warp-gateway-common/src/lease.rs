@@ -93,11 +93,10 @@ impl LeaseState {
         }
 
         // If requester wants read or write, existing exclusive must break
-        if requested.has_read() || requested.has_write() {
-            if self.has_write() {
+        if (requested.has_read() || requested.has_write())
+            && self.has_write() {
                 new_state = new_state.without(Self::WRITE);
             }
-        }
 
         new_state
     }

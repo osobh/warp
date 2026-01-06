@@ -8,23 +8,17 @@ use serde::{Deserialize, Serialize};
 /// Supported OPRF cipher suites
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[non_exhaustive]
+#[derive(Default)]
 pub enum CipherSuite {
     /// Ristretto255 with SHA-512 (RFC 9497)
     ///
     /// Recommended for new applications. Provides ~128-bit security
     /// with constant-time operations.
     #[cfg(feature = "ristretto255")]
+    #[default]
     Ristretto255Sha512,
 }
 
-impl Default for CipherSuite {
-    fn default() -> Self {
-        #[cfg(feature = "ristretto255")]
-        {
-            CipherSuite::Ristretto255Sha512
-        }
-    }
-}
 
 impl CipherSuite {
     /// Get the output size in bytes for this cipher suite
@@ -76,20 +70,17 @@ impl std::fmt::Display for CipherSuite {
 
 /// OPRF mode of operation
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Default)]
 pub enum OprfMode {
     /// Base OPRF - no verification
     Base,
     /// Verifiable OPRF - server provides proof
+    #[default]
     Verifiable,
     /// Partially-oblivious PRF - includes public info
     PartiallyOblivious,
 }
 
-impl Default for OprfMode {
-    fn default() -> Self {
-        OprfMode::Verifiable
-    }
-}
 
 impl OprfMode {
     /// Get the mode identifier byte

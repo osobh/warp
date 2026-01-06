@@ -1,17 +1,16 @@
 //! Recovery coordination after split-brain resolution
 
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 use std::sync::Arc;
 use std::time::{Duration, Instant, SystemTime};
 
 use dashmap::DashMap;
 use parking_lot::RwLock;
-use tracing::{debug, error, info, warn};
+use tracing::{debug, error, info};
 
-use super::detector::{PartitionInfo, PartitionState};
-use super::fencing::{FenceAction, FencingManager};
-use super::vote::{NodeId, QuorumStatus, VoteTracker};
-use crate::replication::DomainId;
+use super::detector::PartitionInfo;
+use super::fencing::FencingManager;
+use super::vote::{NodeId, VoteTracker};
 
 /// State of recovery
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -32,34 +31,38 @@ pub enum RecoveryState {
     Failed,
 }
 
-/// A recovery plan
+/// A recovery plan generated after detecting a split-brain event
+///
+/// This plan contains all the information needed to coordinate recovery across
+/// partitioned nodes, including which nodes need synchronization, what steps
+/// to execute, and timing estimates.
 #[derive(Debug, Clone)]
 pub struct RecoveryPlan {
-    /// Plan ID
+    /// Unique identifier for this recovery plan
     pub id: u64,
 
-    /// Current phase
+    /// Current phase of the recovery process
     pub phase: RecoveryPhase,
 
-    /// Nodes involved in recovery
+    /// Set of nodes participating in this recovery operation
     pub involved_nodes: HashSet<NodeId>,
 
-    /// Nodes that need data sync
+    /// Subset of nodes that require data synchronization
     pub sync_needed: HashSet<NodeId>,
 
-    /// Estimated data to reconcile (bytes)
+    /// Estimated number of bytes that need to be reconciled across nodes
     pub estimated_bytes: u64,
 
-    /// Priority (higher = more urgent)
+    /// Priority level for this recovery operation (higher values indicate more urgent recovery)
     pub priority: u32,
 
-    /// When the plan was created
+    /// Timestamp when this recovery plan was created
     pub created_at: SystemTime,
 
-    /// Estimated completion time
+    /// Estimated time until recovery completion, if calculable
     pub estimated_completion: Option<Duration>,
 
-    /// Steps in the plan
+    /// Ordered sequence of recovery steps to execute
     pub steps: Vec<RecoveryStep>,
 }
 
@@ -112,22 +115,25 @@ pub enum RecoveryPhase {
     Finalization,
 }
 
-/// A step in the recovery plan
+/// A single step within a recovery plan's execution sequence
+///
+/// Each step represents a distinct phase of the recovery process, such as
+/// quiescing writes, comparing data versions, or syncing missing data.
 #[derive(Debug, Clone)]
 pub struct RecoveryStep {
-    /// Step number
+    /// Sequential order number determining when this step executes
     pub order: u32,
-    /// Step type
+    /// The type of recovery operation this step performs
     pub step_type: RecoveryStepType,
-    /// Target node(s)
+    /// List of nodes that this step operates on
     pub targets: Vec<NodeId>,
-    /// Step status
+    /// Current execution status of this step
     pub status: StepStatus,
-    /// Error if failed
+    /// Error message if the step failed, None otherwise
     pub error: Option<String>,
-    /// When the step started
+    /// Timestamp when step execution began, None if not yet started
     pub started_at: Option<Instant>,
-    /// When the step completed
+    /// Timestamp when step execution finished, None if still running or not started
     pub completed_at: Option<Instant>,
 }
 
@@ -184,28 +190,31 @@ pub enum ConflictStrategy {
     VectorClock,
 }
 
-/// Configuration for recovery
+/// Configuration parameters controlling recovery behavior
+///
+/// These settings determine how conflicts are resolved, timing constraints,
+/// and safety guarantees during the recovery process.
 #[derive(Debug, Clone)]
 pub struct RecoveryConfig {
-    /// Conflict resolution strategy
+    /// Strategy to use when resolving conflicting writes between partitions
     pub conflict_strategy: ConflictStrategy,
 
-    /// Maximum time for recovery
+    /// Maximum allowed duration for the entire recovery operation
     pub recovery_timeout: Duration,
 
-    /// Whether to auto-resume writes
+    /// Whether to automatically resume write operations after successful recovery
     pub auto_resume: bool,
 
-    /// Quiesce timeout
+    /// Maximum time to wait for write operations to quiesce before proceeding
     pub quiesce_timeout: Duration,
 
-    /// Sync batch size
+    /// Number of objects to synchronize in each batch during data sync
     pub sync_batch_size: usize,
 
-    /// Verification level
+    /// Whether to verify data integrity using checksums after synchronization
     pub verify_checksums: bool,
 
-    /// Whether to preserve divergent writes
+    /// Whether to retain conflicting versions instead of discarding the loser
     pub preserve_conflicts: bool,
 }
 
@@ -223,96 +232,112 @@ impl Default for RecoveryConfig {
     }
 }
 
-/// A detected conflict
+/// A data conflict detected between two partitions during split-brain recovery
+///
+/// Represents a single object that has diverged across network partitions,
+/// containing version metadata from both sides to enable resolution.
 #[derive(Debug, Clone)]
 pub struct Conflict {
-    /// Object key
+    /// The object key that has conflicting versions
     pub key: String,
-    /// Bucket
+    /// The bucket containing the conflicting object
     pub bucket: String,
-    /// Version from partition A
+    /// Version information from the first partition, None if object was deleted
     pub version_a: Option<VersionInfo>,
-    /// Version from partition B
+    /// Version information from the second partition, None if object was deleted
     pub version_b: Option<VersionInfo>,
-    /// Resolution (if any)
+    /// The resolution decision for this conflict, None if not yet resolved
     pub resolution: Option<ConflictResolution>,
 }
 
-/// Version information for conflict detection
+/// Version metadata for a single object revision used in conflict detection
+///
+/// Contains all information necessary to compare and order different versions
+/// of the same object when resolving conflicts.
 #[derive(Debug, Clone)]
 pub struct VersionInfo {
-    /// Version ID
+    /// Unique identifier for this specific version of the object
     pub version_id: String,
-    /// Modification time
+    /// Timestamp when this version was created or last modified
     pub modified_at: SystemTime,
-    /// Node that made the change
+    /// Identifier of the node that created this version
     pub modified_by: NodeId,
-    /// Checksum
+    /// SHA-256 checksum of the object data for integrity verification
     pub checksum: [u8; 32],
-    /// Size in bytes
+    /// Size of this version in bytes
     pub size: u64,
 }
 
-/// How a conflict was resolved
+/// Record of how a conflict was resolved during recovery
+///
+/// Documents the resolution decision made for a specific conflict, including
+/// the strategy applied and the outcome.
 #[derive(Debug, Clone)]
 pub struct ConflictResolution {
-    /// Strategy used
+    /// The conflict resolution strategy that was applied
     pub strategy: ConflictStrategy,
-    /// Winning version (if any)
+    /// The version ID that was chosen as the winner, None if both were kept
     pub winner: Option<String>,
-    /// Whether both versions were kept
+    /// True if both conflicting versions were preserved rather than choosing one
     pub kept_both: bool,
-    /// When resolved
+    /// Timestamp when this conflict was resolved
     pub resolved_at: SystemTime,
 }
 
-/// Coordinates recovery after split-brain events
+/// Coordinates recovery operations after split-brain events are detected
+///
+/// The coordinator manages the full lifecycle of recovery: creating plans,
+/// executing recovery steps, resolving data conflicts, and synchronizing state
+/// across previously partitioned nodes.
 pub struct RecoveryCoordinator {
-    /// Configuration
+    /// Configuration parameters controlling recovery behavior
     config: RecoveryConfig,
 
-    /// Current state
+    /// Current state of the recovery process
     state: RwLock<RecoveryState>,
 
-    /// Active recovery plan
+    /// The currently executing recovery plan, None if idle
     current_plan: RwLock<Option<RecoveryPlan>>,
 
-    /// Vote tracker reference
+    /// Reference to the vote tracker for quorum coordination
     vote_tracker: Arc<VoteTracker>,
 
-    /// Fencing manager reference
+    /// Reference to the fencing manager for controlling node access
     fencing_manager: Arc<FencingManager>,
 
-    /// Detected conflicts
+    /// Map of detected conflicts keyed by "bucket:key"
     conflicts: DashMap<String, Conflict>,
 
-    /// Recovery history
+    /// Historical record of completed recovery operations
     history: RwLock<Vec<RecoveryRecord>>,
 
-    /// Nodes with quiesced writes
+    /// Nodes that currently have write operations quiesced, with quiesce timestamp
     quiesced_nodes: DashMap<NodeId, Instant>,
 }
 
-/// Record of a completed recovery
+/// Historical record of a completed recovery operation
+///
+/// Captures metrics and outcomes from a recovery attempt for auditing and
+/// debugging purposes.
 #[derive(Debug, Clone)]
 pub struct RecoveryRecord {
-    /// Plan ID
+    /// The unique ID of the recovery plan that was executed
     pub plan_id: u64,
-    /// Whether recovery succeeded
+    /// True if recovery completed successfully, false if it failed
     pub success: bool,
-    /// Nodes involved
+    /// Set of nodes that participated in this recovery operation
     pub nodes: HashSet<NodeId>,
-    /// Conflicts detected
+    /// Total number of data conflicts discovered during recovery
     pub conflicts_detected: u64,
-    /// Conflicts resolved
+    /// Number of conflicts that were successfully resolved
     pub conflicts_resolved: u64,
-    /// Bytes synchronized
+    /// Total number of bytes synchronized across nodes
     pub bytes_synced: u64,
-    /// When recovery started
+    /// Timestamp when the recovery operation began
     pub started_at: SystemTime,
-    /// Duration
+    /// Total time taken to complete the recovery operation
     pub duration: Duration,
-    /// Error if failed
+    /// Error message if the recovery failed, None if successful
     pub error: Option<String>,
 }
 

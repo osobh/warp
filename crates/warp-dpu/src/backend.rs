@@ -1,7 +1,7 @@
 //! DPU Backend Abstraction
 //!
-//! Provides a common interface for DPU backends (BlueField, Pensando, Intel IPU).
-//! Mirrors warp-gpu's GpuBackend design but adapted for DPU characteristics.
+//! Provides a common interface for DPU backends (`BlueField`, Pensando, Intel IPU).
+//! Mirrors warp-gpu's `GpuBackend` design but adapted for DPU characteristics.
 
 use crate::error::Result;
 use std::fmt;
@@ -11,7 +11,7 @@ use std::sync::Arc;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[repr(u8)]
 pub enum DpuType {
-    /// NVIDIA BlueField DPU (DOCA SDK)
+    /// NVIDIA `BlueField` DPU (DOCA SDK)
     BlueField = 0,
     /// AMD Pensando DPU (future)
     Pensando = 1,
@@ -188,7 +188,7 @@ pub trait DpuWorkQueue: Send + Sync {
 /// Abstract DPU backend trait
 ///
 /// Provides device management, memory allocation, and work queue creation.
-/// Implementations exist for BlueField (DOCA), with stubs for testing.
+/// Implementations exist for `BlueField` (DOCA), with stubs for testing.
 pub trait DpuBackend: Send + Sync {
     /// Buffer type for this backend
     type Buffer: DpuBuffer;
@@ -277,7 +277,7 @@ pub fn is_dpu_available() -> bool {
 
 /// Get the best available DPU backend
 ///
-/// Returns BlueField if available, otherwise returns a stub or CPU fallback.
+/// Returns `BlueField` if available, otherwise returns a stub or CPU fallback.
 pub fn get_best_backend() -> Result<
     Arc<
         dyn DpuBackend<

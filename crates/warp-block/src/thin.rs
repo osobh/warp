@@ -2,8 +2,6 @@
 //!
 //! Implements thin provisioning with allocate-on-write semantics.
 
-use std::collections::HashMap;
-use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 
 use dashmap::DashMap;
@@ -11,7 +9,7 @@ use parking_lot::RwLock;
 
 use crate::config::{ThinPoolConfig, ThinVolumeConfig};
 use crate::error::{BlockError, BlockResult};
-use crate::extent::{BlockExtent, ExtentMap};
+use crate::extent::ExtentMap;
 use crate::volume::{Volume, VolumeId, VolumeState};
 
 /// Thin pool - manages chunk allocation across volumes
@@ -115,7 +113,7 @@ impl ThinPool {
     pub fn get_volume(
         &self,
         id: &VolumeId,
-    ) -> Option<dashmap::mapref::one::Ref<VolumeId, ThinVolume>> {
+    ) -> Option<dashmap::mapref::one::Ref<'_, VolumeId, ThinVolume>> {
         self.volumes.get(id)
     }
 
@@ -123,7 +121,7 @@ impl ThinPool {
     pub fn get_volume_mut(
         &self,
         id: &VolumeId,
-    ) -> Option<dashmap::mapref::one::RefMut<VolumeId, ThinVolume>> {
+    ) -> Option<dashmap::mapref::one::RefMut<'_, VolumeId, ThinVolume>> {
         self.volumes.get_mut(id)
     }
 
@@ -422,7 +420,10 @@ impl Volume for ThinVolume {
 #[derive(Debug)]
 pub enum ReadResult {
     /// All zeros
-    Zero { length: u32 },
+    Zero {
+        /// Number of zero bytes to read
+        length: u32
+    },
     /// Data ranges to read
     Ranges(Vec<DataRange>),
 }
@@ -431,12 +432,21 @@ pub enum ReadResult {
 #[derive(Debug, Clone)]
 pub enum DataRange {
     /// Zero-filled range
-    Zero { offset: u64, length: u32 },
+    Zero {
+        /// Starting offset in the volume
+        offset: u64,
+        /// Number of zero bytes
+        length: u32
+    },
     /// Data from object storage
     Data {
+        /// Starting offset in the volume
         offset: u64,
+        /// Number of bytes to read
         length: u32,
+        /// Object storage key where data is located
         object_key: String,
+        /// Offset within the object where data starts
         object_offset: u64,
     },
 }

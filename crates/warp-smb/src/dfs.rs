@@ -3,7 +3,7 @@
 //! Implements DFS referral handling for SMB clients.
 
 use std::collections::HashMap;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use dashmap::DashMap;
 
@@ -185,6 +185,7 @@ pub struct DfsReferralResponse {
 
 /// Referral header flags
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Default)]
 pub struct ReferralHeaderFlags(u32);
 
 impl ReferralHeaderFlags {
@@ -204,11 +205,6 @@ impl ReferralHeaderFlags {
     }
 }
 
-impl Default for ReferralHeaderFlags {
-    fn default() -> Self {
-        Self(0)
-    }
-}
 
 /// DFS referral entry (v3/v4)
 #[derive(Debug, Clone)]

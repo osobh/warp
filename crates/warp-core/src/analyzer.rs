@@ -218,7 +218,7 @@ fn calculate_chunk_size(total_size: u64, file_count: usize) -> u32 {
     let avg_file_size = total_size / file_count as u64;
 
     if avg_file_size < 256 * 1024 {
-        1 * 1024 * 1024
+        1024 * 1024
     } else if avg_file_size < 1024 * 1024 {
         2 * 1024 * 1024
     } else if avg_file_size < 10 * 1024 * 1024 {

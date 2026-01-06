@@ -3,7 +3,6 @@
 //! Implements the AWS SigV4 signing algorithm for S3 API compatibility.
 //! Reference: https://docs.aws.amazon.com/AmazonS3/latest/API/sig-v4-authenticating-requests.html
 
-use chrono::{DateTime, NaiveDateTime, Utc};
 use hmac::{Hmac, Mac};
 use sha2::{Digest, Sha256};
 

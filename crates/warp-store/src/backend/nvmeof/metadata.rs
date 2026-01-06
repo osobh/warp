@@ -12,7 +12,7 @@ use super::error::{NvmeOfBackendError, NvmeOfBackendResult};
 use super::mapper::ObjectLocation;
 
 use crate::key::ObjectKey;
-use crate::object::ObjectMeta;
+use crate::object::{ObjectMeta, StorageClass};
 
 /// Bucket metadata
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -341,6 +341,7 @@ mod tests {
             version_id: None,
             user_metadata: HashMap::new(),
             is_delete_marker: false,
+            storage_class: StorageClass::Standard,
         };
 
         // Put object

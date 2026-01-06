@@ -489,13 +489,12 @@ impl WitnessNode {
                     _ = ticker.tick() => {
                         // Check peer liveness
                         for mut peer in peers.iter_mut() {
-                            if !peer.is_alive(timeout) {
-                                if peer.reachable {
+                            if !peer.is_alive(timeout)
+                                && peer.reachable {
                                     peer.reachable = false;
                                     vote_tracker.mark_unreachable(peer.node_id);
                                     debug!(node_id = peer.node_id, "Peer became unreachable");
                                 }
-                            }
                         }
                     }
                     _ = shutdown_rx.recv() => {

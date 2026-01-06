@@ -45,6 +45,7 @@ impl LifecycleQuery {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename = "LifecycleConfiguration")]
 pub struct LifecycleConfigurationXml {
+    /// List of lifecycle rules to apply to the bucket
     #[serde(rename = "Rule", default)]
     pub rules: Vec<LifecycleRuleXml>,
 }
@@ -213,7 +214,7 @@ pub async fn put_lifecycle<B: StorageBackend>(
     let rules: Vec<LifecycleRule> = config
         .rules
         .into_iter()
-        .map(|r| xml_to_rule(r))
+        .map(xml_to_rule)
         .collect::<Result<Vec<_>, _>>()?;
 
     // Store lifecycle configuration

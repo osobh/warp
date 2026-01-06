@@ -291,7 +291,7 @@ pub trait DpuErasureCoder: DpuOp {
     /// Calculate shard size for a given data size
     fn shard_size(&self, data_len: usize) -> usize {
         let data_shards = self.data_shards();
-        (data_len + data_shards - 1) / data_shards
+        data_len.div_ceil(data_shards)
     }
 }
 

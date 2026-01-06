@@ -23,8 +23,9 @@ pub struct HealthWeights {
 
 impl HealthWeights {
     /// Creates new health weights with specified values
-    pub fn new(success_rate: f64, uptime: f64, response_time: f64) -> Self {
-        HealthWeights {
+    #[must_use] 
+    pub const fn new(success_rate: f64, uptime: f64, response_time: f64) -> Self {
+        Self {
             success_rate,
             uptime,
             response_time,
@@ -34,7 +35,7 @@ impl HealthWeights {
 
 impl Default for HealthWeights {
     fn default() -> Self {
-        HealthWeights {
+        Self {
             success_rate: 0.4,
             uptime: 0.3,
             response_time: 0.3,
@@ -74,8 +75,9 @@ pub struct HealthComponents {
 
 impl HealthComponents {
     /// Creates new health components with zero values
-    pub fn new() -> Self {
-        HealthComponents {
+    #[must_use] 
+    pub const fn new() -> Self {
+        Self {
             success_rate: 0.0,
             uptime: 0.0,
             response_time: 0.0,
@@ -106,7 +108,7 @@ impl HealthComponents {
             // Incremental average calculation
             let prev_total = (self.total_requests - 1) as f64;
             self.avg_response_ms =
-                (self.avg_response_ms * prev_total + response_ms) / self.total_requests as f64;
+                self.avg_response_ms.mul_add(prev_total, response_ms) / self.total_requests as f64;
             self.min_response_ms = self.min_response_ms.min(response_ms);
             self.max_response_ms = self.max_response_ms.max(response_ms);
         }
@@ -180,7 +182,7 @@ impl HealthScore {
     /// Creates a new health score from components
     fn new(components: HealthComponents, weights: &HealthWeights) -> Self {
         let overall = Self::calculate(&components, weights);
-        HealthScore {
+        Self {
             overall,
             components,
             last_updated: SystemTime::now(),
@@ -188,19 +190,19 @@ impl HealthScore {
     }
 
     /// Calculates the composite health score from components and weights
+    #[must_use] 
     pub fn calculate(components: &HealthComponents, weights: &HealthWeights) -> f64 {
-        weights.success_rate * components.success_rate
-            + weights.uptime * components.uptime
-            + weights.response_time * components.response_time
+        weights.response_time.mul_add(components.response_time, weights.success_rate.mul_add(components.success_rate, weights.uptime * components.uptime))
     }
 
     /// Checks if the edge is considered healthy based on a threshold
+    #[must_use] 
     pub fn is_healthy(&self, threshold: f64) -> bool {
         self.overall >= threshold
     }
 }
 
-/// Multi-dimensional health tracker for edge nodes (thread-safe via DashMap)
+/// Multi-dimensional health tracker for edge nodes (thread-safe via `DashMap`)
 pub struct HealthScorer {
     scores: DashMap<EdgeId, HealthComponents>,
     weights: HealthWeights,
@@ -208,16 +210,18 @@ pub struct HealthScorer {
 
 impl HealthScorer {
     /// Creates a new health scorer with default weights
+    #[must_use] 
     pub fn new() -> Self {
-        HealthScorer {
+        Self {
             scores: DashMap::new(),
             weights: HealthWeights::default(),
         }
     }
 
     /// Creates a new health scorer with custom weights
+    #[must_use] 
     pub fn with_weights(weights: HealthWeights) -> Self {
-        HealthScorer {
+        Self {
             scores: DashMap::new(),
             weights,
         }
@@ -227,7 +231,7 @@ impl HealthScorer {
     pub fn record_success(&self, edge: &EdgeId, response_time: Duration) {
         self.scores
             .entry(*edge)
-            .or_insert_with(HealthComponents::new)
+            .or_default()
             .record_success(response_time);
     }
 
@@ -235,7 +239,7 @@ impl HealthScorer {
     pub fn record_failure(&self, edge: &EdgeId) {
         self.scores
             .entry(*edge)
-            .or_insert_with(HealthComponents::new)
+            .or_default()
             .record_failure();
     }
 
@@ -243,11 +247,12 @@ impl HealthScorer {
     pub fn record_uptime_check(&self, edge: &EdgeId, is_online: bool) {
         self.scores
             .entry(*edge)
-            .or_insert_with(HealthComponents::new)
+            .or_default()
             .record_uptime_check(is_online);
     }
 
     /// Gets the complete health score for an edge
+    #[must_use] 
     pub fn get_score(&self, edge: &EdgeId) -> Option<HealthScore> {
         self.scores
             .get(edge)
@@ -255,6 +260,7 @@ impl HealthScorer {
     }
 
     /// Gets only the overall health score for an edge
+    #[must_use] 
     pub fn get_overall(&self, edge: &EdgeId) -> Option<f64> {
         self.scores
             .get(edge)
@@ -262,6 +268,7 @@ impl HealthScorer {
     }
 
     /// Ranks a set of edges by their health scores (best first)
+    #[must_use] 
     pub fn rank_edges(&self, edges: &[EdgeId]) -> Vec<(EdgeId, f64)> {
         let mut ranked: Vec<(EdgeId, f64)> = edges
             .iter()
@@ -275,6 +282,7 @@ impl HealthScorer {
     }
 
     /// Gets the N healthiest edges from a set
+    #[must_use] 
     pub fn get_healthiest(&self, edges: &[EdgeId], count: usize) -> Vec<EdgeId> {
         self.rank_edges(edges)
             .into_iter()
@@ -284,13 +292,13 @@ impl HealthScorer {
     }
 
     /// Filters edges that meet a minimum health threshold
+    #[must_use] 
     pub fn filter_healthy(&self, edges: &[EdgeId], threshold: f64) -> Vec<EdgeId> {
         edges
             .iter()
             .filter(|edge| {
                 self.get_overall(edge)
-                    .map(|score| score >= threshold)
-                    .unwrap_or(false)
+                    .is_some_and(|score| score >= threshold)
             })
             .copied()
             .collect()

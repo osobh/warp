@@ -188,6 +188,7 @@ pub struct NvmeCommand {
     pub nsid: u32,
     /// Reserved (CDW2-3)
     pub cdw2: u32,
+    /// Reserved (CDW3)
     pub cdw3: u32,
     /// Metadata Pointer
     pub mptr: u64,
@@ -1025,7 +1026,7 @@ impl IdentifyNamespace {
         ns.flbas = 0; // Using LBA format 0
 
         // LBA Format 0: block_size bytes, no metadata
-        let lba_ds = (block_size.trailing_zeros() as u8) & 0xFF; // log2(block_size)
+        let lba_ds = (block_size.trailing_zeros() as u8); // log2(block_size)
         ns.lbaf[0] = [0, 0, lba_ds, 0]; // [ms, lbads, rp]
 
         // Thin provisioning / deallocate

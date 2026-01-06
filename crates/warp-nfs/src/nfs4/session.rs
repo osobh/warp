@@ -2,7 +2,6 @@
 //!
 //! Sessions provide exactly-once semantics for NFSv4.1 operations.
 
-use std::collections::HashMap;
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::time::{Duration, Instant};
 
@@ -133,7 +132,7 @@ impl SessionSlot {
     }
 
     /// Mark slot as in use
-    pub fn acquire(&mut self, seq_id: u32) -> bool {
+    pub fn acquire(&mut self, _seq_id: u32) -> bool {
         if self.in_use {
             return false;
         }
@@ -227,7 +226,7 @@ impl Nfs4SessionManager {
     pub fn get_session(
         &self,
         id: &SessionId,
-    ) -> Option<dashmap::mapref::one::Ref<SessionId, Nfs4Session>> {
+    ) -> Option<dashmap::mapref::one::Ref<'_, SessionId, Nfs4Session>> {
         self.sessions.get(id)
     }
 

@@ -65,11 +65,13 @@ impl Default for GpuMemConfig {
 
 /// Spill policy - determines which tensors to evict
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Default)]
 pub enum SpillPolicy {
     /// Least Recently Used
     Lru,
 
     /// LRU with prefetch awareness (don't evict soon-to-be-used tensors)
+    #[default]
     LruWithPrefetch,
 
     /// Size-aware (prefer evicting larger tensors)
@@ -82,14 +84,10 @@ pub enum SpillPolicy {
     CostBased,
 }
 
-impl Default for SpillPolicy {
-    fn default() -> Self {
-        Self::LruWithPrefetch
-    }
-}
 
 /// Prefetch strategy
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Default)]
 pub enum PrefetchStrategy {
     /// No prefetching
     None,
@@ -98,17 +96,13 @@ pub enum PrefetchStrategy {
     Sequential,
 
     /// Training-aware (understands forward/backward pass patterns)
+    #[default]
     TrainingAware,
 
     /// ML-model driven (uses SLAI predictions)
     ModelDriven,
 }
 
-impl Default for PrefetchStrategy {
-    fn default() -> Self {
-        Self::TrainingAware
-    }
-}
 
 /// Cache configuration
 #[derive(Debug, Clone, Serialize, Deserialize)]

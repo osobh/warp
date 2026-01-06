@@ -290,7 +290,7 @@ impl<B: StorageBackend> StorageCollectiveOps for CollectiveAdapter<B> {
                 .collect::<Vec<_>>(),
             DistributionPattern::Block => {
                 let chunk_size =
-                    (keys.len() + ctx.world_size() as usize - 1) / ctx.world_size() as usize;
+                    keys.len().div_ceil(ctx.world_size() as usize);
                 keys.iter()
                     .enumerate()
                     .map(|(i, _)| Rank::from((i / chunk_size) as u32))

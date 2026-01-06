@@ -2,12 +2,10 @@
 //!
 //! Manages open files, locks, delegations, and layout state.
 
-use std::collections::HashMap;
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::time::{Duration, Instant};
+use std::time::Instant;
 
 use dashmap::DashMap;
-use parking_lot::RwLock;
 
 use super::{Nfs4FileHandle, StateId};
 use crate::error::NfsStatus;

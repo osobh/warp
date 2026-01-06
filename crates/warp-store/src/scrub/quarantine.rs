@@ -1,7 +1,7 @@
 //! Quarantine management for corrupted blocks
 
 use std::collections::HashMap;
-use std::time::{Duration, Instant, SystemTime};
+use std::time::{Duration, SystemTime};
 
 use dashmap::DashMap;
 use parking_lot::RwLock;
@@ -264,7 +264,7 @@ impl QuarantineManager {
 
     /// Clean up old entries
     pub fn cleanup_expired(&self) -> usize {
-        let now = SystemTime::now();
+        let _now = SystemTime::now();
         let mut removed = 0;
 
         self.blocks.retain(|_, block| {

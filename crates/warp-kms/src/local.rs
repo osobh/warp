@@ -389,8 +389,7 @@ impl KmsProvider for LocalKms {
 
                         if let Ok(old_master) =
                             self.get_master_key_version(key_id, encrypted.version)
-                        {
-                            if let Ok(plaintext) = self.decrypt_with_algorithm(
+                            && let Ok(plaintext) = self.decrypt_with_algorithm(
                                 old_master.algorithm,
                                 &old_master.material,
                                 ciphertext,
@@ -402,7 +401,6 @@ impl KmsProvider for LocalKms {
                                 );
                                 return Ok(plaintext);
                             }
-                        }
                     }
                 }
             }

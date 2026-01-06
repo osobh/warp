@@ -27,6 +27,7 @@ use crate::error::{ApiError, ApiResult};
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename = "ServerSideEncryptionConfiguration")]
 pub struct ServerSideEncryptionConfigurationXml {
+    /// List of server-side encryption rules to apply
     #[serde(rename = "Rule")]
     pub rules: Vec<ServerSideEncryptionRuleXml>,
 }
@@ -34,9 +35,11 @@ pub struct ServerSideEncryptionConfigurationXml {
 /// Server-side encryption rule
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ServerSideEncryptionRuleXml {
+    /// Default encryption settings to apply
     #[serde(rename = "ApplyServerSideEncryptionByDefault")]
     pub apply_server_side_encryption_by_default: ApplyServerSideEncryptionByDefaultXml,
 
+    /// Whether S3 Bucket Keys are enabled for this bucket
     #[serde(rename = "BucketKeyEnabled", skip_serializing_if = "Option::is_none")]
     pub bucket_key_enabled: Option<bool>,
 }

@@ -10,7 +10,7 @@ use async_trait::async_trait;
 use dashmap::DashMap;
 use parking_lot::RwLock;
 
-use crate::error::{GatewayError, GatewayResult};
+use crate::error::GatewayError;
 use crate::session::ClientId;
 
 /// Unique identifier for a file (inode number)
@@ -92,7 +92,7 @@ impl ByteRangeLock {
 
     /// Check if lock has expired
     pub fn is_expired(&self) -> bool {
-        self.expires.map_or(false, |exp| Instant::now() > exp)
+        self.expires.is_some_and(|exp| Instant::now() > exp)
     }
 
     /// Check if this lock overlaps with a range

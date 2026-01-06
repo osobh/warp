@@ -25,6 +25,7 @@ use crate::error::{ApiError, ApiResult};
 /// Versioning configuration (S3 XML format)
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename = "VersioningConfiguration")]
+#[derive(Default)]
 pub struct VersioningConfigurationXml {
     /// Status: Enabled or Suspended (omitted if never enabled)
     #[serde(rename = "Status", skip_serializing_if = "Option::is_none")]
@@ -35,14 +36,6 @@ pub struct VersioningConfigurationXml {
     pub mfa_delete: Option<String>,
 }
 
-impl Default for VersioningConfigurationXml {
-    fn default() -> Self {
-        Self {
-            status: None,
-            mfa_delete: None,
-        }
-    }
-}
 
 // =============================================================================
 // Versioning Handlers

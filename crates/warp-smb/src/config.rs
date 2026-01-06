@@ -9,6 +9,7 @@ use serde::{Deserialize, Serialize};
 /// SMB dialect versions
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 #[repr(u16)]
+#[derive(Default)]
 pub enum SmbDialect {
     /// SMB 2.0.2
     Smb202 = 0x0202,
@@ -19,6 +20,7 @@ pub enum SmbDialect {
     /// SMB 3.0.2
     Smb302 = 0x0302,
     /// SMB 3.1.1
+    #[default]
     Smb311 = 0x0311,
 }
 
@@ -67,11 +69,6 @@ impl SmbDialect {
     }
 }
 
-impl Default for SmbDialect {
-    fn default() -> Self {
-        Self::Smb311
-    }
-}
 
 /// SMB server configuration
 #[derive(Debug, Clone, Serialize, Deserialize)]

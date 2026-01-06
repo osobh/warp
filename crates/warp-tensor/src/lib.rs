@@ -35,7 +35,7 @@
 //!
 //! # Features
 //!
-//! - **Native Tensor Formats**: Support for safetensors, GGUF, NumPy, and custom formats
+//! - **Native Tensor Formats**: Support for safetensors, GGUF, `NumPy`, and custom formats
 //! - **Lazy Loading**: Load only tensor metadata initially, fetch data on-demand
 //! - **Chunked Storage**: Shard large tensors across multiple objects
 //! - **Incremental Checkpoints**: Save only changed tensors between checkpoints

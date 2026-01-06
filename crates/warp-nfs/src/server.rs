@@ -7,11 +7,11 @@ use dashmap::DashMap;
 use tokio::net::TcpListener;
 use tracing::{debug, info, warn};
 
-use warp_gateway_common::{DelegationManager, InMemoryLockManager, LockManager, SessionManager};
+use warp_gateway_common::{DelegationManager, InMemoryLockManager, SessionManager};
 use warp_store::Store;
 
 use crate::config::{NfsConfig, NfsExport};
-use crate::error::{NfsError, NfsResult};
+use crate::error::NfsResult;
 use crate::nfs4::StateManager;
 
 /// NFS server

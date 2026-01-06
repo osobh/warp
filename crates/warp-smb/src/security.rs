@@ -2,9 +2,8 @@
 //!
 //! Implements Windows security descriptors and ACLs for SMB.
 
-use std::collections::HashMap;
 
-use bytes::{Buf, BufMut, Bytes, BytesMut};
+use bytes::{BufMut, BytesMut};
 
 /// Security descriptor control flags
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

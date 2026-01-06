@@ -99,8 +99,10 @@ pub type Result<T> = std::result::Result<T, Error>;
 
 /// Portal lifecycle states
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+#[derive(Default)]
 pub enum PortalState {
     /// Created but not yet active
+    #[default]
     Created,
     /// Currently active and accepting access
     Active,
@@ -112,11 +114,6 @@ pub enum PortalState {
     Archived,
 }
 
-impl Default for PortalState {
-    fn default() -> Self {
-        Self::Created
-    }
-}
 
 impl std::fmt::Display for PortalState {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {

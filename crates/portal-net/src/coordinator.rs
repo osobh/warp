@@ -61,9 +61,10 @@ pub enum HubMessage {
 }
 
 /// Connection state of the Hub coordinator
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum ConnectionState {
     /// Not connected to Hub
+    #[default]
     Disconnected,
     /// Attempting to connect to Hub
     Connecting,
@@ -71,12 +72,6 @@ pub enum ConnectionState {
     Connected,
     /// Connection failed, will retry
     Failed,
-}
-
-impl Default for ConnectionState {
-    fn default() -> Self {
-        Self::Disconnected
-    }
 }
 
 /// Internal state for the Hub coordinator
@@ -99,6 +94,10 @@ pub struct HubCoordinator {
 
 impl HubCoordinator {
     /// Creates a new Hub coordinator with the given configuration
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the configuration is invalid (port is 0 or heartbeat interval is 0)
     pub fn new(config: HubNetConfig) -> Result<Self> {
         if config.endpoint.port() == 0 {
             return Err(PortalNetError::Configuration(
@@ -131,6 +130,10 @@ impl HubCoordinator {
     /// Uses optimistic locking to detect concurrent modifications during the async
     /// Hub communication. If the state version changes during the operation,
     /// it means another task modified state and this registration is aborted.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if registration fails or concurrent state modification is detected
     pub async fn register(&self, edge: &LocalEdgeInfo) -> Result<VirtualIp> {
         edge.validate()?;
 
@@ -151,8 +154,8 @@ impl HubCoordinator {
         let response = self.simulate_hub_response(message).await?;
 
         if let HubMessage::RegisterResponse { virtual_ip } = response {
-            let mut state = self.state.write().await;
             // Check for concurrent modification using optimistic locking
+            let mut state = self.state.write().await;
             if state.version != expected_version {
                 return Err(PortalNetError::HubConnection(
                     "concurrent state modification detected during registration".to_string(),
@@ -164,8 +167,8 @@ impl HubCoordinator {
             state.version += 1;
             Ok(virtual_ip)
         } else {
-            let mut state = self.state.write().await;
             // Check for concurrent modification
+            let mut state = self.state.write().await;
             if state.version == expected_version {
                 state.connection_state = ConnectionState::Failed;
                 state.version += 1;
@@ -177,6 +180,10 @@ impl HubCoordinator {
     }
 
     /// Fetches the current peer directory from the Hub
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if not connected to the Hub or if the request fails
     pub async fn get_peers(&self) -> Result<Vec<PeerMetadata>> {
         let state = self.state.read().await;
         if state.connection_state != ConnectionState::Connected {
@@ -202,6 +209,10 @@ impl HubCoordinator {
     }
 
     /// Requests connection info for a specific peer
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if not connected to the Hub or if the request fails
     pub async fn get_peer(&self, public_key: &[u8; 32]) -> Result<Option<PeerMetadata>> {
         let state = self.state.read().await;
         if state.connection_state != ConnectionState::Connected {
@@ -227,6 +238,10 @@ impl HubCoordinator {
     }
 
     /// Sends a heartbeat to maintain registration
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if not connected to the Hub or if the heartbeat fails
     pub async fn heartbeat(&self) -> Result<()> {
         let state = self.state.read().await;
         if state.connection_state != ConnectionState::Connected {
@@ -255,6 +270,10 @@ impl HubCoordinator {
     }
 
     /// Requests NAT hole punching assistance for connecting to a target peer
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if not connected to the Hub or if the hole punch request fails
     pub async fn request_hole_punch(&self, target: &[u8; 32]) -> Result<SocketAddr> {
         let state = self.state.read().await;
         if state.connection_state != ConnectionState::Connected {
@@ -278,6 +297,10 @@ impl HubCoordinator {
     }
 
     /// Relays data through the Hub when P2P connection fails
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if not connected to the Hub, payload is too large, or if the relay fails
     pub async fn relay(&self, to: &[u8; 32], data: &[u8]) -> Result<()> {
         let state = self.state.read().await;
         if state.connection_state != ConnectionState::Connected {
@@ -311,6 +334,10 @@ impl HubCoordinator {
     }
 
     /// Disconnects from the Hub
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the disconnect request fails
     pub async fn disconnect(&self) -> Result<()> {
         let state = self.state.read().await;
         if state.connection_state == ConnectionState::Disconnected {
@@ -353,11 +380,15 @@ impl HubCoordinator {
 
     /// Returns the Hub configuration
     #[must_use]
-    pub fn config(&self) -> &HubNetConfig {
+    pub const fn config(&self) -> &HubNetConfig {
         &self.config
     }
 
     /// Starts automatic heartbeat loop
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if not connected to the Hub
     pub async fn start_heartbeat_loop(&self) -> Result<mpsc::Receiver<Result<()>>> {
         let state = self.state.read().await;
         if state.connection_state != ConnectionState::Connected {

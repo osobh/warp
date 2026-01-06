@@ -269,7 +269,7 @@ impl StorageBackend for LocalBackend {
                     let file_metadata = entry.metadata().await?;
                     let modified = file_metadata
                         .modified()
-                        .map(|t| chrono::DateTime::<Utc>::from(t))
+                        .map(chrono::DateTime::<Utc>::from)
                         .unwrap_or_else(|_| Utc::now());
 
                     // Try to read object metadata for storage class and etag

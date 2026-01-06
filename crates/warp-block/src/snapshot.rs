@@ -2,16 +2,14 @@
 //!
 //! Implements copy-on-write (COW) snapshots for thin volumes.
 
-use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use dashmap::DashMap;
 
-use crate::config::ThinVolumeConfig;
 use crate::error::{BlockError, BlockResult};
 use crate::extent::ExtentMap;
-use crate::thin::{ThinPool, ThinVolume};
-use crate::volume::{VolumeId, VolumeState};
+use crate::thin::ThinVolume;
+use crate::volume::VolumeId;
 
 /// Block snapshot
 #[derive(Debug)]
@@ -142,7 +140,7 @@ impl SnapshotManager {
     pub fn get_snapshot(
         &self,
         id: &VolumeId,
-    ) -> Option<dashmap::mapref::one::Ref<VolumeId, BlockSnapshot>> {
+    ) -> Option<dashmap::mapref::one::Ref<'_, VolumeId, BlockSnapshot>> {
         self.snapshots.get(id)
     }
 
@@ -254,7 +252,7 @@ impl CowManager {
     /// Check if COW is needed for a write
     pub fn needs_cow(
         &self,
-        volume_id: VolumeId,
+        _volume_id: VolumeId,
         offset: u64,
         length: u64,
         extents: &ExtentMap,

@@ -5,7 +5,7 @@
 
 use serde::{Deserialize, Serialize};
 use std::fmt;
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::{SystemTime, UNIX_EPOCH};
 
 /// Transfer direction for UI display
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]

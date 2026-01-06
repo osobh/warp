@@ -39,7 +39,7 @@ impl VirtualIp {
     const NETWORK_PREFIX: [u8; 2] = [10, 0];
 
     /// Hub virtual IP address (10.0.0.1)
-    pub const HUB: Self = VirtualIp(Ipv4Addr::new(10, 0, 0, 1));
+    pub const HUB: Self = Self(Ipv4Addr::new(10, 0, 0, 1));
 
     /// Creates a new virtual IP address from a 16-bit host identifier
     ///
@@ -54,10 +54,11 @@ impl VirtualIp {
     /// let vip = VirtualIp::new(0x0102); // Creates 10.0.1.2
     /// assert_eq!(vip.host(), 0x0102);
     /// ```
-    pub fn new(host: u16) -> Self {
+    #[must_use]
+    pub const fn new(host: u16) -> Self {
         let high = (host >> 8) as u8;
         let low = (host & 0xFF) as u8;
-        VirtualIp(Ipv4Addr::new(10, 0, high, low))
+        Self(Ipv4Addr::new(10, 0, high, low))
     }
 
     /// Extracts the 16-bit host identifier from the virtual IP
@@ -70,7 +71,8 @@ impl VirtualIp {
     /// let vip = VirtualIp::new(0x1234);
     /// assert_eq!(vip.host(), 0x1234);
     /// ```
-    pub fn host(&self) -> u16 {
+    #[must_use]
+    pub const fn host(&self) -> u16 {
         let octets = self.0.octets();
         ((octets[2] as u16) << 8) | (octets[3] as u16)
     }
@@ -85,27 +87,30 @@ impl VirtualIp {
     /// let vip = VirtualIp::new(100);
     /// assert!(vip.is_portal_subnet());
     /// ```
-    pub fn is_portal_subnet(&self) -> bool {
+    #[must_use]
+    pub const fn is_portal_subnet(&self) -> bool {
         let octets = self.0.octets();
         octets[0] == Self::NETWORK_PREFIX[0] && octets[1] == Self::NETWORK_PREFIX[1]
     }
 
     /// Returns the underlying IPv4 address
-    pub fn as_ipv4(&self) -> Ipv4Addr {
+    #[must_use]
+    pub const fn as_ipv4(&self) -> Ipv4Addr {
         self.0
     }
 
-    /// Attempts to create a VirtualIp from an arbitrary IPv4 address
+    /// Attempts to create a `VirtualIp` from an arbitrary IPv4 address
     ///
-    /// Returns an error if the address is not in the 10.0.0.0/16 subnet.
+    /// # Errors
+    ///
+    /// Returns an error if the address is not in the 10.0.0.0/16 subnet
     pub fn from_ipv4(addr: Ipv4Addr) -> Result<Self> {
-        let vip = VirtualIp(addr);
+        let vip = Self(addr);
         if vip.is_portal_subnet() {
             Ok(vip)
         } else {
             Err(PortalNetError::InvalidVirtualIp(format!(
-                "{} is not in the 10.0.0.0/16 subnet",
-                addr
+                "{addr} is not in the 10.0.0.0/16 subnet"
             )))
         }
     }
@@ -125,16 +130,17 @@ impl From<VirtualIp> for Ipv4Addr {
 
 impl From<VirtualIp> for IpAddr {
     fn from(vip: VirtualIp) -> Self {
-        IpAddr::V4(vip.0)
+        Self::V4(vip.0)
     }
 }
 
 /// Peer connection status
 ///
 /// Tracks the current connection mode for a peer in the mesh network.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 pub enum PeerStatus {
     /// Connection status unknown (initial state)
+    #[default]
     Unknown,
     /// Peer is online but connection mode not yet determined
     Online,
@@ -146,20 +152,14 @@ pub enum PeerStatus {
     Relayed,
 }
 
-impl Default for PeerStatus {
-    fn default() -> Self {
-        PeerStatus::Unknown
-    }
-}
-
 impl fmt::Display for PeerStatus {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            PeerStatus::Unknown => write!(f, "unknown"),
-            PeerStatus::Online => write!(f, "online"),
-            PeerStatus::Offline => write!(f, "offline"),
-            PeerStatus::DirectP2P => write!(f, "direct-p2p"),
-            PeerStatus::Relayed => write!(f, "relayed"),
+            Self::Unknown => write!(f, "unknown"),
+            Self::Online => write!(f, "online"),
+            Self::Offline => write!(f, "offline"),
+            Self::DirectP2P => write!(f, "direct-p2p"),
+            Self::Relayed => write!(f, "relayed"),
         }
     }
 }
@@ -177,13 +177,13 @@ pub struct EndpointPriority(pub u8);
 
 impl EndpointPriority {
     /// Highest priority (preferred path)
-    pub const PRIMARY: Self = EndpointPriority(0);
+    pub const PRIMARY: Self = Self(0);
     /// Secondary priority (backup path)
-    pub const SECONDARY: Self = EndpointPriority(50);
+    pub const SECONDARY: Self = Self(50);
     /// Default priority
-    pub const DEFAULT: Self = EndpointPriority(100);
+    pub const DEFAULT: Self = Self(100);
     /// Lowest priority (last resort)
-    pub const FALLBACK: Self = EndpointPriority(255);
+    pub const FALLBACK: Self = Self(255);
 }
 
 impl Default for EndpointPriority {
@@ -206,15 +206,16 @@ impl fmt::Display for EndpointPriority {
 pub struct PathId(pub u32);
 
 impl PathId {
-    /// Generate PathId from source and destination IPs
+    /// Generate `PathId` from source and destination IPs
     ///
-    /// The same (local_ip, remote_ip) pair always produces the same PathId.
+    /// The same `(local_ip, remote_ip)` pair always produces the same `PathId`.
+    #[must_use]
     pub fn from_ips(local: IpAddr, remote: IpAddr) -> Self {
         use std::hash::{Hash, Hasher};
         let mut hasher = std::collections::hash_map::DefaultHasher::new();
         local.hash(&mut hasher);
         remote.hash(&mut hasher);
-        PathId(hasher.finish() as u32)
+        Self(hasher.finish() as u32)
     }
 }
 
@@ -251,6 +252,7 @@ pub struct PeerEndpoint {
 
 impl PeerEndpoint {
     /// Creates a new endpoint with default settings
+    #[must_use]
     pub fn new(addr: SocketAddr) -> Self {
         Self {
             addr,
@@ -263,19 +265,22 @@ impl PeerEndpoint {
     }
 
     /// Builder: set priority
-    pub fn with_priority(mut self, priority: EndpointPriority) -> Self {
+    #[must_use]
+    pub const fn with_priority(mut self, priority: EndpointPriority) -> Self {
         self.priority = priority;
         self
     }
 
     /// Builder: set label
+    #[must_use]
     pub fn with_label(mut self, label: impl Into<String>) -> Self {
         self.label = Some(label.into());
         self
     }
 
     /// Builder: set enabled state
-    pub fn with_enabled(mut self, enabled: bool) -> Self {
+    #[must_use]
+    pub const fn with_enabled(mut self, enabled: bool) -> Self {
         self.enabled = enabled;
         self
     }
@@ -285,8 +290,12 @@ impl PeerEndpoint {
         self.last_success_ms = Some(
             std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
-                .map(|d| d.as_millis() as u64)
-                .unwrap_or(0),
+                .map_or(0, |d| {
+                    #[allow(clippy::cast_possible_truncation)]
+                    {
+                        d.as_millis() as u64
+                    }
+                }),
         );
         self.failure_count = 0;
     }
@@ -297,7 +306,8 @@ impl PeerEndpoint {
     }
 
     /// Check if this endpoint is healthy (enabled with low failure count)
-    pub fn is_healthy(&self) -> bool {
+    #[must_use]
+    pub const fn is_healthy(&self) -> bool {
         self.enabled && self.failure_count < 3
     }
 }
@@ -314,13 +324,13 @@ impl fmt::Display for PeerEndpoint {
 
 /// Peer configuration
 ///
-/// Contains the essential configuration needed to establish a WireGuard
+/// Contains the essential configuration needed to establish a `WireGuard`
 /// connection with a peer in the mesh network.
 ///
 /// Supports multiple endpoints per peer for multi-path network aggregation.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct PeerConfig {
-    /// WireGuard public key (X25519)
+    /// `WireGuard` public key (X25519)
     pub public_key: [u8; 32],
 
     /// Virtual IP address assigned to this peer
@@ -341,8 +351,9 @@ pub struct PeerConfig {
 
 impl PeerConfig {
     /// Creates a new peer configuration with default settings
+    #[must_use]
     pub fn new(public_key: [u8; 32], virtual_ip: VirtualIp) -> Self {
-        PeerConfig {
+        Self {
             public_key,
             virtual_ip,
             endpoints: Vec::new(),
@@ -352,8 +363,9 @@ impl PeerConfig {
     }
 
     /// Creates a new peer configuration with a single endpoint
+    #[must_use]
     pub fn with_endpoint(public_key: [u8; 32], virtual_ip: VirtualIp, endpoint: SocketAddr) -> Self {
-        PeerConfig {
+        Self {
             public_key,
             virtual_ip,
             endpoints: vec![PeerEndpoint::new(endpoint)],
@@ -363,6 +375,7 @@ impl PeerConfig {
     }
 
     /// Returns the public key as a hex string
+    #[must_use]
     pub fn public_key_hex(&self) -> String {
         hex::encode(self.public_key)
     }
@@ -517,59 +530,81 @@ impl Default for PeerMetadata {
 pub enum NetworkEvent {
     /// A new peer has joined the network
     PeerJoined {
+        /// WireGuard public key of the peer
         public_key: [u8; 32],
+        /// Virtual IP address assigned to the peer
         virtual_ip: VirtualIp,
     },
 
     /// A peer has left the network
-    PeerLeft { public_key: [u8; 32] },
+    PeerLeft {
+        /// WireGuard public key of the peer that left
+        public_key: [u8; 32]
+    },
 
     /// A peer's endpoint has been updated
     EndpointUpdated {
+        /// WireGuard public key of the peer
         public_key: [u8; 32],
+        /// New network endpoint address
         endpoint: SocketAddr,
     },
 
     /// A peer was discovered on the local network via mDNS
     LanPeerDiscovered {
+        /// WireGuard public key of the discovered peer
         public_key: [u8; 32],
+        /// Local network address of the peer
         local_addr: SocketAddr,
     },
 
     /// A peer's connection mode has changed (e.g., relayed -> direct P2P)
     ConnectionModeChanged {
+        /// WireGuard public key of the peer
         public_key: [u8; 32],
+        /// New connection status
         status: PeerStatus,
     },
 
     /// A new endpoint was added to a peer (multi-path support)
     EndpointAdded {
+        /// WireGuard public key of the peer
         public_key: [u8; 32],
+        /// Endpoint that was added
         endpoint: PeerEndpoint,
     },
 
     /// An endpoint was removed from a peer (multi-path support)
     EndpointRemoved {
+        /// WireGuard public key of the peer
         public_key: [u8; 32],
+        /// Address of the endpoint that was removed
         endpoint_addr: SocketAddr,
     },
 
     /// A local interface was added for multi-path connections
     LocalInterfaceAdded {
+        /// IP address bound to the local interface
         bind_ip: std::net::IpAddr,
+        /// Optional label for the interface
         label: Option<String>,
     },
 
     /// A local interface was removed
     LocalInterfaceRemoved {
+        /// IP address of the removed interface
         bind_ip: std::net::IpAddr,
     },
 
     /// Health status changed for a specific path (local_ip × remote_ip pair)
     PathHealthChanged {
+        /// Unique identifier for this network path
         path_id: PathId,
+        /// Local IP address used for this path
         local_ip: std::net::IpAddr,
+        /// Remote endpoint address
         remote_addr: SocketAddr,
+        /// Health score in range [0.0, 1.0]
         health: f32,
     },
 }

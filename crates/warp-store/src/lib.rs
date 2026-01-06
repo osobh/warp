@@ -107,8 +107,9 @@ pub use scrub::{
     ScrubConfig, ScrubDaemon, ScrubJob, ScrubMetrics, ScrubResult, ScrubScheduler, ScrubStats,
 };
 pub use slai::{
-    AccessPattern, AccessStats, AccessTracker, PlacementDecision, PlacementEngine, PlacementHint,
-    PredictionResult, WorkloadPredictor, WorkloadType,
+    AccessOp, AccessPattern, AccessStats, AccessTracker, ObjectStats, PlacementDecision,
+    PlacementEngine, PlacementHint, PredictionResult, TrainingPhase, WorkloadPredictor,
+    WorkloadType,
 };
 pub use snapshot::{
     BlockRef, BlockState, CloneConfig, CloneHandle, CloneInfo, CloneManager, CloneState, CowBlock,

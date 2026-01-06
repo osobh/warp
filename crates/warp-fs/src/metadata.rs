@@ -357,7 +357,7 @@ impl InodeMetadata {
 
     /// Convert to FUSE file attributes
     pub fn to_file_attr(&self, block_size: u32) -> fuser::FileAttr {
-        let blocks = (self.size + block_size as u64 - 1) / block_size as u64;
+        let blocks = self.size.div_ceil(block_size as u64);
 
         fuser::FileAttr {
             ino: self.ino,

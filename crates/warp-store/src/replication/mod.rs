@@ -14,8 +14,8 @@ mod wireguard;
 pub use domain::{Domain, DomainHealth, DomainId, DomainRegistry, NodeInfo, NodeStatus};
 pub use geo_router::{GeoRouter, GeoRouterStats, LatencyStats, ShardReadPlan};
 pub use shards::{
-    DistributedShardManager, ShardDistributionInfo, ShardHealth, ShardIndex, ShardKey,
-    ShardLocation, ShardManagerStats, ShardVerification,
+    DistributedShardManager, RemoteShardClient, ShardDistributionInfo, ShardHealth, ShardIndex,
+    ShardKey, ShardLocation, ShardManagerStats, ShardVerification, TcpShardClient,
 };
 pub use wireguard::{
     TunnelStats, TunnelStatus, WireGuardConfig, WireGuardKeyPair, WireGuardTunnel,
@@ -184,8 +184,10 @@ impl ErasurePolicy {
 
 /// How shards are distributed across domains
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Default)]
 pub enum ShardDistribution {
     /// Spread shards across as many domains as possible (max fault tolerance)
+    #[default]
     SpreadDomains,
 
     /// Keep all shards within the local domain (low latency)
@@ -195,11 +197,6 @@ pub enum ShardDistribution {
     Custom(HashMap<u16, DomainId>),
 }
 
-impl Default for ShardDistribution {
-    fn default() -> Self {
-        Self::SpreadDomains
-    }
-}
 
 /// Domain placement constraints
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -251,8 +248,10 @@ impl PlacementConstraints {
 
 /// Read preference for geo-optimization
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Default)]
 pub enum ReadPreference {
     /// Read from the geographically nearest domain
+    #[default]
     Nearest,
 
     /// Always read from the primary domain
@@ -265,11 +264,6 @@ pub enum ReadPreference {
     RoundRobin,
 }
 
-impl Default for ReadPreference {
-    fn default() -> Self {
-        Self::Nearest
-    }
-}
 
 /// Write acknowledgment configuration
 #[derive(Debug, Clone, Serialize, Deserialize)]

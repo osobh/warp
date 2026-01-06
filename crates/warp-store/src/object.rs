@@ -336,7 +336,7 @@ pub enum FieldValue {
 /// Custom serialization for Bytes that converts to/from Vec<u8>
 mod bytes_serde {
     use bytes::Bytes;
-    use serde::{Deserialize, Deserializer, Serialize, Serializer};
+    use serde::{Deserializer, Serializer};
 
     pub fn serialize<S>(bytes: &Bytes, serializer: S) -> Result<S::Ok, S::Error>
     where

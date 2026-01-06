@@ -15,34 +15,28 @@ use tracing_subscriber::EnvFilter;
 /// Log levels compatible with tracing
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 pub enum LogLevel {
+    /// Trace-level logging for very verbose output
     Trace,
+    /// Debug-level logging for diagnostic information
     Debug,
+    /// Info-level logging for general informational messages
     Info,
+    /// Warn-level logging for warning messages
     Warn,
+    /// Error-level logging for error conditions
     Error,
 }
 
 impl LogLevel {
-    /// Parse log level from string
-    pub fn from_str(s: &str) -> Result<Self> {
-        match s.to_lowercase().as_str() {
-            "trace" => Ok(LogLevel::Trace),
-            "debug" => Ok(LogLevel::Debug),
-            "info" => Ok(LogLevel::Info),
-            "warn" | "warning" => Ok(LogLevel::Warn),
-            "error" => Ok(LogLevel::Error),
-            _ => Err(TelemetryError::Logging(format!("Invalid log level: {}", s))),
-        }
-    }
-
     /// Convert to tracing Level
-    pub fn to_tracing_level(&self) -> Level {
+    #[must_use] 
+    pub const fn to_tracing_level(&self) -> Level {
         match self {
-            LogLevel::Trace => Level::TRACE,
-            LogLevel::Debug => Level::DEBUG,
-            LogLevel::Info => Level::INFO,
-            LogLevel::Warn => Level::WARN,
-            LogLevel::Error => Level::ERROR,
+            Self::Trace => Level::TRACE,
+            Self::Debug => Level::DEBUG,
+            Self::Info => Level::INFO,
+            Self::Warn => Level::WARN,
+            Self::Error => Level::ERROR,
         }
     }
 }
@@ -53,11 +47,11 @@ impl fmt::Display for LogLevel {
             f,
             "{}",
             match self {
-                LogLevel::Trace => "trace",
-                LogLevel::Debug => "debug",
-                LogLevel::Info => "info",
-                LogLevel::Warn => "warn",
-                LogLevel::Error => "error",
+                Self::Trace => "trace",
+                Self::Debug => "debug",
+                Self::Info => "info",
+                Self::Warn => "warn",
+                Self::Error => "error",
             }
         )
     }
@@ -66,35 +60,60 @@ impl fmt::Display for LogLevel {
 impl FromStr for LogLevel {
     type Err = TelemetryError;
     fn from_str(s: &str) -> Result<Self> {
-        LogLevel::from_str(s)
+        match s.to_lowercase().as_str() {
+            "trace" => Ok(Self::Trace),
+            "debug" => Ok(Self::Debug),
+            "info" => Ok(Self::Info),
+            "warn" | "warning" => Ok(Self::Warn),
+            "error" => Ok(Self::Error),
+            _ => Err(TelemetryError::Logging(format!("Invalid log level: {s}"))),
+        }
     }
 }
 
 /// Output format for logs
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum LogFormat {
+    /// JSON formatted output
     Json,
+    /// Human-readable pretty format with colors
     Pretty,
+    /// Compact format with minimal spacing
     Compact,
 }
 
 /// Output destination for logs
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum LogOutput {
+    /// Write logs to standard output
     Stdout,
+    /// Write logs to standard error
     Stderr,
+    /// Write logs to a file at the specified path
     File(PathBuf),
-    Both { stdout: bool, file: PathBuf },
+    /// Write logs to both standard output and a file
+    Both {
+        /// Whether to write to stdout
+        stdout: bool,
+        /// File path for log output
+        file: PathBuf
+    },
 }
 
 /// Logging configuration
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LogConfig {
+    /// Minimum log level to display
     pub level: LogLevel,
+    /// Format for log output
     pub format: LogFormat,
+    /// Destination for log output
     pub output: LogOutput,
+    /// Whether to include the target module path in logs
     pub include_target: bool,
+    /// Whether to include file name and line number in logs
     pub include_file_line: bool,
+    /// Whether to include thread ID in logs
     pub include_thread_id: bool,
 }
 
@@ -114,13 +133,18 @@ impl Default for LogConfig {
 /// Contextual information for logging
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct LogContext {
+    /// Component name generating the log
     pub component: String,
+    /// Optional transfer identifier for tracking
     pub transfer_id: Option<String>,
+    /// Optional edge identifier for tracking
     pub edge_id: Option<String>,
+    /// Additional arbitrary key-value pairs
     pub extra: HashMap<String, String>,
 }
 
 impl LogContext {
+    /// Creates a new log context with the specified component name
     pub fn new(component: impl Into<String>) -> Self {
         Self {
             component: component.into(),
@@ -130,16 +154,22 @@ impl LogContext {
         }
     }
 
+    /// Adds a transfer ID to the context
+    #[must_use]
     pub fn with_transfer_id(mut self, id: impl Into<String>) -> Self {
         self.transfer_id = Some(id.into());
         self
     }
 
+    /// Adds an edge ID to the context
+    #[must_use]
     pub fn with_edge_id(mut self, id: impl Into<String>) -> Self {
         self.edge_id = Some(id.into());
         self
     }
 
+    /// Adds a custom field to the context
+    #[must_use]
     pub fn with_field(mut self, key: impl Into<String>, value: impl Into<String>) -> Self {
         self.extra.insert(key.into(), value.into());
         self
@@ -153,6 +183,11 @@ pub struct StructuredLogger {
 }
 
 impl StructuredLogger {
+    /// Creates a new structured logger with the given configuration
+    ///
+    /// # Errors
+    ///
+    /// Currently never returns an error, but may fail in future versions.
     pub fn new(config: LogConfig) -> Result<Self> {
         Ok(Self {
             config,
@@ -160,10 +195,17 @@ impl StructuredLogger {
         })
     }
 
+    /// Initializes the global logging system with this logger's configuration
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the logging subscriber fails to initialize or if file operations fail.
     pub fn init(&self) -> Result<()> {
         init_logging(&self.config)
     }
 
+    /// Creates a new logger instance with the specified context
+    #[must_use] 
     pub fn with_context(&self, ctx: LogContext) -> Self {
         Self {
             config: self.config.clone(),
@@ -171,22 +213,27 @@ impl StructuredLogger {
         }
     }
 
+    /// Logs a trace-level message
     pub fn trace(&self, msg: &str) {
         self.log(LogLevel::Trace, msg);
     }
 
+    /// Logs a debug-level message
     pub fn debug(&self, msg: &str) {
         self.log(LogLevel::Debug, msg);
     }
 
+    /// Logs an info-level message
     pub fn info(&self, msg: &str) {
         self.log(LogLevel::Info, msg);
     }
 
+    /// Logs a warn-level message
     pub fn warn(&self, msg: &str) {
         self.log(LogLevel::Warn, msg);
     }
 
+    /// Logs an error-level message
     pub fn error(&self, msg: &str) {
         self.log(LogLevel::Error, msg);
     }
@@ -200,6 +247,7 @@ impl StructuredLogger {
         }
     }
 
+    /// Logs an event with additional structured fields
     pub fn event(&self, level: LogLevel, msg: &str, fields: &[(&str, &str)]) {
         let ctx = self.context.lock();
         if let Some(ref context) = *ctx {
@@ -297,14 +345,20 @@ fn log_event_plain(level: LogLevel, msg: &str, fields: &[(&str, &str)]) {
 
 /// Builder for structured logs
 pub struct LogBuilder {
+    /// Log level for the message
     level: LogLevel,
+    /// Optional message text
     message: Option<String>,
+    /// Additional structured fields
     fields: Vec<(String, String)>,
+    /// Optional logging context
     context: Option<LogContext>,
 }
 
 impl LogBuilder {
-    pub fn new(level: LogLevel) -> Self {
+    /// Creates a new log builder with the specified level
+    #[must_use] 
+    pub const fn new(level: LogLevel) -> Self {
         Self {
             level,
             message: None,
@@ -313,21 +367,29 @@ impl LogBuilder {
         }
     }
 
+    /// Sets the message text for the log
+    #[must_use] 
     pub fn message(mut self, msg: &str) -> Self {
         self.message = Some(msg.to_string());
         self
     }
 
+    /// Adds a structured field to the log
+    #[must_use]
+    #[allow(clippy::needless_pass_by_value)]
     pub fn field(mut self, key: &str, value: impl ToString) -> Self {
         self.fields.push((key.to_string(), value.to_string()));
         self
     }
 
+    /// Sets the logging context
+    #[must_use] 
     pub fn context(mut self, ctx: &LogContext) -> Self {
         self.context = Some(ctx.clone());
         self
     }
 
+    /// Emits the log message with all configured fields
     pub fn emit(self) {
         let msg = self.message.unwrap_or_default();
         if let Some(ref ctx) = self.context {
@@ -373,6 +435,8 @@ impl LogGuard {
         }
     }
 
+    /// Returns the elapsed time since the span was entered
+    #[must_use] 
     pub fn elapsed(&self) -> std::time::Duration {
         self.start.elapsed()
     }
@@ -381,9 +445,11 @@ impl LogGuard {
 impl Drop for LogGuard {
     fn drop(&mut self) {
         let duration = self.start.elapsed();
+        #[allow(clippy::cast_possible_truncation)]
+        let duration_ms = duration.as_millis() as u64;
         tracing::debug!(
             span = self.name.as_str(),
-            duration_ms = duration.as_millis() as u64,
+            duration_ms,
             "span completed"
         );
     }
@@ -391,12 +457,17 @@ impl Drop for LogGuard {
 
 /// Builder for tracing spans
 pub struct SpanBuilder {
+    /// Name of the span
     name: String,
+    /// Log level for the span
     level: LogLevel,
+    /// Additional structured fields for the span
     fields: Vec<(String, String)>,
 }
 
 impl SpanBuilder {
+    /// Creates a new span builder with the specified name
+    #[must_use] 
     pub fn new(name: &str) -> Self {
         Self {
             name: name.to_string(),
@@ -405,16 +476,22 @@ impl SpanBuilder {
         }
     }
 
-    pub fn level(mut self, level: LogLevel) -> Self {
+    /// Sets the log level for the span
+    #[must_use] 
+    pub const fn level(mut self, level: LogLevel) -> Self {
         self.level = level;
         self
     }
 
+    /// Adds a structured field to the span
+    #[must_use]
+    #[allow(clippy::needless_pass_by_value)]
     pub fn field(mut self, key: &str, value: impl ToString) -> Self {
         self.fields.push((key.to_string(), value.to_string()));
         self
     }
 
+    /// Enters the span and returns a guard that will exit on drop
     pub fn enter(self) -> LogGuard {
         let span = match self.level {
             LogLevel::Trace => tracing::trace_span!("span", name = %self.name),
@@ -431,6 +508,14 @@ impl SpanBuilder {
 }
 
 /// Initialize global logging with the given configuration
+///
+/// # Errors
+///
+/// Returns an error if the logging subscriber fails to initialize or if file operations fail.
+///
+/// # Panics
+///
+/// May panic if file cloning fails during initialization.
 pub fn init_logging(config: &LogConfig) -> Result<()> {
     let filter = EnvFilter::try_from_default_env()
         .unwrap_or_else(|_| EnvFilter::new(config.level.to_string()));
@@ -530,7 +615,7 @@ where
             .with_env_filter(filter)
             .try_init(),
     };
-    init_result.map_err(|e| TelemetryError::Init(format!("Failed to init subscriber: {}", e)))
+    init_result.map_err(|e| TelemetryError::Init(format!("Failed to init subscriber: {e}")))
 }
 
 #[cfg(test)]

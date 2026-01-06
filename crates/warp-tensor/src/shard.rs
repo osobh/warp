@@ -6,26 +6,23 @@ use bytes::Bytes;
 use serde::{Deserialize, Serialize};
 
 use crate::error::{TensorError, TensorResult};
-use crate::tensor::{TensorData, TensorDtype, TensorMeta};
+use crate::tensor::{TensorData, TensorMeta};
 
 /// Sharding strategy for large tensors
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Default)]
 pub enum ShardStrategy {
     /// Shard by row (first dimension)
     Row,
     /// Shard by column (last dimension)
     Column,
     /// Shard by fixed byte size
+    #[default]
     FixedSize,
     /// No sharding
     None,
 }
 
-impl Default for ShardStrategy {
-    fn default() -> Self {
-        Self::FixedSize
-    }
-}
 
 /// A single shard of a tensor
 #[derive(Debug, Clone)]
@@ -104,6 +101,7 @@ pub struct ShardedTensor {
 
 impl ShardedTensor {
     /// Create a new sharded tensor from metadata
+    #[must_use] 
     pub fn from_meta(meta: ShardedTensorMeta) -> Self {
         Self {
             meta,
@@ -117,16 +115,22 @@ impl ShardedTensor {
     }
 
     /// Check if all shards are loaded
+    #[must_use] 
     pub fn is_complete(&self) -> bool {
         self.shards.len() == self.meta.num_shards as usize
     }
 
     /// Get number of loaded shards
+    #[must_use] 
     pub fn loaded_shards(&self) -> usize {
         self.shards.len()
     }
 
     /// Reassemble the tensor data
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if not all shards are loaded.
     pub fn reassemble(&self) -> TensorResult<TensorData> {
         if !self.is_complete() {
             return Err(TensorError::ShardNotFound {
@@ -151,6 +155,7 @@ impl ShardedTensor {
     }
 
     /// Get list of missing shard indices
+    #[must_use] 
     pub fn missing_shards(&self) -> Vec<u32> {
         (0..self.meta.num_shards)
             .filter(|i| !self.shards.contains_key(i))
@@ -159,6 +164,10 @@ impl ShardedTensor {
 }
 
 /// Shard a tensor into fixed-size pieces
+///
+/// # Errors
+///
+/// Returns an error if the number of shards exceeds the maximum allowed.
 pub fn shard_tensor(
     tensor: &TensorData,
     shard_size: u64,
@@ -177,7 +186,8 @@ pub fn shard_tensor(
         )]);
     }
 
-    let num_shards = ((total_size + shard_size - 1) / shard_size) as u32;
+    #[allow(clippy::cast_possible_truncation)]
+    let num_shards = total_size.div_ceil(shard_size) as u32;
 
     if num_shards > max_shards {
         return Err(TensorError::TooManyShards {
@@ -186,11 +196,14 @@ pub fn shard_tensor(
         });
     }
 
+    #[allow(clippy::cast_possible_truncation)]
     let mut shards = Vec::with_capacity(num_shards as usize);
     let mut offset = 0u64;
 
     for i in 0..num_shards {
+        #[allow(clippy::cast_possible_truncation)]
         let chunk_size = std::cmp::min(shard_size, total_size - offset) as usize;
+        #[allow(clippy::cast_possible_truncation)]
         let start = offset as usize;
         let end = start + chunk_size;
 
@@ -210,12 +223,15 @@ pub fn create_sharded_meta(
     shard_size: u64,
     shards: &[TensorShard],
 ) -> ShardedTensorMeta {
+    #[allow(clippy::cast_possible_truncation)]
+    let num_shards = shards.len() as u32;
+
     ShardedTensorMeta {
         meta: tensor.meta.clone(),
         strategy,
         shard_size,
-        num_shards: shards.len() as u32,
-        shard_keys: shards.iter().map(|s| s.storage_key()).collect(),
+        num_shards,
+        shard_keys: shards.iter().map(TensorShard::storage_key).collect(),
         shard_checksums: shards.iter().map(|s| s.checksum.clone()).collect(),
     }
 }

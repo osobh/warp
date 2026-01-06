@@ -1,7 +1,7 @@
 //! Fencing (STONITH) management for split-brain resolution
 
 use std::collections::{HashMap, HashSet};
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::AtomicU64;
 use std::time::{Duration, Instant, SystemTime};
 
 use dashmap::DashMap;

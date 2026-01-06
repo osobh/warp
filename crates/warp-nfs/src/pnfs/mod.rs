@@ -4,17 +4,16 @@
 //! the NFS server for data operations while maintaining metadata
 //! through the server.
 
-use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::time::{Duration, Instant};
+use std::time::Instant;
 
 use bytes::Bytes;
 use dashmap::DashMap;
 
 use crate::error::NfsStatus;
 use crate::nfs4::StateId;
-use crate::rpc::xdr::{XdrDecoder, XdrEncoder};
+use crate::rpc::xdr::XdrDecoder;
 
 /// Layout type
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -324,9 +323,13 @@ pub struct LayoutReturnArgs {
 pub enum LayoutReturnType {
     /// Return layout for a file
     File {
+        /// Starting offset of the layout range to return
         offset: u64,
+        /// Length of the layout range to return
         length: u64,
+        /// Layout stateid identifying the layout to return
         stateid: StateId,
+        /// Optional type-specific layout return data
         data: Bytes,
     },
     /// Return layout for fsid

@@ -343,7 +343,7 @@ impl DomainRegistry {
                 let _ = self.events.send(DomainEvent::DomainRemoved(domain_id));
                 d
             })
-            .ok_or_else(|| Error::DomainNotFound(domain_id))
+            .ok_or(Error::DomainNotFound(domain_id))
     }
 
     /// Get a domain by ID
@@ -426,7 +426,7 @@ impl DomainRegistry {
         let mut domain = self
             .domains
             .get_mut(&domain_id)
-            .ok_or_else(|| Error::DomainNotFound(domain_id))?;
+            .ok_or(Error::DomainNotFound(domain_id))?;
 
         let node_id = node.node_id;
         domain.add_node(node);
@@ -444,7 +444,7 @@ impl DomainRegistry {
         let mut domain = self
             .domains
             .get_mut(&domain_id)
-            .ok_or_else(|| Error::DomainNotFound(domain_id))?;
+            .ok_or(Error::DomainNotFound(domain_id))?;
 
         let initial_len = domain.nodes.len();
         domain.nodes.retain(|n| n.node_id != node_id);
@@ -471,13 +471,13 @@ impl DomainRegistry {
         let mut domain = self
             .domains
             .get_mut(&domain_id)
-            .ok_or_else(|| Error::DomainNotFound(domain_id))?;
+            .ok_or(Error::DomainNotFound(domain_id))?;
 
         let node = domain
             .nodes
             .iter_mut()
             .find(|n| n.node_id == node_id)
-            .ok_or_else(|| Error::NodeNotFound(node_id))?;
+            .ok_or(Error::NodeNotFound(node_id))?;
 
         let old_status = node.status;
         node.status = status;
@@ -510,7 +510,7 @@ impl DomainRegistry {
         let mut domain = self
             .domains
             .get_mut(&domain_id)
-            .ok_or_else(|| Error::DomainNotFound(domain_id))?;
+            .ok_or(Error::DomainNotFound(domain_id))?;
 
         let total_nodes = domain.nodes.len();
         let healthy_nodes = domain.healthy_nodes().len();

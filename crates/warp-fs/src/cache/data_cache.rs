@@ -77,7 +77,7 @@ impl DataCache {
     pub fn read(&self, ino: u64, offset: u64, len: usize) -> Option<Vec<u8>> {
         let start_block = offset / BLOCK_SIZE as u64;
         let end_offset = offset + len as u64;
-        let end_block = (end_offset + BLOCK_SIZE as u64 - 1) / BLOCK_SIZE as u64;
+        let end_block = end_offset.div_ceil(BLOCK_SIZE as u64);
 
         let mut result = Vec::with_capacity(len);
         let mut cache = self.cache.lock();
@@ -213,7 +213,7 @@ impl DataCache {
     /// Invalidate a range of data
     pub fn invalidate_range(&self, ino: u64, offset: u64, len: u64) {
         let start_block = offset / BLOCK_SIZE as u64;
-        let end_block = (offset + len + BLOCK_SIZE as u64 - 1) / BLOCK_SIZE as u64;
+        let end_block = (offset + len).div_ceil(BLOCK_SIZE as u64);
 
         let mut cache = self.cache.lock();
         for block_idx in start_block..end_block {

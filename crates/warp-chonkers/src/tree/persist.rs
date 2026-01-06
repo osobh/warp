@@ -41,7 +41,7 @@ impl TreeSnapshot {
 
         Self {
             version_id: tree.version_id,
-            root: tree.root.clone(),
+            root: tree.root,
             nodes,
             config: tree.config.clone(),
             data_size: tree.data_size,

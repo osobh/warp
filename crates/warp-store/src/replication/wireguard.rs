@@ -13,7 +13,7 @@ use dashmap::DashMap;
 use serde::{Deserialize, Serialize};
 use tokio::net::UdpSocket;
 use tokio::sync::{RwLock, mpsc};
-use tracing::{debug, error, info, warn};
+use tracing::{debug, info, warn};
 
 use super::DomainId;
 use crate::error::{Error, Result};
@@ -426,7 +426,7 @@ impl WireGuardTunnelManager {
     }
 
     /// Send keepalive packet to a tunnel
-    async fn send_keepalive(&self, domain_id: DomainId, tunnel: &WireGuardTunnel) {
+    async fn send_keepalive(&self, domain_id: DomainId, _tunnel: &WireGuardTunnel) {
         debug!(domain_id, "Sending keepalive");
         // In a real implementation, this would send a WireGuard keepalive packet
     }

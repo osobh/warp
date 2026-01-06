@@ -135,10 +135,13 @@ mod standalone {
     #[derive(Debug, Clone, Serialize, Deserialize)]
     #[serde(rename_all = "PascalCase")]
     pub struct PolicyDocument {
+        /// Policy language version (e.g., "2012-10-17")
         #[serde(default = "default_version")]
         pub version: String,
+        /// Optional policy identifier
         #[serde(skip_serializing_if = "Option::is_none")]
         pub id: Option<String>,
+        /// List of policy statements defining permissions
         pub statement: Vec<Statement>,
     }
 
@@ -339,7 +342,7 @@ pub async fn put_policy<B: StorageBackend>(
     // Store the policy
     if let Some(pm) = &state.policy_manager {
         pm.set(&bucket, policy)
-            .map_err(|e| ApiError::InvalidRequest(e))?;
+            .map_err(ApiError::InvalidRequest)?;
     } else {
         return Err(ApiError::Internal(
             "Policy manager not configured".to_string(),

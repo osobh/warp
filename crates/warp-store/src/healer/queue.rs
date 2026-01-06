@@ -12,12 +12,14 @@ use crate::replication::ShardKey;
 
 /// Priority level for repair jobs
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Default)]
 pub enum RepairPriority {
     /// Critical - data at risk of permanent loss
     Critical = 0,
     /// High - multiple shards degraded
     High = 1,
     /// Normal - single shard issue
+    #[default]
     Normal = 2,
     /// Low - proactive/predictive repair
     Low = 3,
@@ -30,11 +32,6 @@ impl RepairPriority {
     }
 }
 
-impl Default for RepairPriority {
-    fn default() -> Self {
-        Self::Normal
-    }
-}
 
 /// A repair job in the queue
 #[derive(Debug, Clone)]

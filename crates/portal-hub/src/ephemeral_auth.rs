@@ -60,6 +60,7 @@ pub struct EphemeralRelayToken {
 
 impl EphemeralRelayToken {
     /// Create a new ephemeral relay token
+    #[must_use] 
     pub fn new(
         ephemeral_identity_id: Uuid,
         session_id: String,
@@ -83,6 +84,10 @@ impl EphemeralRelayToken {
     }
 
     /// Verify the token signature and expiration
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the token has expired or the signature verification fails
     pub fn verify(&self, public_key: &VerifyingKey) -> Result<()> {
         // Check expiration
         if Utc::now() >= self.expires_at {
@@ -114,11 +119,13 @@ impl EphemeralRelayToken {
     }
 
     /// Check if token is expired
+    #[must_use] 
     pub fn is_expired(&self) -> bool {
         Utc::now() >= self.expires_at
     }
 
     /// Time remaining until expiry
+    #[must_use] 
     pub fn time_remaining(&self) -> std::time::Duration {
         let now = Utc::now();
         if now >= self.expires_at {
@@ -180,6 +187,7 @@ impl Default for EphemeralRelayPermissions {
 
 impl EphemeralRelayPermissions {
     /// Create permissions with specific targets
+    #[must_use] 
     pub fn with_targets(targets: Vec<String>) -> Self {
         Self {
             allowed_targets: targets.into_iter().collect(),
@@ -188,6 +196,10 @@ impl EphemeralRelayPermissions {
     }
 
     /// Add a target
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the maximum number of relay targets has been exceeded
     pub fn add_target(&mut self, target: String) -> Result<()> {
         if self.allowed_targets.len() >= MAX_RELAY_TARGETS {
             return Err(Error::Configuration("max relay targets exceeded".into()));
@@ -202,12 +214,14 @@ impl EphemeralRelayPermissions {
     }
 
     /// Check if target is allowed
+    #[must_use] 
     pub fn can_relay_to(&self, target: &str) -> bool {
         // Empty allowed_targets means no restrictions
         self.allowed_targets.is_empty() || self.allowed_targets.contains(target)
     }
 
     /// Check if channel is allowed
+    #[must_use] 
     pub fn can_access_channel(&self, channel: &str) -> bool {
         if self.allowed_channels.is_empty() {
             return true;
@@ -225,10 +239,12 @@ impl EphemeralRelayPermissions {
 /// Relay priority for ephemeral access
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
+#[derive(Default)]
 pub enum RelayPriority {
     /// Lowest priority (background)
     VeryLow,
     /// Low priority (default for ephemeral)
+    #[default]
     Low,
     /// Normal priority (for verified ephemeral)
     Normal,
@@ -236,20 +252,19 @@ pub enum RelayPriority {
     High,
 }
 
-impl Default for RelayPriority {
-    fn default() -> Self {
-        Self::Low
-    }
-}
 
 /// Rate limiter for ephemeral relay requests
 struct RelayRateLimiter {
+    /// Number of requests in current window
     requests: AtomicU64,
+    /// Start time of current rate limit window
     window_start: RwLock<Instant>,
+    /// Maximum requests allowed per minute
     limit_per_minute: u32,
 }
 
 impl RelayRateLimiter {
+    /// Creates a new rate limiter with specified limit
     fn new(limit_per_minute: u32) -> Self {
         Self {
             requests: AtomicU64::new(0),
@@ -258,19 +273,23 @@ impl RelayRateLimiter {
         }
     }
 
+    /// Checks and enforces the rate limit
     async fn check_rate_limit(&self) -> Result<()> {
-        let mut window_start = self.window_start.write().await;
-        let elapsed = window_start.elapsed();
+        let elapsed = {
+            let window_start = self.window_start.read().await;
+            window_start.elapsed()
+        };
 
         // Reset window if past 1 minute
         if elapsed.as_secs() >= 60 {
+            let mut window_start = self.window_start.write().await;
             self.requests.store(0, Ordering::Relaxed);
             *window_start = Instant::now();
         }
 
         // Check limit
         let current = self.requests.fetch_add(1, Ordering::Relaxed);
-        if current >= self.limit_per_minute as u64 {
+        if current >= u64::from(self.limit_per_minute) {
             return Err(Error::RateLimited);
         }
 
@@ -280,15 +299,27 @@ impl RelayRateLimiter {
 
 /// Registered ephemeral identity in the relay system
 struct EphemeralRelayIdentity {
+    /// Ephemeral identity ID
+    #[allow(dead_code)]
     identity_id: Uuid,
+    /// Session ID this identity belongs to
     session_id: String,
+    /// Sponsor ID who created this ephemeral identity
     sponsor_id: Uuid,
+    /// Relay permissions for this identity
     permissions: EphemeralRelayPermissions,
+    /// Public key for signature verification
+    #[allow(dead_code)]
     public_key: VerifyingKey,
+    /// Rate limiter for relay requests
     rate_limiter: RelayRateLimiter,
+    /// When this identity was created
     created_at: DateTime<Utc>,
+    /// When this identity expires
     expires_at: DateTime<Utc>,
+    /// Total number of relays performed
     total_relays: AtomicU64,
+    /// Total bytes relayed
     total_bytes: AtomicU64,
 }
 
@@ -314,6 +345,7 @@ pub struct EphemeralRelayAuth {
 
 impl EphemeralRelayAuth {
     /// Create a new ephemeral relay auth service
+    #[must_use] 
     pub fn new(signing_key: SigningKey) -> Self {
         Self {
             identities: DashMap::new(),
@@ -339,6 +371,10 @@ impl EphemeralRelayAuth {
     }
 
     /// Register an ephemeral identity for relay access
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the ephemeral identity is already registered
     pub fn register(
         &self,
         ephemeral_identity_id: Uuid,
@@ -351,8 +387,7 @@ impl EphemeralRelayAuth {
         // Check if already registered
         if self.identities.contains_key(&ephemeral_identity_id) {
             return Err(Error::AlreadyExists(format!(
-                "ephemeral identity {} already registered",
-                ephemeral_identity_id
+                "ephemeral identity {ephemeral_identity_id} already registered"
             )));
         }
 
@@ -381,7 +416,7 @@ impl EphemeralRelayAuth {
         // Update session index
         self.session_index
             .entry(session_id.clone())
-            .or_insert_with(Vec::new)
+            .or_default()
             .push(ephemeral_identity_id);
 
         self.total_registered.fetch_add(1, Ordering::Relaxed);
@@ -406,6 +441,11 @@ impl EphemeralRelayAuth {
     }
 
     /// Authorize a relay request
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the token verification fails, the identity is revoked or expired,
+    /// the target is not allowed, the payload is too large, or the rate limit is exceeded
     pub async fn authorize_relay(
         &self,
         token: &EphemeralRelayToken,
@@ -453,8 +493,7 @@ impl EphemeralRelayAuth {
                 "Relay target not allowed"
             );
             return Err(Error::AccessDenied(format!(
-                "relay to {} not allowed",
-                target
+                "relay to {target} not allowed"
             )));
         }
 
@@ -490,6 +529,10 @@ impl EphemeralRelayAuth {
     }
 
     /// Revoke an ephemeral identity
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the ephemeral identity is not found
     pub fn revoke(&self, ephemeral_identity_id: Uuid) -> Result<()> {
         if !self.identities.contains_key(&ephemeral_identity_id) {
             return Err(Error::NotFound(ephemeral_identity_id.to_string()));
@@ -586,30 +629,45 @@ impl EphemeralRelayAuth {
 /// Result of successful relay authorization
 #[derive(Debug, Clone)]
 pub struct RelayAuthorization {
+    /// Ephemeral identity ID that was authorized
     pub ephemeral_identity_id: Uuid,
+    /// Sponsor ID for cost attribution
     pub sponsor_id: Uuid,
+    /// Relay priority level
     pub priority: RelayPriority,
 }
 
 /// Statistics for an ephemeral relay identity
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct EphemeralRelayStats {
+    /// Ephemeral identity ID
     pub ephemeral_identity_id: Uuid,
+    /// Session ID this identity belongs to
     pub session_id: String,
+    /// Sponsor ID who created this identity
     pub sponsor_id: Uuid,
+    /// Total number of relays performed
     pub total_relays: u64,
+    /// Total bytes relayed
     pub total_bytes: u64,
+    /// When this identity was created
     pub created_at: DateTime<Utc>,
+    /// When this identity expires
     pub expires_at: DateTime<Utc>,
 }
 
 /// Service-level statistics
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct EphemeralRelayServiceStats {
+    /// Total number of ephemeral identities ever registered
     pub total_registered: u64,
+    /// Total number of ephemeral identities ever revoked
     pub total_revoked: u64,
+    /// Total number of relays performed across all identities
     pub total_relays: u64,
+    /// Number of currently active ephemeral identities
     pub active_identities: u64,
+    /// Number of active sessions with ephemeral identities
     pub active_sessions: u64,
 }
 
@@ -619,24 +677,23 @@ fn matches_pattern(pattern: &str, value: &str) -> bool {
         return true;
     }
 
-    if pattern.ends_with("/*") {
-        let prefix = &pattern[..pattern.len() - 2];
+    if let Some(prefix) = pattern.strip_suffix("/*") {
         return value.starts_with(prefix);
     }
 
-    if pattern.ends_with("/**") {
-        let prefix = &pattern[..pattern.len() - 3];
+    if let Some(prefix) = pattern.strip_suffix("/**") {
         return value.starts_with(prefix);
     }
 
     pattern == value
 }
 
-// Signature serialization helpers
+/// Signature serialization helpers for Ed25519 signatures
 mod signature_serde {
     use ed25519_dalek::Signature;
     use serde::{Deserialize, Deserializer, Serializer};
 
+    /// Serializes an Ed25519 signature to bytes
     pub fn serialize<S>(signature: &Signature, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
@@ -644,6 +701,7 @@ mod signature_serde {
         serializer.serialize_bytes(&signature.to_bytes())
     }
 
+    /// Deserializes an Ed25519 signature from bytes
     pub fn deserialize<'de, D>(deserializer: D) -> Result<Signature, D::Error>
     where
         D: Deserializer<'de>,

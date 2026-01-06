@@ -11,9 +11,9 @@ use super::{
     QuarantineManager, QuarantineReason, QuarantinedBlock, ScrubMetrics, ScrubSchedule,
     ScrubScheduler,
 };
-use crate::error::{Error, Result};
+use crate::error::Result;
 use crate::healer::{RepairJob, RepairPriority, RepairQueue};
-use crate::replication::{DistributedShardManager, ShardHealth, ShardKey, ShardLocation};
+use crate::replication::{DistributedShardManager, ShardHealth, ShardKey};
 
 /// Configuration for the scrub daemon
 #[derive(Debug, Clone)]

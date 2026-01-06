@@ -1,7 +1,7 @@
 //! DPU (Data Processing Unit) Offload for Warp
 //!
 //! This crate provides an abstract interface for DPU acceleration with
-//! support for multiple vendors (BlueField, Pensando, Intel IPU).
+//! support for multiple vendors (`BlueField`, Pensando, Intel IPU).
 //!
 //! # Features
 //!
@@ -59,7 +59,7 @@
 //! # Feature Flags
 //!
 //! - `stub` (default): Enable stub backend for testing without hardware
-//! - `bluefield`: Enable NVIDIA BlueField DPU support via DOCA SDK
+//! - `bluefield`: Enable NVIDIA `BlueField` DPU support via DOCA SDK
 
 #![warn(missing_docs)]
 #![warn(clippy::all)]

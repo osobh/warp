@@ -2,9 +2,8 @@
 //!
 //! Implements SMB2/3 message parsing and encoding.
 
-use bytes::{Buf, BufMut, Bytes, BytesMut};
+use bytes::{Buf, BufMut, BytesMut};
 
-use crate::config::SmbDialect;
 use crate::error::{NtStatus, SmbError, SmbResult};
 
 /// SMB2 protocol ID
@@ -91,6 +90,7 @@ impl TryFrom<u16> for SmbCommand {
 
 /// SMB2 header flags
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Default)]
 pub struct Smb2Flags(u32);
 
 impl Smb2Flags {
@@ -140,11 +140,6 @@ impl Smb2Flags {
     }
 }
 
-impl Default for Smb2Flags {
-    fn default() -> Self {
-        Self(0)
-    }
-}
 
 /// SMB2 header
 #[derive(Debug, Clone)]

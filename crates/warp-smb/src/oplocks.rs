@@ -2,13 +2,9 @@
 //!
 //! Implements SMB2 oplocks and SMB2.1+ leases for client caching.
 
-use std::collections::HashMap;
-use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Duration, Instant};
 
-use bytes::Bytes;
 use dashmap::DashMap;
-use parking_lot::RwLock;
 
 use crate::error::NtStatus;
 
@@ -402,7 +398,7 @@ impl OplockManager {
 
     /// Check for timed-out breaks and force them
     pub fn cleanup_stale_breaks(&self) {
-        let now = Instant::now();
+        let _now = Instant::now();
         let mut stale = Vec::new();
 
         for entry in self.pending_breaks.iter() {

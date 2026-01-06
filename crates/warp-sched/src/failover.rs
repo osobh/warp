@@ -8,7 +8,7 @@ use crate::cost::CostMatrix;
 use crate::paths::PathSelector;
 use crate::{ChunkId, CpuStateBuffers, EdgeIdx};
 use serde::{Deserialize, Serialize};
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::time::{Duration, Instant};
 
 /// Configuration for failover behavior.
@@ -37,7 +37,8 @@ impl Default for FailoverConfig {
 
 impl FailoverConfig {
     /// Creates a new configuration with custom values.
-    pub fn new(timeout_ms: u64, max_retries: u8, cooldown_ms: u64, health_threshold: f32) -> Self {
+    #[must_use] 
+    pub const fn new(timeout_ms: u64, max_retries: u8, cooldown_ms: u64, health_threshold: f32) -> Self {
         Self {
             timeout_ms,
             max_retries,
@@ -47,6 +48,12 @@ impl FailoverConfig {
     }
 
     /// Validates configuration parameters.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - `health_threshold` is not between 0.0 and 1.0
+    /// - `timeout_ms` is 0
     pub fn validate(&self) -> Result<(), String> {
         if self.health_threshold < 0.0 || self.health_threshold > 1.0 {
             return Err("health_threshold must be between 0.0 and 1.0".to_string());
@@ -77,13 +84,25 @@ pub enum FailoverReason {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum FailoverAction {
     /// Retry the transfer on the same edge.
-    Retry { edge_idx: EdgeIdx },
+    Retry {
+        /// Edge index to retry the transfer on.
+        edge_idx: EdgeIdx,
+    },
     /// Reroute transfer through different edges.
-    Reroute { new_edges: Vec<EdgeIdx> },
+    Reroute {
+        /// List of alternative edge indices for the new route.
+        new_edges: Vec<EdgeIdx>,
+    },
     /// Abort the transfer due to unrecoverable failure.
-    Abort { reason: String },
+    Abort {
+        /// Human-readable reason for aborting the transfer.
+        reason: String,
+    },
     /// Wait before retrying.
-    Wait { duration_ms: u64 },
+    Wait {
+        /// Duration to wait in milliseconds before next attempt.
+        duration_ms: u64,
+    },
 }
 
 /// Complete failover decision with context.
@@ -105,6 +124,7 @@ pub struct FailoverDecision {
 
 impl FailoverDecision {
     /// Creates a new failover decision.
+    #[must_use] 
     pub fn new(
         chunk_id: ChunkId,
         reason: FailoverReason,
@@ -149,7 +169,7 @@ pub struct FailoverMetrics {
 
 impl FailoverMetrics {
     /// Merges another metrics instance into this one.
-    pub fn merge(&mut self, other: &FailoverMetrics) {
+    pub const fn merge(&mut self, other: &Self) {
         self.total_failovers += other.total_failovers;
         self.retries += other.retries;
         self.reroutes += other.reroutes;
@@ -176,6 +196,7 @@ pub struct CpuFailoverManager {
 
 impl CpuFailoverManager {
     /// Creates a new CPU failover manager.
+    #[must_use] 
     pub fn new(config: FailoverConfig) -> Self {
         Self {
             config,
@@ -248,6 +269,7 @@ impl CpuFailoverManager {
     }
 
     /// Makes a failover decision based on the failure context.
+    #[must_use] 
     pub fn decide(
         &self,
         chunk_id: ChunkId,
@@ -261,8 +283,7 @@ impl CpuFailoverManager {
         let retry_count = self
             .active_transfers
             .get(&chunk_id)
-            .map(|t| t.retry_count)
-            .unwrap_or(0);
+            .map_or(0, |t| t.retry_count);
 
         let action = self.decide_action(
             chunk_id,
@@ -289,7 +310,8 @@ impl CpuFailoverManager {
     }
 
     /// Returns current failover metrics.
-    pub fn metrics(&self) -> FailoverMetrics {
+    #[must_use] 
+    pub const fn metrics(&self) -> FailoverMetrics {
         self.metrics
     }
 
@@ -335,7 +357,7 @@ impl CpuFailoverManager {
 
         // No alternatives found
         FailoverAction::Abort {
-            reason: format!("No viable alternative routes for {:?}", reason),
+            reason: format!("No viable alternative routes for {reason:?}"),
         }
     }
 
@@ -358,7 +380,7 @@ impl CpuFailoverManager {
         }
     }
 
-    /// Finds alternative edges for rerouting using PathSelector for optimal selection.
+    /// Finds alternative edges for rerouting using `PathSelector` for optimal selection.
     fn find_alternative_edges(
         &self,
         chunk_id: ChunkId,
@@ -433,6 +455,7 @@ pub struct FailoverManager {
 
 impl FailoverManager {
     /// Creates a new failover manager.
+    #[must_use] 
     pub fn new(config: FailoverConfig) -> Self {
         Self {
             cpu: CpuFailoverManager::new(config),
@@ -455,6 +478,7 @@ impl FailoverManager {
     }
 
     /// Makes a failover decision.
+    #[must_use] 
     pub fn decide(
         &self,
         chunk_id: ChunkId,
@@ -474,7 +498,8 @@ impl FailoverManager {
     }
 
     /// Returns current metrics.
-    pub fn metrics(&self) -> FailoverMetrics {
+    #[must_use] 
+    pub const fn metrics(&self) -> FailoverMetrics {
         self.cpu.metrics()
     }
 

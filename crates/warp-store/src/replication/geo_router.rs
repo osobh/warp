@@ -161,7 +161,7 @@ impl GeoRouter {
     pub fn record_latency(&self, domain_id: DomainId, latency_ms: u32) {
         self.latency
             .entry(domain_id)
-            .or_insert_with(LatencyStats::default)
+            .or_default()
             .record(latency_ms);
     }
 

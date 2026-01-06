@@ -4,7 +4,6 @@
 //! These types are designed to be lightweight and serializable.
 
 use serde::{Deserialize, Serialize};
-use std::time::Duration;
 
 /// Transfer direction
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]

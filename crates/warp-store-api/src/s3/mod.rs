@@ -671,8 +671,8 @@ async fn delete_or_abort<B: StorageBackend>(
 /// Abort a multipart upload
 async fn abort_multipart_handler<B: StorageBackend>(
     state: &AppState<B>,
-    bucket: &str,
-    key: &str,
+    _bucket: &str,
+    _key: &str,
     upload_id: &str,
 ) -> ApiResult<Response> {
     let upload = state.get_upload(upload_id).ok_or_else(|| {

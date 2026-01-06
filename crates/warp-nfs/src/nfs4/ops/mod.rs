@@ -428,9 +428,15 @@ pub enum CreateType {
     /// Symbolic link
     Link(String),
     /// Block device
-    BlockDev { specdata: (u32, u32) },
+    BlockDev {
+        /// Device specification data (major, minor)
+        specdata: (u32, u32)
+    },
     /// Character device
-    CharDev { specdata: (u32, u32) },
+    CharDev {
+        /// Device specification data (major, minor)
+        specdata: (u32, u32)
+    },
     /// Socket
     Sock,
     /// FIFO

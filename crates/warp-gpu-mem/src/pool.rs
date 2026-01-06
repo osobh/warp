@@ -1,7 +1,6 @@
 //! GPU memory pool - main interface for tensor allocation
 
 use std::sync::Arc;
-use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Instant;
 
 use dashmap::DashMap;
@@ -12,7 +11,7 @@ use warp_store::Store;
 use crate::cache::TensorCache;
 use crate::config::GpuMemConfig;
 use crate::error::{GpuMemError, GpuMemResult};
-use crate::pager::{GpuPager, PageState};
+use crate::pager::GpuPager;
 use crate::prefetch::{PrefetchHint, Prefetcher};
 use crate::spill::SpillManager;
 use crate::tensor::{TensorDtype, TensorHandle, TensorId, TensorMeta};
@@ -370,7 +369,7 @@ struct GpuMemoryPoolHandle {
 }
 
 impl GpuMemoryPoolHandle {
-    async fn page_in_by_id(&self, tensor_id: TensorId) -> GpuMemResult<()> {
+    async fn page_in_by_id(&self, _tensor_id: TensorId) -> GpuMemResult<()> {
         // Simplified page-in for prefetch
         Ok(())
     }

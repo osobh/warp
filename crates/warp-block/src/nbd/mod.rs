@@ -3,17 +3,27 @@
 //! Implements the NBD protocol as specified in:
 //! https://github.com/NetworkBlockDevice/nbd/blob/master/doc/proto.md
 
-use bytes::{Buf, BufMut, Bytes, BytesMut};
+mod connection;
+
+pub use connection::{ConnectionState, NbdConnection, VolumeIO};
+
+use bytes::{Buf, BufMut, BytesMut};
 
 use crate::error::{BlockError, BlockResult, NbdError};
 
 /// NBD magic numbers
 pub const NBD_INIT_MAGIC: u64 = 0x4e42444d41474943; // "NBDMAGIC"
+/// Magic number for old-style NBD client-server handshake
 pub const NBD_CLISERV_MAGIC: u64 = 0x00420281861253; // Old-style
+/// Magic number for NBD option negotiation ("IHAVEOPT")
 pub const NBD_OPTS_MAGIC: u64 = 0x49484156454F5054; // "IHAVEOPT"
+/// Magic number for NBD option reply messages
 pub const NBD_REP_MAGIC: u64 = 0x0003e889045565a9;
+/// Magic number for NBD request messages
 pub const NBD_REQUEST_MAGIC: u32 = 0x25609513;
+/// Magic number for NBD simple reply messages
 pub const NBD_REPLY_MAGIC: u32 = 0x67446698;
+/// Magic number for NBD structured reply messages
 pub const NBD_STRUCTURED_REPLY_MAGIC: u32 = 0x668e33ef;
 
 /// NBD protocol flags (global)

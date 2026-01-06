@@ -2,7 +2,6 @@
 //!
 //! Defines share types and share management.
 
-use std::collections::HashMap;
 use std::net::IpAddr;
 
 use dashmap::DashMap;
@@ -12,8 +11,10 @@ use serde::{Deserialize, Serialize};
 /// Share type
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[repr(u32)]
+#[derive(Default)]
 pub enum ShareType {
     /// Disk share
+    #[default]
     Disk = 0x00000000,
     /// Print queue
     PrintQueue = 0x00000001,
@@ -23,11 +24,6 @@ pub enum ShareType {
     CommDevice = 0x00000003,
 }
 
-impl Default for ShareType {
-    fn default() -> Self {
-        Self::Disk
-    }
-}
 
 /// Share flags
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -91,6 +87,7 @@ impl Default for ShareFlags {
 
 /// Share capabilities
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Default)]
 pub struct ShareCapabilities(u32);
 
 impl ShareCapabilities {
@@ -123,11 +120,6 @@ impl ShareCapabilities {
     }
 }
 
-impl Default for ShareCapabilities {
-    fn default() -> Self {
-        Self(0)
-    }
-}
 
 /// SMB share configuration
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -158,8 +150,10 @@ pub struct SmbShare {
 
 /// Client-side caching mode
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Default)]
 pub enum CachingMode {
     /// Manual caching
+    #[default]
     Manual,
     /// Automatic caching of documents
     Documents,
@@ -171,11 +165,6 @@ pub enum CachingMode {
     BranchCache,
 }
 
-impl Default for CachingMode {
-    fn default() -> Self {
-        Self::Manual
-    }
-}
 
 impl Default for SmbShare {
     fn default() -> Self {

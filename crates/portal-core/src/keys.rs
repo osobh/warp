@@ -41,6 +41,7 @@ use zeroize::{Zeroize, ZeroizeOnDrop};
 /// ```
 #[derive(Clone, ZeroizeOnDrop)]
 pub struct RecoveryPhrase {
+    /// BIP-39 mnemonic word list
     #[zeroize(skip)]
     mnemonic: Mnemonic,
 }
@@ -65,7 +66,9 @@ pub struct MasterEncryptionKey(#[zeroize(drop)] [u8; 32]);
 /// Derived from the master seed using HKDF with the context string "portal/signing/v1".
 #[derive(Clone, ZeroizeOnDrop)]
 pub struct MasterSigningKey {
+    /// Ed25519 signing (private) key
     signing: SigningKey,
+    /// Ed25519 verifying (public) key
     #[zeroize(skip)]
     verifying: VerifyingKey,
 }
@@ -83,7 +86,9 @@ pub struct AuthenticationKey(#[zeroize(drop)] [u8; 32]);
 /// Derived using HKDF with the context string "portal/device/{index}".
 #[derive(Clone, ZeroizeOnDrop)]
 pub struct DeviceKey {
+    /// Device index for key derivation
     index: u32,
+    /// 32-byte derived device key
     #[zeroize(drop)]
     key: [u8; 32],
 }
@@ -107,8 +112,11 @@ pub struct DeviceKey {
 /// ```
 #[derive(Clone)]
 pub struct KeyHierarchy {
+    /// Master encryption key for content encryption
     encryption: MasterEncryptionKey,
+    /// Master signing key for digital signatures
     signing: MasterSigningKey,
+    /// Authentication key for Hub sessions
     auth: AuthenticationKey,
 }
 

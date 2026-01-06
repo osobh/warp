@@ -34,7 +34,9 @@ nvmeof-quic = ["nvmeof", "dep:quinn"]
 nvmeof-full = ["nvmeof", "nvmeof-rdma", "nvmeof-quic"]
 # Webhook support for event notifications
 webhooks = ["dep:reqwest"]
-full = ["local", "portal", "parcode", "erasure", "gpu", "raft", "crdt", "wireguard", "rmpi", "hpc-channels", "chonkers", "blind-dedup", "nvmeof", "webhooks"]
+# AWS SNS/SQS/Lambda event destinations
+aws-events = ["dep:aws-sdk-sns", "dep:aws-sdk-sqs", "dep:aws-sdk-lambda", "dep:aws-config"]
+full = ["local", "portal", "parcode", "erasure", "gpu", "raft", "crdt", "wireguard", "rmpi", "hpc-channels", "chonkers", "blind-dedup", "nvmeof", "webhooks", "aws-events"]
 
 [dependencies]
 # Core warp crates
@@ -99,6 +101,12 @@ uuid = { version = "1.11", features = ["v4"] }
 
 # Optional: HTTP client for webhooks
 reqwest = { version = "0.12", features = ["json"], optional = true }
+
+# Optional: AWS SDKs for SNS/SQS/Lambda event destinations
+aws-sdk-sns = { version = "1", optional = true }
+aws-sdk-sqs = { version = "1", optional = true }
+aws-sdk-lambda = { version = "1", optional = true }
+aws-config = { version = "1", optional = true }
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["test-util", "macros", "rt-multi-thread"] }

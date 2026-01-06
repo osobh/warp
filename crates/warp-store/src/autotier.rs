@@ -50,7 +50,7 @@ use tokio::sync::Semaphore;
 use tracing::{debug, info, instrument, warn};
 
 use crate::backend::StorageBackend;
-use crate::object::{ObjectData, PutOptions, StorageClass};
+use crate::object::{PutOptions, StorageClass};
 use crate::slai::{AccessPattern, AccessTracker, PlacementEngine, WorkloadPredictor, WorkloadType};
 use crate::{ObjectKey, Store};
 
@@ -197,19 +197,37 @@ pub struct TierDecision {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum TierReason {
     /// Object is cold (not accessed recently)
-    Cold { days_since_access: u64 },
+    Cold {
+        /// Number of days since the object was last accessed
+        days_since_access: u64,
+    },
     /// Object is very cold (archive candidate)
-    VeryCold { days_since_access: u64 },
+    VeryCold {
+        /// Number of days since the object was last accessed
+        days_since_access: u64,
+    },
     /// Object is hot (frequently accessed)
-    Hot { accesses_per_day: f64 },
+    Hot {
+        /// Average number of accesses per day
+        accesses_per_day: f64,
+    },
     /// Object is part of active ML workload
-    ActiveWorkload { workload_type: WorkloadType },
+    ActiveWorkload {
+        /// The type of workload currently using this object
+        workload_type: WorkloadType,
+    },
     /// Object is model weights for inference
     InferenceModel,
     /// Access pattern indicates different tier
-    PatternBased { pattern: AccessPattern },
+    PatternBased {
+        /// The detected access pattern for this object
+        pattern: AccessPattern,
+    },
     /// Predicted future access
-    Predicted { predicted_accesses: usize },
+    Predicted {
+        /// Number of predicted future accesses
+        predicted_accesses: usize,
+    },
     /// Object was explicitly marked
     ExplicitMark,
 }
@@ -829,7 +847,7 @@ impl<B: StorageBackend> AutoTierExecutor<B> {
         }
     }
 
-    /// Create a new executor from an Arc<Store>
+    /// Create a new executor from an `Arc<Store>`
     pub fn from_arc(
         store: Arc<Store<B>>,
         placement: Arc<PlacementEngine>,

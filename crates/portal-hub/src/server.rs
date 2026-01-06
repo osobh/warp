@@ -53,7 +53,7 @@ impl HubServer {
 
     /// Create a Hub server with custom storage
     #[must_use]
-    pub fn with_storage(config: HubConfig, storage: Arc<HubStorage>) -> Self {
+    pub const fn with_storage(config: HubConfig, storage: Arc<HubStorage>) -> Self {
         Self { storage, config }
     }
 
@@ -69,11 +69,11 @@ impl HubServer {
 
         let listener = tokio::net::TcpListener::bind(self.config.bind_addr)
             .await
-            .map_err(|e| crate::Error::Io(e))?;
+            .map_err(crate::Error::Io)?;
 
         axum::serve(listener, app)
             .await
-            .map_err(|e| crate::Error::Io(e.into()))?;
+            .map_err(crate::Error::Io)?;
 
         Ok(())
     }
@@ -81,7 +81,6 @@ impl HubServer {
     /// Create the router with all routes configured
     ///
     /// This is exposed for testing purposes
-    #[must_use]
     pub fn router(storage: Arc<HubStorage>, max_chunk_size: usize) -> Router {
         // API routes
         let api_routes = Router::new()

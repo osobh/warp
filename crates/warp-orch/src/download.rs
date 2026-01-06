@@ -7,11 +7,11 @@
 //! - Connection pooling for efficiency
 //! - Retry logic with configurable limits
 
-use crate::pool::{ConnectionPool, PooledConnection};
+use crate::pool::ConnectionPool;
 use crate::progress::ProgressTracker;
 use crate::striping::StripingConfig;
 use crate::types::{
-    TransferDirection, TransferId, TransferRequest, TransferResult, TransferState, TransferStatus,
+    TransferId, TransferRequest, TransferResult, TransferState, TransferStatus,
 };
 use crate::{OrchError, Result};
 use std::collections::{HashMap, HashSet, VecDeque};
@@ -52,10 +52,16 @@ impl Default for DownloadConfig {
 }
 
 impl DownloadConfig {
+    /// Creates a new `DownloadConfig` with default values.
+    #[must_use]
     pub fn new() -> Self {
         Self::default()
     }
 
+    /// Validates that all configuration parameters are within acceptable ranges.
+    ///
+    /// # Errors
+    /// Returns an error if any configuration parameter is invalid.
     pub fn validate(&self) -> Result<()> {
         if self.max_concurrent_chunks == 0 {
             return Err(OrchError::InvalidState(
@@ -75,27 +81,37 @@ impl DownloadConfig {
         Ok(())
     }
 
-    pub fn with_max_concurrent_chunks(mut self, max: usize) -> Self {
+    /// Sets the maximum number of chunks that can be downloaded concurrently.
+    #[must_use]
+    pub const fn with_max_concurrent_chunks(mut self, max: usize) -> Self {
         self.max_concurrent_chunks = max;
         self
     }
 
-    pub fn with_max_sources_per_chunk(mut self, max: usize) -> Self {
+    /// Sets the maximum number of sources to attempt for each chunk.
+    #[must_use]
+    pub const fn with_max_sources_per_chunk(mut self, max: usize) -> Self {
         self.max_sources_per_chunk = max;
         self
     }
 
-    pub fn with_chunk_timeout_ms(mut self, timeout: u64) -> Self {
+    /// Sets the timeout for individual chunk downloads in milliseconds.
+    #[must_use]
+    pub const fn with_chunk_timeout_ms(mut self, timeout: u64) -> Self {
         self.chunk_timeout_ms = timeout;
         self
     }
 
-    pub fn with_max_retries(mut self, retries: u8) -> Self {
+    /// Sets the maximum number of retry attempts for failed chunk downloads.
+    #[must_use]
+    pub const fn with_max_retries(mut self, retries: u8) -> Self {
         self.max_retries = retries;
         self
     }
 
-    pub fn with_prefer_local(mut self, prefer: bool) -> Self {
+    /// Sets whether to prefer local sources over remote sources.
+    #[must_use]
+    pub const fn with_prefer_local(mut self, prefer: bool) -> Self {
         self.prefer_local = prefer;
         self
     }
@@ -104,34 +120,45 @@ impl DownloadConfig {
     ///
     /// Striping splits large chunks across multiple network paths
     /// to achieve bandwidth aggregation beyond single-path limits.
+    #[must_use]
     pub fn with_striping(mut self, config: StripingConfig) -> Self {
         self.striping = Some(config);
         self
     }
 
     /// Check if striping should be used for a given chunk size
+    #[must_use]
     pub fn should_stripe(&self, chunk_size: u64) -> bool {
         self.striping
             .as_ref()
-            .map(|s| s.should_stripe(chunk_size))
-            .unwrap_or(false)
+            .map_or(false, |s| s.should_stripe(chunk_size))
     }
 }
 
 /// Tracks a single chunk being downloaded from potentially multiple sources
 #[derive(Debug, Clone)]
 pub struct ActiveChunkDownload {
+    /// Unique identifier for the chunk being downloaded.
     pub chunk_id: ChunkId,
+    /// Expected hash of the chunk for integrity verification.
     pub chunk_hash: [u8; 32],
+    /// Total size of the chunk in bytes.
     pub chunk_size: u32,
+    /// List of available source edges that can provide this chunk.
     pub sources: Vec<EdgeIdx>,
+    /// Currently active source being used for download, if any.
     pub active_source: Option<EdgeIdx>,
+    /// Number of bytes successfully received so far.
     pub bytes_received: u64,
+    /// Timestamp when the download started in milliseconds since epoch.
     pub started_at_ms: u64,
+    /// Number of retry attempts made for this chunk.
     pub retries: u8,
 }
 
 impl ActiveChunkDownload {
+    /// Creates a new active chunk download tracking instance.
+    #[must_use]
     pub fn new(
         chunk_id: ChunkId,
         chunk_hash: [u8; 32],
@@ -150,15 +177,21 @@ impl ActiveChunkDownload {
         }
     }
 
-    pub fn is_complete(&self) -> bool {
+    /// Returns whether the chunk download has completed successfully.
+    #[must_use]
+    #[allow(clippy::cast_lossless)]
+    pub const fn is_complete(&self) -> bool {
         self.bytes_received >= self.chunk_size as u64
     }
 
+    /// Returns whether the download has exceeded the specified timeout.
+    #[must_use]
     pub fn is_timed_out(&self, timeout_ms: u64) -> bool {
         let elapsed = current_time_ms() - self.started_at_ms;
         elapsed > timeout_ms
     }
 
+    /// Selects the next available source for downloading this chunk.
     pub fn select_next_source(&mut self) -> Option<EdgeIdx> {
         if self.sources.is_empty() {
             return None;
@@ -186,6 +219,7 @@ impl ActiveChunkDownload {
         }
     }
 
+    /// Marks the current download attempt as failed and increments the retry counter.
     pub fn mark_failed(&mut self) {
         self.active_source = None;
         self.retries += 1;
@@ -195,14 +229,21 @@ impl ActiveChunkDownload {
 /// Active download session tracking in-progress download
 #[derive(Debug, Clone)]
 pub struct DownloadSession {
+    /// Unique identifier for this transfer session.
     pub transfer_id: TransferId,
+    /// Current state of the transfer including status and chunk states.
     pub state: TransferState,
+    /// Map of chunks currently being downloaded.
     pub active_chunks: HashMap<ChunkId, ActiveChunkDownload>,
+    /// Queue of chunks waiting to be downloaded.
     pub pending_chunks: VecDeque<ChunkId>,
+    /// Set of chunks that have been successfully downloaded.
     pub completed_chunks: HashSet<ChunkId>,
 }
 
 impl DownloadSession {
+    /// Creates a new download session with the specified chunks to download.
+    #[must_use]
     pub fn new(transfer_id: TransferId, state: TransferState, chunk_order: Vec<ChunkId>) -> Self {
         Self {
             transfer_id,
@@ -213,10 +254,15 @@ impl DownloadSession {
         }
     }
 
+    /// Returns whether all chunks have been downloaded.
+    #[must_use]
     pub fn is_complete(&self) -> bool {
         self.pending_chunks.is_empty() && self.active_chunks.is_empty()
     }
 
+    /// Calculates the progress ratio as a value between 0.0 and 1.0.
+    #[must_use]
+    #[allow(clippy::cast_precision_loss)]
     pub fn progress_ratio(&self) -> f64 {
         let total =
             self.completed_chunks.len() + self.active_chunks.len() + self.pending_chunks.len();
@@ -235,6 +281,8 @@ pub struct SwarmDownloader {
 }
 
 impl SwarmDownloader {
+    /// Creates a new swarm downloader with the specified configuration and dependencies.
+    #[must_use]
     pub fn new(config: DownloadConfig, pool: ConnectionPool, progress: ProgressTracker) -> Self {
         Self {
             config,
@@ -244,6 +292,9 @@ impl SwarmDownloader {
     }
 
     /// Start a new download session
+    ///
+    /// # Errors
+    /// Returns an error if the request is invalid or no chunks are specified.
     pub async fn start(
         &self,
         request: TransferRequest,
@@ -265,7 +316,7 @@ impl SwarmDownloader {
             .iter()
             .zip(request.chunk_sizes.iter())
             .enumerate()
-            .map(|(idx, (hash, size))| {
+            .map(|(_idx, (hash, size))| {
                 let chunk_id = ChunkId::from_hash(hash);
                 let available_sources = sources.get(&chunk_id).cloned().unwrap_or_default();
                 crate::types::ChunkTransfer::new(*hash, *size, available_sources)
@@ -397,7 +448,7 @@ impl SwarmDownloader {
                         chunk_state.source_edges.clone(),
                     );
 
-                    if let Some(mut active_with_source) = self.assign_source(active).await {
+                    if let Some(active_with_source) = self.assign_source(active).await {
                         session.active_chunks.insert(chunk_id, active_with_source);
                     } else {
                         session.pending_chunks.push_back(chunk_id);

@@ -10,10 +10,9 @@ use axum::{
     extract::{Path, State},
     http::StatusCode,
     response::IntoResponse,
-    routing::{delete, get, post, put},
+    routing::{get, post},
 };
 use serde::{Deserialize, Serialize};
-use std::sync::Arc;
 
 use crate::AppState;
 use crate::error::ApiResult;
@@ -395,7 +394,7 @@ pub async fn get_status<B: StorageBackend>(
 
 /// Build the admin API router
 pub fn routes<B: StorageBackend>(state: AppState<B>) -> Router {
-    let mut router = Router::new()
+    let router = Router::new()
         // System status
         .route("/admin/status", get(get_status::<B>))
         // KMS key management

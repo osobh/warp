@@ -63,16 +63,21 @@ pub struct ErasureParameters {
 
 impl ErasureParameters {
     /// Get total shard count
-    pub fn total_shards(&self) -> usize {
+    #[must_use]
+    pub const fn total_shards(&self) -> usize {
         self.data_shards + self.parity_shards
     }
 
     /// Get redundancy ratio (parity / data)
+    #[must_use]
+    #[allow(clippy::cast_precision_loss)]
     pub fn redundancy_ratio(&self) -> f64 {
         self.parity_shards as f64 / self.data_shards as f64
     }
 
     /// Get overhead percentage
+    #[must_use]
+    #[allow(clippy::cast_precision_loss)]
     pub fn overhead_percent(&self) -> f64 {
         (self.parity_shards as f64 / self.data_shards as f64) * 100.0
     }
@@ -136,6 +141,7 @@ pub struct AdaptiveErasure {
 
 impl AdaptiveErasure {
     /// Create a new adaptive erasure controller
+    #[must_use]
     pub fn new(config: AdaptiveErasureConfig) -> Self {
         Self {
             config,
@@ -147,6 +153,7 @@ impl AdaptiveErasure {
     }
 
     /// Create with default configuration
+    #[must_use]
     pub fn with_defaults() -> Self {
         Self::new(AdaptiveErasureConfig::default())
     }
@@ -164,6 +171,7 @@ impl AdaptiveErasure {
     }
 
     /// Record individual metrics from transfer
+    #[allow(clippy::cast_precision_loss)]
     pub fn record_transfer_metrics(
         &mut self,
         latency_ms: f64,
@@ -184,16 +192,16 @@ impl AdaptiveErasure {
             0.0
         };
 
-        let avg_latency = if !self.metrics_history.is_empty() {
-            (self.get_average_metrics().avg_latency_ms + latency_ms) / 2.0
-        } else {
+        let avg_latency = if self.metrics_history.is_empty() {
             latency_ms
+        } else {
+            (self.get_average_metrics().avg_latency_ms + latency_ms) / 2.0
         };
 
-        let jitter = if !self.metrics_history.is_empty() {
-            (latency_ms - self.get_average_metrics().avg_latency_ms).abs()
-        } else {
+        let jitter = if self.metrics_history.is_empty() {
             0.0
+        } else {
+            (latency_ms - self.get_average_metrics().avg_latency_ms).abs()
         };
 
         self.record_sample(NetworkMetrics {
@@ -206,6 +214,8 @@ impl AdaptiveErasure {
     }
 
     /// Get average metrics over the sample window
+    #[must_use]
+    #[allow(clippy::cast_precision_loss)]
     pub fn get_average_metrics(&self) -> NetworkMetrics {
         if self.metrics_history.is_empty() {
             return NetworkMetrics::default();
@@ -291,7 +301,8 @@ impl AdaptiveErasure {
     }
 
     /// Get current parameters without evaluation
-    pub fn current_parameters(&self) -> ErasureParameters {
+    #[must_use]
+    pub const fn current_parameters(&self) -> ErasureParameters {
         self.current_params
     }
 
@@ -301,6 +312,7 @@ impl AdaptiveErasure {
     }
 
     /// Get recommended parameters for given packet loss rate
+    #[must_use]
     pub fn recommend_for_loss_rate(loss_rate: f64) -> ErasureParameters {
         // Higher loss = more parity shards
         let parity = match loss_rate {
@@ -323,6 +335,7 @@ impl AdaptiveErasure {
     }
 
     /// Get statistics
+    #[must_use]
     pub fn stats(&self) -> AdaptiveErasureStats {
         AdaptiveErasureStats {
             total_samples: self.total_samples,

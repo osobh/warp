@@ -18,13 +18,14 @@
 //! let data = transport.get("bucket", "key", Some(peer_location)).await?;
 //! ```
 
+/// RDMA transport implementation for Tier 2 (same datacenter) communication
 #[cfg(feature = "rmpi")]
 pub mod rdma;
 
 #[cfg(feature = "rmpi")]
 pub use rdma::{
-    RdmaConnectionState, RdmaEndpoint, RdmaEndpointStatsSnapshot, RdmaTransport,
-    RdmaTransportConfig, peer_to_endpoint, select_transport,
+    peer_to_endpoint, select_transport, RdmaConnectionState, RdmaEndpoint,
+    RdmaEndpointStatsSnapshot, RdmaTransport, RdmaTransportConfig,
 };
 
 use std::collections::HashMap;
@@ -237,48 +238,71 @@ pub struct TierStats {
 pub enum StorageMessage {
     /// Get object request
     Get {
+        /// Bucket name
         bucket: String,
+        /// Object key
         key: String,
+        /// Request identifier for matching responses
         request_id: u64,
     },
     /// Get response with data
     GetResponse {
+        /// Request identifier for matching responses
         request_id: u64,
+        /// Object data if found
         #[serde(with = "optional_bytes")]
         data: Option<Bytes>,
+        /// Error message if operation failed
         error: Option<String>,
     },
     /// Put object request
     Put {
+        /// Bucket name
         bucket: String,
+        /// Object key
         key: String,
+        /// Object data to store
         #[serde(with = "bytes_serde")]
         data: Bytes,
+        /// Request identifier for matching responses
         request_id: u64,
     },
     /// Put response
     PutResponse {
+        /// Request identifier for matching responses
         request_id: u64,
+        /// Whether the operation succeeded
         success: bool,
+        /// Error message if operation failed
         error: Option<String>,
     },
     /// Delete object request
     Delete {
+        /// Bucket name
         bucket: String,
+        /// Object key
         key: String,
+        /// Request identifier for matching responses
         request_id: u64,
     },
     /// Delete response
     DeleteResponse {
+        /// Request identifier for matching responses
         request_id: u64,
+        /// Whether the operation succeeded
         success: bool,
+        /// Error message if operation failed
         error: Option<String>,
     },
     /// Chunk transfer (for large objects)
     Chunk {
+        /// Request identifier for matching responses
         request_id: u64,
+        /// Zero-based chunk index
         chunk_index: u32,
+        /// Total number of chunks
         total_chunks: u32,
+        /// Chunk data
         #[serde(with = "bytes_serde")]
         data: Bytes,
     },
@@ -287,8 +311,9 @@ pub enum StorageMessage {
 /// Helper module for serializing Bytes
 mod bytes_serde {
     use bytes::Bytes;
-    use serde::{Deserialize, Deserializer, Serializer};
+    use serde::{Deserializer, Serializer};
 
+    /// Serialize Bytes as byte array
     pub fn serialize<S>(value: &Bytes, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
@@ -296,6 +321,7 @@ mod bytes_serde {
         serializer.serialize_bytes(value)
     }
 
+    /// Deserialize byte array into Bytes
     pub fn deserialize<'de, D>(deserializer: D) -> Result<Bytes, D::Error>
     where
         D: Deserializer<'de>,
@@ -310,6 +336,7 @@ mod optional_bytes {
     use bytes::Bytes;
     use serde::{Deserialize, Deserializer, Serializer};
 
+    /// Serialize optional Bytes as optional byte array
     pub fn serialize<S>(value: &Option<Bytes>, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
@@ -320,6 +347,7 @@ mod optional_bytes {
         }
     }
 
+    /// Deserialize optional byte array into optional Bytes
     pub fn deserialize<'de, D>(deserializer: D) -> Result<Option<Bytes>, D::Error>
     where
         D: Deserializer<'de>,

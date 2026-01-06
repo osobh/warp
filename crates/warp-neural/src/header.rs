@@ -125,7 +125,7 @@ impl WlocHeader {
         }
 
         // Check magic
-        if &data[0..4] != &MAGIC {
+        if data[0..4] != MAGIC {
             return Err(Error::InvalidHeader(format!(
                 "Invalid magic bytes: {:02X?}",
                 &data[0..4]
@@ -161,7 +161,7 @@ impl WlocHeader {
     /// Check if data starts with WLOC magic bytes
     #[must_use]
     pub fn is_wloc(data: &[u8]) -> bool {
-        data.len() >= 4 && &data[0..4] == &MAGIC
+        data.len() >= 4 && data[0..4] == MAGIC
     }
 
     /// Get the compression ratio

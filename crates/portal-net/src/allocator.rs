@@ -1,7 +1,7 @@
 //! IP address allocator for the Portal virtual network
 //!
 //! This module provides efficient IP allocation within the 10.0.0.0/16 subnet.
-//! It uses a bitmap-based approach with a BTreeSet for O(log n) operations and
+//! It uses a bitmap-based approach with a `BTreeSet` for O(log n) operations and
 //! minimal memory overhead.
 //!
 //! # Allocation Strategy
@@ -9,7 +9,7 @@
 //! - Host 0 (10.0.0.0) is reserved for the network address
 //! - Host 1 (10.0.0.1) is reserved for the Hub
 //! - Hosts 2-65535 are available for peer allocation
-//! - Uses a next_hint to optimize sequential allocation
+//! - Uses a `next_hint` to optimize sequential allocation
 //!
 //! # Examples
 //!
@@ -117,7 +117,7 @@ pub trait IpAllocator: Send + Sync {
 #[derive(Debug, Clone)]
 pub struct BitmapAllocator {
     /// Set of allocated host identifiers
-    /// Uses BTreeSet for ordered iteration and efficient lookups
+    /// Uses `BTreeSet` for ordered iteration and efficient lookups
     allocated: BTreeSet<u16>,
 
     /// Hint for the next allocation to optimize sequential allocation
@@ -141,12 +141,13 @@ impl BitmapAllocator {
     /// assert!(allocator.is_allocated(VirtualIp::HUB));
     /// assert_eq!(allocator.available_count(), 65534); // 65536 - 2 reserved (network + hub)
     /// ```
+    #[must_use]
     pub fn new() -> Self {
         let mut allocated = BTreeSet::new();
         allocated.insert(NETWORK_HOST);
         allocated.insert(HUB_HOST);
 
-        BitmapAllocator {
+        Self {
             allocated,
             next_hint: FIRST_ALLOCATABLE,
         }
@@ -171,13 +172,14 @@ impl BitmapAllocator {
     /// assert!(allocator.is_allocated(VirtualIp::new(20)));
     /// assert!(allocator.is_allocated(VirtualIp::new(30)));
     /// ```
+    #[must_use]
     pub fn with_reserved(reserved: &[VirtualIp]) -> Self {
         let mut allocator = Self::new();
 
         for &ip in reserved {
             let host = ip.host();
             // Only reserve allocatable IPs (skip network and hub as they're already reserved)
-            if host >= FIRST_ALLOCATABLE && host <= MAX_HOST {
+            if (FIRST_ALLOCATABLE..=MAX_HOST).contains(&host) {
                 allocator.allocated.insert(host);
             }
         }
@@ -191,20 +193,12 @@ impl BitmapAllocator {
     /// the last allocation point rather than always from the beginning.
     fn find_next_available(&self) -> Option<u16> {
         // Try from hint to MAX_HOST
-        for host in self.next_hint..=MAX_HOST {
-            if !self.allocated.contains(&host) {
-                return Some(host);
-            }
-        }
-
-        // Wrap around and try from FIRST_ALLOCATABLE to hint
-        for host in FIRST_ALLOCATABLE..self.next_hint {
-            if !self.allocated.contains(&host) {
-                return Some(host);
-            }
-        }
-
-        None
+        (self.next_hint..=MAX_HOST)
+            .find(|host| !self.allocated.contains(host))
+            .or_else(|| {
+                // Wrap around and try from FIRST_ALLOCATABLE to hint
+                (FIRST_ALLOCATABLE..self.next_hint).find(|host| !self.allocated.contains(host))
+            })
     }
 }
 
@@ -248,8 +242,7 @@ impl IpAllocator for BitmapAllocator {
         // Check if already allocated
         if self.allocated.contains(&host) {
             return Err(PortalNetError::Configuration(format!(
-                "IP address {} is already allocated",
-                ip
+                "IP address {ip} is already allocated"
             )));
         }
 

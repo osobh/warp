@@ -37,14 +37,14 @@ pub struct ChunkStateUpdate {
 
 /// CPU-only state buffer management
 ///
-/// Uses vectors and DashMap for concurrent access without GPU overhead.
+/// Uses vectors and `DashMap` for concurrent access without GPU overhead.
 /// Suitable for smaller deployments or as a fallback implementation.
 pub struct CpuStateBuffers {
     /// Chunk states (indexed by internal ID)
     chunks: Vec<Option<ChunkState>>,
-    /// Edge states (indexed by EdgeIdx)
+    /// Edge states (indexed by `EdgeIdx`)
     edges: Vec<Option<EdgeStateGpu>>,
-    /// Replica map: chunk_id -> edges that have this chunk
+    /// Replica map: `chunk_id` -> edges that have this chunk
     replica_map: Vec<Vec<EdgeIdx>>,
     /// Hash lookup: Blake3 hash -> internal chunk id
     chunk_index: DashMap<[u8; 32], u32>,
@@ -66,6 +66,7 @@ impl CpuStateBuffers {
     /// # Arguments
     /// * `max_chunks` - Maximum number of chunks to track
     /// * `max_edges` - Maximum number of edges to track
+    #[must_use] 
     pub fn new(max_chunks: usize, max_edges: usize) -> Self {
         Self {
             chunks: vec![None; max_chunks],
@@ -87,6 +88,12 @@ impl CpuStateBuffers {
     ///
     /// # Returns
     /// Internal chunk ID for future lookups
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - Chunk with the same hash already exists
+    /// - Chunk buffer is full
     pub fn add_chunk(&mut self, state: ChunkState) -> Result<u32> {
         let hash = state.hash;
 
@@ -109,11 +116,16 @@ impl CpuStateBuffers {
     }
 
     /// Get chunk state by internal ID
+    #[must_use] 
     pub fn get_chunk(&self, id: u32) -> Option<&ChunkState> {
         self.chunks.get(id as usize)?.as_ref()
     }
 
     /// Update chunk state
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if chunk with the given ID is not found
     pub fn update_chunk(&mut self, id: u32, update: ChunkStateUpdate) -> Result<()> {
         let chunk = self
             .chunks
@@ -144,6 +156,12 @@ impl CpuStateBuffers {
     }
 
     /// Add edge to state
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - Edge with the same ID already exists
+    /// - Edge buffer is full
     pub fn add_edge(&mut self, edge_id: u32, state: EdgeStateGpu) -> Result<EdgeIdx> {
         // Check if already exists
         if self.edge_index.contains_key(&edge_id) {
@@ -163,11 +181,16 @@ impl CpuStateBuffers {
     }
 
     /// Get edge state by index
+    #[must_use] 
     pub fn get_edge(&self, idx: EdgeIdx) -> Option<&EdgeStateGpu> {
         self.edges.get(idx.0 as usize)?.as_ref()
     }
 
     /// Update edge state
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if edge with the given index is not found
     pub fn update_edge(&mut self, idx: EdgeIdx, state: EdgeStateGpu) -> Result<()> {
         let edge = self
             .edges
@@ -203,14 +226,18 @@ impl CpuStateBuffers {
     }
 
     /// Get all replica locations for a chunk
+    #[must_use] 
     pub fn get_replicas(&self, chunk_id: u32) -> &[EdgeIdx] {
         self.replica_map
             .get(chunk_id as usize)
-            .map(|v| v.as_slice())
-            .unwrap_or(&[])
+            .map_or(&[], std::vec::Vec::as_slice)
     }
 
     /// Batch update chunks
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if any chunk in the batch is not found
     pub fn update_chunks_batch(&mut self, updates: &[ChunkStateUpdate]) -> Result<()> {
         for update in updates {
             // Find internal ID from ChunkId
@@ -226,6 +253,10 @@ impl CpuStateBuffers {
     }
 
     /// Batch update edges
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if any edge in the batch is not found
     pub fn update_edges_batch(&mut self, edges: &[(u32, EdgeStateGpu)]) -> Result<()> {
         for (edge_id, state) in edges {
             let idx = self
@@ -240,16 +271,19 @@ impl CpuStateBuffers {
     }
 
     /// Get number of chunks
+    #[must_use] 
     pub fn chunk_count(&self) -> usize {
         self.chunks.iter().filter(|c| c.is_some()).count()
     }
 
     /// Get number of edges
+    #[must_use] 
     pub fn edge_count(&self) -> usize {
         self.edges.iter().filter(|e| e.is_some()).count()
     }
 
     /// Create snapshot of current state
+    #[must_use] 
     pub fn snapshot(&self) -> StateSnapshot {
         StateSnapshot {
             chunks: self.chunks.iter().filter_map(|c| *c).collect(),
@@ -261,11 +295,13 @@ impl CpuStateBuffers {
     }
 
     /// Find chunk by hash
+    #[must_use] 
     pub fn find_chunk(&self, hash: &[u8; 32]) -> Option<u32> {
         self.chunk_index.get(hash).map(|v| *v)
     }
 
     /// Find edge by ID
+    #[must_use] 
     pub fn find_edge(&self, edge_id: u32) -> Option<EdgeIdx> {
         self.edge_index.get(&edge_id).map(|v| EdgeIdx(*v))
     }
@@ -273,7 +309,7 @@ impl CpuStateBuffers {
 
 /// GPU-accelerated state buffers
 ///
-/// Currently wraps CpuStateBuffers but designed for future GPU implementation
+/// Currently wraps `CpuStateBuffers` but designed for future GPU implementation
 /// using cudarc for device memory management and kernel launches.
 pub struct GpuStateBuffers {
     /// CPU fallback implementation
@@ -286,6 +322,7 @@ pub struct GpuStateBuffers {
 
 impl GpuStateBuffers {
     /// Create new GPU state buffers (currently uses CPU fallback)
+    #[must_use] 
     pub fn new(max_chunks: usize, max_edges: usize) -> Self {
         Self {
             inner: CpuStateBuffers::new(max_chunks, max_edges),
@@ -293,16 +330,27 @@ impl GpuStateBuffers {
     }
 
     /// Add chunk (delegates to CPU implementation)
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - Chunk with the same hash already exists
+    /// - Chunk buffer is full
     pub fn add_chunk(&mut self, state: ChunkState) -> Result<u32> {
         self.inner.add_chunk(state)
     }
 
     /// Get chunk (delegates to CPU implementation)
+    #[must_use] 
     pub fn get_chunk(&self, id: u32) -> Option<&ChunkState> {
         self.inner.get_chunk(id)
     }
 
     /// Update chunk (delegates to CPU implementation)
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if chunk with the given ID is not found
     pub fn update_chunk(&mut self, id: u32, update: ChunkStateUpdate) -> Result<()> {
         self.inner.update_chunk(id, update)
     }
@@ -313,16 +361,27 @@ impl GpuStateBuffers {
     }
 
     /// Add edge (delegates to CPU implementation)
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - Edge with the same ID already exists
+    /// - Edge buffer is full
     pub fn add_edge(&mut self, edge_id: u32, state: EdgeStateGpu) -> Result<EdgeIdx> {
         self.inner.add_edge(edge_id, state)
     }
 
     /// Get edge (delegates to CPU implementation)
+    #[must_use] 
     pub fn get_edge(&self, idx: EdgeIdx) -> Option<&EdgeStateGpu> {
         self.inner.get_edge(idx)
     }
 
     /// Update edge (delegates to CPU implementation)
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if edge with the given index is not found
     pub fn update_edge(&mut self, idx: EdgeIdx, state: EdgeStateGpu) -> Result<()> {
         self.inner.update_edge(idx, state)
     }
@@ -334,50 +393,64 @@ impl GpuStateBuffers {
 
     /// Add replica (delegates to CPU implementation)
     pub fn add_replica(&mut self, chunk_id: u32, edge_idx: EdgeIdx) {
-        self.inner.add_replica(chunk_id, edge_idx)
+        self.inner.add_replica(chunk_id, edge_idx);
     }
 
     /// Remove replica (delegates to CPU implementation)
     pub fn remove_replica(&mut self, chunk_id: u32, edge_idx: EdgeIdx) {
-        self.inner.remove_replica(chunk_id, edge_idx)
+        self.inner.remove_replica(chunk_id, edge_idx);
     }
 
     /// Get replicas (delegates to CPU implementation)
+    #[must_use] 
     pub fn get_replicas(&self, chunk_id: u32) -> &[EdgeIdx] {
         self.inner.get_replicas(chunk_id)
     }
 
     /// Batch update chunks (delegates to CPU implementation)
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if any chunk in the batch is not found
     pub fn update_chunks_batch(&mut self, updates: &[ChunkStateUpdate]) -> Result<()> {
         self.inner.update_chunks_batch(updates)
     }
 
     /// Batch update edges (delegates to CPU implementation)
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if any edge in the batch is not found
     pub fn update_edges_batch(&mut self, edges: &[(u32, EdgeStateGpu)]) -> Result<()> {
         self.inner.update_edges_batch(edges)
     }
 
     /// Get chunk count (delegates to CPU implementation)
+    #[must_use] 
     pub fn chunk_count(&self) -> usize {
         self.inner.chunk_count()
     }
 
     /// Get edge count (delegates to CPU implementation)
+    #[must_use] 
     pub fn edge_count(&self) -> usize {
         self.inner.edge_count()
     }
 
     /// Create snapshot (delegates to CPU implementation)
+    #[must_use] 
     pub fn snapshot(&self) -> StateSnapshot {
         self.inner.snapshot()
     }
 
     /// Find chunk by hash (delegates to CPU implementation)
+    #[must_use] 
     pub fn find_chunk(&self, hash: &[u8; 32]) -> Option<u32> {
         self.inner.find_chunk(hash)
     }
 
     /// Find edge by ID (delegates to CPU implementation)
+    #[must_use] 
     pub fn find_edge(&self, edge_id: u32) -> Option<EdgeIdx> {
         self.inner.find_edge(edge_id)
     }

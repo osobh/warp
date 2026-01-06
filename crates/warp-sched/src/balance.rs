@@ -35,8 +35,9 @@ impl Default for LoadBalanceConfig {
 }
 
 impl LoadBalanceConfig {
-    /// Create a new LoadBalanceConfig with custom values
-    pub fn new(
+    /// Create a new `LoadBalanceConfig` with custom values
+    #[must_use] 
+    pub const fn new(
         high_load_threshold: f32,
         low_load_threshold: f32,
         rebalance_interval_ms: u64,
@@ -51,6 +52,12 @@ impl LoadBalanceConfig {
     }
 
     /// Validate configuration values
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - `low_load_threshold` >= `high_load_threshold`
+    /// - `max_migrations_per_tick` is 0
     pub fn validate(&self) -> Result<(), String> {
         if self.low_load_threshold >= self.high_load_threshold {
             return Err("low_load_threshold must be less than high_load_threshold".to_string());
@@ -79,7 +86,8 @@ pub struct RebalanceOp {
 
 impl RebalanceOp {
     /// Create a new rebalance operation
-    pub fn new(
+    #[must_use] 
+    pub const fn new(
         chunk_id: ChunkId,
         from_edge: EdgeIdx,
         to_edge: EdgeIdx,
@@ -109,6 +117,7 @@ pub struct RebalancePlan {
 
 impl RebalancePlan {
     /// Create a new rebalance plan
+    #[must_use] 
     pub fn new(operations: Vec<RebalanceOp>, generation: u64) -> Self {
         let timestamp_ms = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
@@ -122,18 +131,21 @@ impl RebalancePlan {
     }
 
     /// Create an empty plan
+    #[must_use] 
     pub fn empty(generation: u64) -> Self {
         Self::new(Vec::new(), generation)
     }
 
     /// Get number of operations in the plan
     #[inline]
+    #[must_use] 
     pub fn len(&self) -> usize {
         self.operations.len()
     }
 
     /// Check if plan is empty
     #[inline]
+    #[must_use] 
     pub fn is_empty(&self) -> bool {
         self.operations.is_empty()
     }
@@ -160,19 +172,20 @@ impl RebalancePlan {
 pub struct LoadMetrics {
     /// Edge index
     pub edge_idx: EdgeIdx,
-    /// Load ratio: active_transfers / max_transfers (0.0-1.0)
+    /// Load ratio: `active_transfers` / `max_transfers` (0.0-1.0)
     pub load_ratio: f32,
     /// Number of chunks waiting in queue
     pub queue_depth: u32,
-    /// True if load_ratio > high_load_threshold
+    /// True if `load_ratio` > `high_load_threshold`
     pub is_overloaded: bool,
-    /// True if load_ratio < low_load_threshold
+    /// True if `load_ratio` < `low_load_threshold`
     pub is_underloaded: bool,
 }
 
 impl LoadMetrics {
     /// Create new load metrics
-    pub fn new(
+    #[must_use] 
+    pub const fn new(
         edge_idx: EdgeIdx,
         load_ratio: f32,
         queue_depth: u32,
@@ -190,7 +203,8 @@ impl LoadMetrics {
 
     /// Check if edge is balanced (not over or under loaded)
     #[inline]
-    pub fn is_balanced(&self) -> bool {
+    #[must_use] 
+    pub const fn is_balanced(&self) -> bool {
         !self.is_overloaded && !self.is_underloaded
     }
 }
@@ -205,7 +219,8 @@ pub struct CpuLoadBalancer {
 
 impl CpuLoadBalancer {
     /// Create a new CPU load balancer
-    pub fn new(config: LoadBalanceConfig) -> Self {
+    #[must_use] 
+    pub const fn new(config: LoadBalanceConfig) -> Self {
         Self {
             config,
             generation: 0,
@@ -213,20 +228,22 @@ impl CpuLoadBalancer {
     }
 
     /// Get the current configuration
-    pub fn config(&self) -> &LoadBalanceConfig {
+    #[must_use] 
+    pub const fn config(&self) -> &LoadBalanceConfig {
         &self.config
     }
 
     /// Analyze load metrics for all edges
     ///
     /// Returns load metrics for each edge in the state.
+    #[must_use] 
     pub fn analyze(&self, state: &CpuStateBuffers) -> Vec<LoadMetrics> {
         let mut metrics = Vec::new();
 
         for i in 0..state.edge_count() {
             if let Some(edge) = state.get_edge(EdgeIdx(i as u32)) {
                 let load_ratio = if edge.max_transfers > 0 {
-                    edge.active_transfers as f32 / edge.max_transfers as f32
+                    f32::from(edge.active_transfers) / f32::from(edge.max_transfers)
                 } else {
                     0.0
                 };
@@ -249,7 +266,8 @@ impl CpuLoadBalancer {
 
     /// Find all overloaded edges
     ///
-    /// Returns edge indices where load_ratio > high_load_threshold.
+    /// Returns edge indices where `load_ratio` > `high_load_threshold`.
+    #[must_use] 
     pub fn find_overloaded(&self, state: &CpuStateBuffers) -> Vec<EdgeIdx> {
         self.analyze(state)
             .into_iter()
@@ -260,7 +278,8 @@ impl CpuLoadBalancer {
 
     /// Find all underloaded edges
     ///
-    /// Returns edge indices where load_ratio < low_load_threshold.
+    /// Returns edge indices where `load_ratio` < `low_load_threshold`.
+    #[must_use] 
     pub fn find_underloaded(&self, state: &CpuStateBuffers) -> Vec<EdgeIdx> {
         self.analyze(state)
             .into_iter()
@@ -351,7 +370,7 @@ impl CpuLoadBalancer {
 
 /// GPU-accelerated load balancer (delegates to CPU)
 ///
-/// Provides the same API as CpuLoadBalancer but designed for future GPU
+/// Provides the same API as `CpuLoadBalancer` but designed for future GPU
 /// implementation using cudarc patterns.
 pub struct LoadBalancer {
     inner: CpuLoadBalancer,
@@ -359,18 +378,21 @@ pub struct LoadBalancer {
 
 impl LoadBalancer {
     /// Create a new GPU load balancer (delegates to CPU)
-    pub fn new(config: LoadBalanceConfig) -> Self {
+    #[must_use] 
+    pub const fn new(config: LoadBalanceConfig) -> Self {
         Self {
             inner: CpuLoadBalancer::new(config),
         }
     }
 
     /// Get the current configuration
-    pub fn config(&self) -> &LoadBalanceConfig {
+    #[must_use] 
+    pub const fn config(&self) -> &LoadBalanceConfig {
         self.inner.config()
     }
 
     /// Analyze load metrics (delegates to CPU)
+    #[must_use] 
     pub fn analyze(&self, state: &CpuStateBuffers) -> Vec<LoadMetrics> {
         self.inner.analyze(state)
     }
@@ -381,11 +403,13 @@ impl LoadBalancer {
     }
 
     /// Find overloaded edges (delegates to CPU)
+    #[must_use] 
     pub fn find_overloaded(&self, state: &CpuStateBuffers) -> Vec<EdgeIdx> {
         self.inner.find_overloaded(state)
     }
 
     /// Find underloaded edges (delegates to CPU)
+    #[must_use] 
     pub fn find_underloaded(&self, state: &CpuStateBuffers) -> Vec<EdgeIdx> {
         self.inner.find_underloaded(state)
     }

@@ -229,7 +229,7 @@ impl WarpReader {
             )
         })?;
 
-        if self.chunk_index.len() == 0 {
+        if self.chunk_index.is_empty() {
             return Ok((0, 0));
         }
 

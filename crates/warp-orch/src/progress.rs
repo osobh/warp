@@ -17,13 +17,21 @@ use tokio::sync::broadcast;
 /// Progress update event broadcast to all subscribers
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ProgressUpdate {
+    /// Unique identifier for the transfer
     pub transfer_id: TransferId,
+    /// Elapsed time since transfer started in milliseconds
     pub timestamp_ms: u64,
+    /// Number of chunks successfully completed
     pub chunks_completed: usize,
+    /// Total number of chunks in the transfer
     pub total_chunks: usize,
+    /// Total bytes transferred so far
     pub bytes_transferred: u64,
+    /// Total bytes to be transferred
     pub total_bytes: u64,
+    /// Current transfer speed in bytes per second
     pub current_speed_bps: u64,
+    /// Estimated time to completion in milliseconds
     pub eta_ms: Option<u64>,
 }
 
@@ -42,6 +50,7 @@ impl SpeedEstimator {
     /// # Arguments
     /// * `alpha` - EMA smoothing factor (0.0-1.0), default 0.3
     ///   Higher alpha = more weight to recent samples
+    #[must_use]
     pub fn new(alpha: f64) -> Self {
         Self {
             alpha: alpha.clamp(0.0, 1.0),
@@ -55,6 +64,7 @@ impl SpeedEstimator {
     /// # Arguments
     /// * `bytes` - Number of bytes transferred
     /// * `duration_ms` - Time taken for transfer in milliseconds
+    #[allow(clippy::cast_precision_loss)]
     pub fn record(&mut self, bytes: u64, duration_ms: u64) {
         if duration_ms == 0 {
             return;
@@ -73,13 +83,17 @@ impl SpeedEstimator {
     }
 
     /// Get current estimated speed in bytes per second
+    #[must_use]
+    #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
     pub fn current_speed_bps(&self) -> u64 {
         self.current_speed_bps as u64
     }
 
     /// Estimate time remaining in milliseconds for remaining bytes
     ///
-    /// Returns None if no speed data available or speed is zero
+    /// Returns `None` if no speed data available or speed is zero
+    #[must_use]
+    #[allow(clippy::cast_precision_loss, clippy::cast_possible_truncation, clippy::cast_sign_loss)]
     pub fn estimate_eta(&self, remaining_bytes: u64) -> Option<u64> {
         if self.current_speed_bps <= 0.0 || remaining_bytes == 0 {
             return None;
@@ -99,19 +113,29 @@ impl Default for SpeedEstimator {
 /// Progress state for a single transfer
 #[derive(Debug, Clone)]
 pub struct TransferProgress {
+    /// Unique identifier for this transfer
     pub transfer_id: TransferId,
+    /// Current status of the transfer
     pub status: TransferStatus,
+    /// Total number of chunks in the transfer
     pub total_chunks: usize,
+    /// Number of chunks successfully completed
     pub completed_chunks: usize,
+    /// Number of chunks that failed
     pub failed_chunks: usize,
+    /// Total bytes to be transferred
     pub total_bytes: u64,
+    /// Total bytes transferred so far
     pub transferred_bytes: u64,
+    /// Time when the transfer started
     pub started_at: Option<Instant>,
+    /// Speed estimator for ETA calculations
     pub speed_estimator: SpeedEstimator,
 }
 
 impl TransferProgress {
     /// Create new transfer progress tracker
+    #[must_use]
     pub fn new(transfer_id: TransferId, total_chunks: usize, total_bytes: u64) -> Self {
         Self {
             transfer_id,
@@ -127,6 +151,8 @@ impl TransferProgress {
     }
 
     /// Get progress ratio from 0.0 to 1.0
+    #[must_use]
+    #[allow(clippy::cast_precision_loss)]
     pub fn progress_ratio(&self) -> f64 {
         if self.total_bytes == 0 {
             return 0.0;
@@ -135,6 +161,8 @@ impl TransferProgress {
     }
 
     /// Get elapsed time since transfer started in milliseconds
+    #[must_use]
+    #[allow(clippy::cast_possible_truncation)]
     pub fn elapsed_ms(&self) -> u64 {
         match self.started_at {
             Some(start) => start.elapsed().as_millis() as u64,
@@ -143,12 +171,14 @@ impl TransferProgress {
     }
 
     /// Get estimated time remaining in milliseconds
+    #[must_use]
     pub fn eta_ms(&self) -> Option<u64> {
         let remaining = self.total_bytes.saturating_sub(self.transferred_bytes);
         self.speed_estimator.estimate_eta(remaining)
     }
 
     /// Check if transfer is complete
+    #[must_use]
     pub fn is_complete(&self) -> bool {
         matches!(
             self.status,
@@ -166,11 +196,13 @@ pub struct ProgressTracker {
 
 impl ProgressTracker {
     /// Create new progress tracker with default channel capacity
+    #[must_use]
     pub fn new() -> Self {
         Self::with_capacity(1024)
     }
 
     /// Create new progress tracker with specific channel capacity
+    #[must_use]
     pub fn with_capacity(capacity: usize) -> Self {
         let (tx, _) = broadcast::channel(capacity);
         Self {

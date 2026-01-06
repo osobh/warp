@@ -162,7 +162,7 @@ async fn extract_local_archive(
 
     // First, try to open without key to check if encrypted
     let temp_reader = WarpReader::open(&source_path).ok();
-    let is_encrypted = temp_reader.as_ref().map_or(false, |r| r.is_encrypted());
+    let is_encrypted = temp_reader.as_ref().is_some_and(|r| r.is_encrypted());
     drop(temp_reader);
 
     // Open the archive (with or without decryption key)

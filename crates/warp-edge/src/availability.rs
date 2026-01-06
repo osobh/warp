@@ -6,12 +6,12 @@
 //!
 //! # Architecture
 //!
-//! Uses bidirectional DashMap indices for lock-free concurrent access:
-//! - Forward index: chunk_hash -> edges storing it
-//! - Reverse index: edge_id -> chunks it stores
+//! Uses bidirectional `DashMap` indices for lock-free concurrent access:
+//! - Forward index: `chunk_hash` -> edges storing it
+//! - Reverse index: `edge_id` -> chunks it stores
 //!
 //! Both maps stay synchronized through atomic operations, ensuring consistency without
-//! global locks. Each map entry uses DashSet for efficient set operations.
+//! global locks. Each map entry uses `DashSet` for efficient set operations.
 
 use crate::types::EdgeId;
 use dashmap::{DashMap, DashSet};
@@ -42,14 +42,15 @@ pub struct ChunkLocation {
 /// - Batch operations: O(n) where n is batch size
 /// - Memory: ~64 bytes per unique chunk-edge relationship
 pub struct ChunkAvailabilityMap {
-    /// Forward index: chunk_hash -> edges storing it
+    /// Forward index: `chunk_hash` -> edges storing it
     chunk_to_edges: DashMap<ChunkHash, DashSet<EdgeId>>,
-    /// Reverse index: edge_id -> chunks it stores
+    /// Reverse index: `edge_id` -> chunks it stores
     edge_to_chunks: DashMap<EdgeId, DashSet<ChunkHash>>,
 }
 
 impl ChunkAvailabilityMap {
     /// Create a new empty availability map
+    #[must_use] 
     pub fn new() -> Self {
         Self {
             chunk_to_edges: DashMap::new(),
@@ -65,13 +66,13 @@ impl ChunkAvailabilityMap {
         // Add to forward index
         self.chunk_to_edges
             .entry(chunk)
-            .or_insert_with(DashSet::new)
+            .or_default()
             .insert(edge);
 
         // Add to reverse index
         self.edge_to_chunks
             .entry(edge)
-            .or_insert_with(DashSet::new)
+            .or_default()
             .insert(chunk);
     }
 
@@ -79,6 +80,7 @@ impl ChunkAvailabilityMap {
     ///
     /// Removes the record that `edge` stores `chunk`. Returns true if the
     /// relationship existed and was removed, false otherwise.
+    #[must_use] 
     pub fn remove_chunk(&self, chunk: &ChunkHash, edge: &EdgeId) -> bool {
         let mut removed = false;
 
@@ -110,8 +112,11 @@ impl ChunkAvailabilityMap {
     /// Removes all chunk-edge relationships for the given edge.
     /// Returns the list of chunks that were removed.
     /// Useful when an edge disconnects or fails.
+    #[must_use] 
     pub fn remove_all_for_edge(&self, edge: &EdgeId) -> Vec<ChunkHash> {
-        let chunks = if let Some((_, chunk_set)) = self.edge_to_chunks.remove(edge) {
+        
+
+        if let Some((_, chunk_set)) = self.edge_to_chunks.remove(edge) {
             let chunks: Vec<ChunkHash> = chunk_set.iter().map(|r| *r.key()).collect();
 
             // Remove edge from forward index for each chunk
@@ -129,9 +134,7 @@ impl ChunkAvailabilityMap {
             chunks
         } else {
             Vec::new()
-        };
-
-        chunks
+        }
     }
 
     /// Get all edges storing a chunk
@@ -153,8 +156,7 @@ impl ChunkAvailabilityMap {
     pub fn replica_count(&self, chunk: &ChunkHash) -> usize {
         self.chunk_to_edges
             .get(chunk)
-            .map(|edges| edges.len())
-            .unwrap_or(0)
+            .map_or(0, |edges| edges.len())
     }
 
     /// Check if a chunk exists in the map
@@ -180,8 +182,7 @@ impl ChunkAvailabilityMap {
     pub fn edge_chunk_count(&self, edge: &EdgeId) -> usize {
         self.edge_to_chunks
             .get(edge)
-            .map(|chunks| chunks.len())
-            .unwrap_or(0)
+            .map_or(0, |chunks| chunks.len())
     }
 
     /// Add multiple chunks for an edge efficiently
@@ -194,7 +195,7 @@ impl ChunkAvailabilityMap {
         }
 
         // Get or create reverse index entry once
-        let edge_chunks = self.edge_to_chunks.entry(edge).or_insert_with(DashSet::new);
+        let edge_chunks = self.edge_to_chunks.entry(edge).or_default();
 
         for chunk in chunks {
             // Add to reverse index
@@ -203,7 +204,7 @@ impl ChunkAvailabilityMap {
             // Add to forward index
             self.chunk_to_edges
                 .entry(*chunk)
-                .or_insert_with(DashSet::new)
+                .or_default()
                 .insert(edge);
         }
     }

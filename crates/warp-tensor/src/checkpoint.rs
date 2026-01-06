@@ -1,17 +1,15 @@
 //! Model checkpointing with incremental saves
 
 use std::collections::HashMap;
-use std::sync::Arc;
 use std::time::SystemTime;
 
-use bytes::Bytes;
 use dashmap::DashMap;
 use parking_lot::RwLock;
 use serde::{Deserialize, Serialize};
 
 use crate::config::TensorConfig;
 use crate::error::{TensorError, TensorResult};
-use crate::shard::{ShardStrategy, ShardedTensorMeta};
+use crate::shard::ShardedTensorMeta;
 use crate::tensor::{LazyTensor, TensorData, TensorMeta};
 
 /// Checkpoint metadata
@@ -54,12 +52,14 @@ impl CheckpointMeta {
     }
 
     /// Set parent checkpoint
+    #[must_use]
     pub fn with_parent(mut self, parent: impl Into<String>) -> Self {
         self.parent = Some(parent.into());
         self
     }
 
     /// Add custom metadata
+    #[must_use]
     pub fn with_metadata(mut self, key: impl Into<String>, value: impl Into<String>) -> Self {
         self.metadata.insert(key.into(), value.into());
         self
@@ -88,6 +88,7 @@ impl Checkpoint {
     }
 
     /// Create from metadata (for lazy loading)
+    #[must_use] 
     pub fn from_meta(meta: CheckpointMeta) -> Self {
         let lazy_tensors: HashMap<String, LazyTensor> = meta
             .tensors
@@ -117,31 +118,37 @@ impl Checkpoint {
     }
 
     /// Get a tensor by name
+    #[must_use] 
     pub fn get_tensor(&self, name: &str) -> Option<&TensorData> {
         self.tensors.get(name)
     }
 
     /// Get tensor metadata by name
+    #[must_use] 
     pub fn get_tensor_meta(&self, name: &str) -> Option<&TensorMeta> {
         self.meta.tensors.get(name)
     }
 
     /// Check if tensor is loaded
+    #[must_use] 
     pub fn is_tensor_loaded(&self, name: &str) -> bool {
         self.tensors.contains_key(name)
     }
 
     /// Get list of tensor names
+    #[must_use] 
     pub fn tensor_names(&self) -> &[String] {
         &self.meta.tensor_names
     }
 
     /// Get number of tensors
+    #[must_use] 
     pub fn tensor_count(&self) -> usize {
         self.meta.tensor_names.len()
     }
 
     /// Get total size
+    #[must_use] 
     pub fn total_size(&self) -> u64 {
         self.meta.total_size
     }
@@ -152,6 +159,7 @@ impl Checkpoint {
     }
 
     /// Get all loaded tensors
+    #[must_use] 
     pub fn tensors(&self) -> &HashMap<String, TensorData> {
         &self.tensors
     }
@@ -177,36 +185,42 @@ impl CheckpointBuilder {
     }
 
     /// Set parent checkpoint (for incremental)
+    #[must_use]
     pub fn parent(mut self, parent: impl Into<String>) -> Self {
         self.parent = Some(parent.into());
         self
     }
 
     /// Add a tensor
+    #[must_use]
     pub fn add_tensor(mut self, tensor: TensorData) -> Self {
         self.tensors.push(tensor);
         self
     }
 
     /// Add f32 tensor from data
+    #[must_use]
     pub fn add_f32(mut self, name: impl Into<String>, shape: Vec<usize>, data: &[f32]) -> Self {
         self.tensors.push(TensorData::from_f32(name, shape, data));
         self
     }
 
     /// Add f64 tensor from data
+    #[must_use]
     pub fn add_f64(mut self, name: impl Into<String>, shape: Vec<usize>, data: &[f64]) -> Self {
         self.tensors.push(TensorData::from_f64(name, shape, data));
         self
     }
 
     /// Add metadata
+    #[must_use]
     pub fn metadata(mut self, key: impl Into<String>, value: impl Into<String>) -> Self {
         self.metadata.insert(key.into(), value.into());
         self
     }
 
     /// Build the checkpoint
+    #[must_use] 
     pub fn build(self) -> Checkpoint {
         let mut checkpoint = Checkpoint::new(self.name);
         checkpoint.meta.parent = self.parent;
@@ -232,6 +246,7 @@ pub struct CheckpointManager {
 
 impl CheckpointManager {
     /// Create a new checkpoint manager
+    #[must_use] 
     pub fn new(config: TensorConfig) -> Self {
         Self {
             config,
@@ -278,6 +293,10 @@ impl CheckpointManager {
     }
 
     /// Find changes between two checkpoints
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if either checkpoint does not exist.
     pub fn diff(&self, from: &str, to: &str) -> TensorResult<CheckpointDiff> {
         let from_meta = self
             .get_meta(from)
@@ -336,11 +355,13 @@ pub struct CheckpointDiff {
 
 impl CheckpointDiff {
     /// Check if checkpoints are identical
+    #[must_use] 
     pub fn is_empty(&self) -> bool {
         self.added.is_empty() && self.removed.is_empty() && self.modified.is_empty()
     }
 
     /// Get total number of changes
+    #[must_use] 
     pub fn change_count(&self) -> usize {
         self.added.len() + self.removed.len() + self.modified.len()
     }

@@ -46,7 +46,12 @@ pub enum OprfError {
 
     /// Key has been rotated
     #[error("key rotated: expected {expected}, got {actual}")]
-    KeyRotated { expected: String, actual: String },
+    KeyRotated {
+        /// Expected key identifier
+        expected: String,
+        /// Actual key identifier received
+        actual: String,
+    },
 
     /// Serialization error
     #[error("serialization error: {0}")]

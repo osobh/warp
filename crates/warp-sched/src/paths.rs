@@ -30,9 +30,10 @@ impl Default for PathConfig {
 }
 
 impl PathConfig {
-    /// Create a new PathConfig with specified parameters
+    /// Create a new `PathConfig` with specified parameters
     /// # Panics
     /// Panics if k == 0
+    #[must_use] 
     pub fn new(k: usize, max_cost: f32, diversity_weight: f32) -> Self {
         assert!(k > 0, "k must be at least 1");
         Self {
@@ -43,7 +44,8 @@ impl PathConfig {
     }
 
     /// Create config for high redundancy (k=5)
-    pub fn high_redundancy() -> Self {
+    #[must_use] 
+    pub const fn high_redundancy() -> Self {
         Self {
             k: 5,
             max_cost: 1.0,
@@ -51,8 +53,9 @@ impl PathConfig {
         }
     }
 
-    /// Create config for low latency (k=1, strict max_cost)
-    pub fn low_latency() -> Self {
+    /// Create config for low latency (k=1, strict `max_cost`)
+    #[must_use] 
+    pub const fn low_latency() -> Self {
         Self {
             k: 1,
             max_cost: 0.5,
@@ -61,7 +64,8 @@ impl PathConfig {
     }
 
     /// Create config for balanced performance (k=3, moderate filtering)
-    pub fn balanced() -> Self {
+    #[must_use] 
+    pub const fn balanced() -> Self {
         Self {
             k: 3,
             max_cost: 0.8,
@@ -70,6 +74,11 @@ impl PathConfig {
     }
 
     /// Set the K value
+    ///
+    /// # Panics
+    ///
+    /// Panics if `k` is 0
+    #[must_use]
     pub fn with_k(mut self, k: usize) -> Self {
         assert!(k > 0, "k must be at least 1");
         self.k = k;
@@ -77,13 +86,15 @@ impl PathConfig {
     }
 
     /// Set the max cost threshold
-    pub fn with_max_cost(mut self, max_cost: f32) -> Self {
+    #[must_use] 
+    pub const fn with_max_cost(mut self, max_cost: f32) -> Self {
         self.max_cost = max_cost;
         self
     }
 
     /// Set the diversity weight
-    pub fn with_diversity_weight(mut self, weight: f32) -> Self {
+    #[must_use] 
+    pub const fn with_diversity_weight(mut self, weight: f32) -> Self {
         self.diversity_weight = weight.clamp(0.0, 1.0);
         self
     }
@@ -101,7 +112,8 @@ pub struct PathSelection {
 }
 
 impl PathSelection {
-    /// Create a new PathSelection
+    /// Create a new `PathSelection`
+    #[must_use] 
     pub fn new(chunk_id: ChunkId, selected_edges: Vec<(EdgeIdx, f32)>) -> Self {
         let total_cost = selected_edges.iter().map(|(_, cost)| cost).sum();
         Self {
@@ -112,7 +124,8 @@ impl PathSelection {
     }
 
     /// Create an empty selection (no valid paths)
-    pub fn empty(chunk_id: ChunkId) -> Self {
+    #[must_use] 
+    pub const fn empty(chunk_id: ChunkId) -> Self {
         Self {
             chunk_id,
             selected_edges: Vec::new(),
@@ -122,27 +135,32 @@ impl PathSelection {
 
     /// Get the number of selected edges
     #[inline]
+    #[must_use] 
     pub fn edge_count(&self) -> usize {
         self.selected_edges.len()
     }
 
     /// Check if any paths were selected
     #[inline]
+    #[must_use] 
     pub fn has_paths(&self) -> bool {
         !self.selected_edges.is_empty()
     }
 
     /// Get the best (lowest cost) edge, if any
+    #[must_use] 
     pub fn best_edge(&self) -> Option<(EdgeIdx, f32)> {
         self.selected_edges.first().copied()
     }
 
     /// Get just the edge indices without costs
+    #[must_use] 
     pub fn edge_indices(&self) -> Vec<EdgeIdx> {
         self.selected_edges.iter().map(|(idx, _)| *idx).collect()
     }
 
     /// Get the average cost of selected edges
+    #[must_use] 
     pub fn average_cost(&self) -> f32 {
         if self.selected_edges.is_empty() {
             0.0
@@ -164,7 +182,8 @@ pub struct SelectionBatch {
 }
 
 impl SelectionBatch {
-    /// Create a new SelectionBatch
+    /// Create a new `SelectionBatch`
+    #[must_use] 
     pub fn new(selections: Vec<PathSelection>, generation: u64) -> Self {
         let timestamp_ms = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
@@ -178,33 +197,39 @@ impl SelectionBatch {
     }
 
     /// Create an empty batch
+    #[must_use] 
     pub fn empty(generation: u64) -> Self {
         Self::new(Vec::new(), generation)
     }
 
     /// Get the number of selections in the batch
     #[inline]
+    #[must_use] 
     pub fn len(&self) -> usize {
         self.selections.len()
     }
 
     /// Check if the batch is empty
     #[inline]
+    #[must_use] 
     pub fn is_empty(&self) -> bool {
         self.selections.is_empty()
     }
 
     /// Get the number of selections with valid paths
+    #[must_use] 
     pub fn valid_selection_count(&self) -> usize {
         self.selections.iter().filter(|s| s.has_paths()).count()
     }
 
     /// Get total aggregate cost across all selections
+    #[must_use] 
     pub fn total_cost(&self) -> f32 {
         self.selections.iter().map(|s| s.total_cost).sum()
     }
 
     /// Get average cost per selection (excluding empty selections)
+    #[must_use] 
     pub fn average_cost_per_selection(&self) -> f32 {
         let valid = self.valid_selection_count();
         if valid == 0 {
@@ -228,11 +253,13 @@ pub struct CpuPathSelector {
 
 impl CpuPathSelector {
     /// Create a new CPU path selector
-    pub fn new(config: PathConfig) -> Self {
+    #[must_use] 
+    pub const fn new(config: PathConfig) -> Self {
         Self { config }
     }
 
     /// Select K-best paths for a single chunk
+    #[must_use] 
     pub fn select(&self, chunk_id: ChunkId, cost_matrix: &CpuCostMatrix) -> PathSelection {
         let mut valid_edges = cost_matrix.get_valid_edges(chunk_id);
         valid_edges.retain(|(_, cost)| *cost <= self.config.max_cost);
@@ -241,6 +268,7 @@ impl CpuPathSelector {
     }
 
     /// Select K-best paths for multiple chunks in parallel
+    #[must_use] 
     pub fn select_batch(
         &self,
         chunk_ids: &[ChunkId],
@@ -254,6 +282,7 @@ impl CpuPathSelector {
     }
 
     /// Select K-best paths for all chunks in state
+    #[must_use] 
     pub fn select_all(
         &self,
         cost_matrix: &CpuCostMatrix,
@@ -267,12 +296,13 @@ impl CpuPathSelector {
     }
 
     /// Get the current configuration
-    pub fn config(&self) -> &PathConfig {
+    #[must_use] 
+    pub const fn config(&self) -> &PathConfig {
         &self.config
     }
 
     /// Update the configuration
-    pub fn set_config(&mut self, config: PathConfig) {
+    pub const fn set_config(&mut self, config: PathConfig) {
         self.config = config;
     }
 }
@@ -284,51 +314,58 @@ pub struct PathSelector {
 
 impl PathSelector {
     /// Create a new GPU path selector
-    pub fn new(config: PathConfig) -> Self {
+    #[must_use] 
+    pub const fn new(config: PathConfig) -> Self {
         Self {
             cpu: CpuPathSelector::new(config),
         }
     }
 
     /// Create from existing CPU selector
-    pub fn from_cpu(cpu: CpuPathSelector) -> Self {
+    #[must_use] 
+    pub const fn from_cpu(cpu: CpuPathSelector) -> Self {
         Self { cpu }
     }
 
     /// Select K-best paths for a single chunk (delegates to CPU)
+    #[must_use] 
     pub fn select(&self, chunk_id: ChunkId, cost_matrix: &CostMatrix) -> PathSelection {
         self.cpu.select(chunk_id, self.get_cpu_matrix(cost_matrix))
     }
 
     /// Select K-best paths for multiple chunks (delegates to CPU)
+    #[must_use] 
     pub fn select_batch(&self, chunk_ids: &[ChunkId], cost_matrix: &CostMatrix) -> SelectionBatch {
         self.cpu
             .select_batch(chunk_ids, self.get_cpu_matrix(cost_matrix))
     }
 
     /// Select K-best paths for all chunks (delegates to CPU)
+    #[must_use] 
     pub fn select_all(&self, cost_matrix: &CostMatrix, state: &CpuStateBuffers) -> SelectionBatch {
         self.cpu.select_all(self.get_cpu_matrix(cost_matrix), state)
     }
 
     /// Get configuration
-    pub fn config(&self) -> &PathConfig {
+    #[must_use] 
+    pub const fn config(&self) -> &PathConfig {
         self.cpu.config()
     }
 
     /// Update configuration
-    pub fn set_config(&mut self, config: PathConfig) {
+    pub const fn set_config(&mut self, config: PathConfig) {
         self.cpu.set_config(config);
     }
 
     /// Get CPU selector reference
-    pub fn cpu(&self) -> &CpuPathSelector {
+    #[must_use] 
+    pub const fn cpu(&self) -> &CpuPathSelector {
         &self.cpu
     }
 
     /// Helper to extract CPU matrix from GPU wrapper
     #[inline]
-    fn get_cpu_matrix<'a>(&self, cost_matrix: &'a CostMatrix) -> &'a CpuCostMatrix {
+    const fn get_cpu_matrix<'a>(&self, cost_matrix: &'a CostMatrix) -> &'a CpuCostMatrix {
         // SAFETY: This pointer cast is valid because:
         //
         // 1. CostMatrix is a single-field struct: `struct CostMatrix { inner: CpuCostMatrix }`
@@ -345,7 +382,7 @@ impl PathSelector {
         //    issues can occur.
         //
         // Alternative: Add `inner()` method to CostMatrix to avoid this cast entirely.
-        unsafe { &*(cost_matrix as *const CostMatrix as *const CpuCostMatrix) }
+        unsafe { &*std::ptr::from_ref::<CostMatrix>(cost_matrix).cast::<CpuCostMatrix>() }
     }
 }
 

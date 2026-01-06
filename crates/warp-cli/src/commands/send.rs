@@ -342,7 +342,7 @@ async fn send_remote(
 
     // Calculate chunks
     const CHUNK_SIZE: usize = 1024 * 1024; // 1MB chunks
-    let num_chunks = (archive_data.len() + CHUNK_SIZE - 1) / CHUNK_SIZE;
+    let num_chunks = archive_data.len().div_ceil(CHUNK_SIZE);
 
     println!("Files: {}", file_count);
     println!("Total size: {}", format_bytes(original_size));
@@ -615,7 +615,7 @@ async fn send_remote(
     println!("Transfer size: {}", format_bytes(archive_data.len() as u64));
     println!("Duration: {:.2}s", duration.as_secs_f64());
 
-    if archive_data.len() > 0 {
+    if !archive_data.is_empty() {
         let throughput = archive_data.len() as f64 / duration.as_secs_f64();
         println!("Throughput: {}/s", format_bytes(throughput as u64));
     }

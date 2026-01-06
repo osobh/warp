@@ -30,12 +30,15 @@ use crate::error::{ApiError, ApiResult};
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename = "NotificationConfiguration")]
 pub struct NotificationConfigurationXml {
+    /// SNS topic configurations for event notifications
     #[serde(rename = "TopicConfiguration", default)]
     pub topic_configurations: Vec<TopicConfigurationXml>,
 
+    /// SQS queue configurations for event notifications
     #[serde(rename = "QueueConfiguration", default)]
     pub queue_configurations: Vec<QueueConfigurationXml>,
 
+    /// Lambda function configurations for event notifications
     #[serde(rename = "CloudFunctionConfiguration", default)]
     pub lambda_configurations: Vec<LambdaConfigurationXml>,
 
@@ -299,6 +302,8 @@ fn xml_to_config(xml: NotificationConfigurationXml) -> NotificationConfiguration
                 filter: c.filter.and_then(xml_to_filter),
             })
             .collect(),
+        // Webhooks not yet supported via XML configuration
+        webhook_configurations: Vec::new(),
     }
 }
 

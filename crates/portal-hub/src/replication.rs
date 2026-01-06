@@ -60,6 +60,7 @@ pub struct PeerInfo {
 
 impl PeerInfo {
     /// Create a new peer info
+    #[must_use] 
     pub fn new(addr: SocketAddr, id: String) -> Self {
         Self {
             addr,
@@ -77,6 +78,7 @@ impl PeerInfo {
     }
 
     /// Check if peer is stale (hasn't been seen recently)
+    #[must_use] 
     pub fn is_stale(&self, threshold: Duration) -> bool {
         let age = chrono::Utc::now() - self.last_seen;
         age > chrono::TimeDelta::from_std(threshold).unwrap_or(chrono::TimeDelta::MAX)
@@ -102,6 +104,7 @@ impl ChunkLocations {
     }
 
     /// Get replication count
+    #[must_use] 
     pub fn replication_count(&self) -> usize {
         self.peers.len()
     }
@@ -122,9 +125,9 @@ pub struct ReplicationRequest {
 ///
 /// # Concurrency Model
 ///
-/// Uses a mix of DashMap (lock-free sharded hash map) and RwLock:
-/// - `peers` and `locations` use DashMap for concurrent read/write access
-/// - `pending` uses RwLock for ordered batch processing
+/// Uses a mix of `DashMap` (lock-free sharded hash map) and `RwLock`:
+/// - `peers` and `locations` use `DashMap` for concurrent read/write access
+/// - `pending` uses `RwLock` for ordered batch processing
 ///
 /// Operations may see eventual consistency:
 /// - Peer health and chunk location updates propagate asynchronously
@@ -150,6 +153,7 @@ pub struct ReplicationManager {
 
 impl ReplicationManager {
     /// Create a new replication manager
+    #[must_use] 
     pub fn new(storage: Arc<HubStorage>, config: ReplicationConfig, local_id: String) -> Self {
         let (shutdown, _) = tokio::sync::broadcast::channel(1);
 
@@ -165,9 +169,9 @@ impl ReplicationManager {
     }
 
     /// Register a peer
-    pub fn add_peer(&self, peer_id: String, addr: SocketAddr) {
-        let peer = PeerInfo::new(addr, peer_id.clone());
-        self.peers.insert(peer_id.clone(), peer);
+    pub fn add_peer(&self, peer_id: &str, addr: SocketAddr) {
+        let peer = PeerInfo::new(addr, peer_id.to_string());
+        self.peers.insert(peer_id.to_string(), peer);
         info!(peer_id, addr = %addr, "Added peer");
     }
 
@@ -191,6 +195,7 @@ impl ReplicationManager {
     }
 
     /// Get healthy peers
+    #[must_use] 
     pub fn healthy_peers(&self) -> Vec<PeerInfo> {
         self.peers
             .iter()
@@ -213,6 +218,7 @@ impl ReplicationManager {
     }
 
     /// Get chunks that are under-replicated
+    #[must_use] 
     pub fn under_replicated_chunks(&self) -> Vec<(ContentId, usize)> {
         self.locations
             .iter()
@@ -228,6 +234,7 @@ impl ReplicationManager {
     }
 
     /// Get chunks that are over-replicated (for cleanup)
+    #[must_use] 
     pub fn over_replicated_chunks(&self) -> Vec<(ContentId, usize)> {
         self.locations
             .iter()
@@ -268,7 +275,7 @@ impl ReplicationManager {
 
         let mut completed = 0;
         for request in to_process {
-            if self.replicate_chunk(&request).await.is_ok() {
+            if self.replicate_chunk(&request).is_ok() {
                 completed += 1;
             }
         }
@@ -277,7 +284,7 @@ impl ReplicationManager {
     }
 
     /// Replicate a chunk to a peer
-    async fn replicate_chunk(&self, request: &ReplicationRequest) -> Result<()> {
+    fn replicate_chunk(&self, request: &ReplicationRequest) -> Result<()> {
         // Get the chunk data from local storage
         let data = self.storage.get_chunk(&request.content_id)?;
 
@@ -290,7 +297,7 @@ impl ReplicationManager {
         // In a real implementation, this would send the chunk to the peer
         // via HTTP or a custom protocol
         debug!(
-            chunk = hex::encode(&request.content_id),
+            chunk = hex::encode(request.content_id),
             target = %peer.addr,
             size = data.len(),
             "Would replicate chunk to peer"
@@ -319,8 +326,9 @@ impl ReplicationManager {
             let needed = self.config.replication_factor - current_count;
 
             // Get peers that don't have this chunk
-            let locations = self.locations.get(&content_id);
-            let existing_peers: HashSet<_> = locations
+            let existing_peers: HashSet<_> = self
+                .locations
+                .get(&content_id)
                 .as_ref()
                 .map(|l| l.peers.clone())
                 .unwrap_or_default();
@@ -345,6 +353,7 @@ impl ReplicationManager {
     }
 
     /// Start the background replication worker
+    #[must_use] 
     pub fn start_worker(self: Arc<Self>) -> tokio::task::JoinHandle<()> {
         let manager = self.clone();
         let mut shutdown = self.shutdown.subscribe();
@@ -356,7 +365,7 @@ impl ReplicationManager {
                 tokio::select! {
                     _ = interval.tick() => {
                         // Check peer health
-                        manager.check_peer_health().await;
+                        manager.check_peer_health();
 
                         // Process pending replications
                         let processed = manager.process_pending().await;
@@ -380,7 +389,7 @@ impl ReplicationManager {
     }
 
     /// Check peer health and mark stale peers
-    async fn check_peer_health(&self) {
+    fn check_peer_health(&self) {
         let stale_threshold = self.config.peer_timeout * 3;
 
         for mut peer in self.peers.iter_mut() {
@@ -397,6 +406,7 @@ impl ReplicationManager {
     }
 
     /// Get replication statistics
+    #[must_use] 
     pub fn stats(&self) -> ReplicationStats {
         let under_replicated = self.under_replicated_chunks().len();
         let over_replicated = self.over_replicated_chunks().len();
@@ -434,7 +444,8 @@ pub struct ReplicationStats {
 
 impl ReplicationStats {
     /// Check if replication is healthy
-    pub fn is_healthy(&self) -> bool {
+    #[must_use] 
+    pub const fn is_healthy(&self) -> bool {
         self.under_replicated == 0 && self.healthy_peers >= self.replication_factor
     }
 }
@@ -463,10 +474,10 @@ mod tests {
     fn test_add_remove_peer() {
         let manager = create_test_manager();
 
-        manager.add_peer("peer1".to_string(), "127.0.0.1:8080".parse().unwrap());
+        manager.add_peer("peer1", "127.0.0.1:8080".parse().unwrap());
         assert_eq!(manager.peers.len(), 1);
 
-        manager.add_peer("peer2".to_string(), "127.0.0.1:8081".parse().unwrap());
+        manager.add_peer("peer2", "127.0.0.1:8081".parse().unwrap());
         assert_eq!(manager.peers.len(), 2);
 
         manager.remove_peer("peer1");
@@ -524,8 +535,8 @@ mod tests {
     fn test_healthy_peers() {
         let manager = create_test_manager();
 
-        manager.add_peer("peer1".to_string(), "127.0.0.1:8080".parse().unwrap());
-        manager.add_peer("peer2".to_string(), "127.0.0.1:8081".parse().unwrap());
+        manager.add_peer("peer1", "127.0.0.1:8080".parse().unwrap());
+        manager.add_peer("peer2", "127.0.0.1:8081".parse().unwrap());
 
         let healthy = manager.healthy_peers();
         assert_eq!(healthy.len(), 2);
@@ -536,7 +547,7 @@ mod tests {
         let manager = create_test_manager();
 
         // Add peers
-        manager.add_peer("peer1".to_string(), "127.0.0.1:8080".parse().unwrap());
+        manager.add_peer("peer1", "127.0.0.1:8080".parse().unwrap());
 
         // Add chunks
         let chunk1 = [1u8; 32];
@@ -556,7 +567,7 @@ mod tests {
     fn test_peer_heartbeat() {
         let manager = create_test_manager();
 
-        manager.add_peer("peer1".to_string(), "127.0.0.1:8080".parse().unwrap());
+        manager.add_peer("peer1", "127.0.0.1:8080".parse().unwrap());
 
         let initial_time = manager.peers.get("peer1").unwrap().last_seen;
 

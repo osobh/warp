@@ -3,21 +3,20 @@
 //! Provides the bridge between FUSE operations and warp-store.
 
 use crate::FsStats;
-use crate::cache::{CacheManager, CombinedCacheStats};
+use crate::cache::CacheManager;
 use crate::error::{Error, Result};
 use crate::inode::{Ino, Inode, InodeAllocator, ROOT_INO};
 use crate::metadata::{
     DataExtent, DirectoryContents, DirectoryEntry, FileType, InodeMetadata, Superblock,
 };
 
-use bytes::Bytes;
 use dashmap::DashMap;
 use parking_lot::RwLock;
 use std::ffi::OsStr;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Duration;
-use tracing::{debug, info, warn};
+use tracing::{debug, info};
 use warp_store::{ObjectData, ObjectKey, Store};
 
 /// Metadata bucket prefix
@@ -125,7 +124,7 @@ impl VirtualFilesystem {
 
     /// Load or create the superblock
     async fn load_or_create_superblock(store: &Store, bucket: &str) -> Result<Superblock> {
-        let key = ObjectKey::new(bucket, &format!("{}/superblock", META_PREFIX))?;
+        let key = ObjectKey::new(bucket, format!("{}/superblock", META_PREFIX))?;
 
         match store.get(&key).await {
             Ok(data) => {
@@ -171,7 +170,7 @@ impl VirtualFilesystem {
         }
 
         // Load from storage
-        let key = ObjectKey::new(&self.bucket, &format!("{}/inodes/{}", META_PREFIX, ino))?;
+        let key = ObjectKey::new(&self.bucket, format!("{}/inodes/{}", META_PREFIX, ino))?;
         let data = self
             .store
             .get(&key)
@@ -188,7 +187,7 @@ impl VirtualFilesystem {
     pub async fn save_inode(&self, meta: &InodeMetadata) -> Result<()> {
         let key = ObjectKey::new(
             &self.bucket,
-            &format!("{}/inodes/{}", META_PREFIX, meta.ino),
+            format!("{}/inodes/{}", META_PREFIX, meta.ino),
         )?;
         let data = ObjectData::from(meta.to_bytes()?);
         self.store.put(&key, data).await?;
@@ -197,7 +196,7 @@ impl VirtualFilesystem {
 
     /// Delete an inode from storage
     async fn delete_inode(&self, ino: Ino) -> Result<()> {
-        let key = ObjectKey::new(&self.bucket, &format!("{}/inodes/{}", META_PREFIX, ino))?;
+        let key = ObjectKey::new(&self.bucket, format!("{}/inodes/{}", META_PREFIX, ino))?;
         self.store.delete(&key).await?;
         self.cache.invalidate_inode(ino);
         Ok(())
@@ -214,7 +213,7 @@ impl VirtualFilesystem {
 
     /// Load directory contents
     pub async fn load_directory(&self, ino: Ino) -> Result<DirectoryContents> {
-        let key = ObjectKey::new(&self.bucket, &format!("{}/dirs/{}", META_PREFIX, ino))?;
+        let key = ObjectKey::new(&self.bucket, format!("{}/dirs/{}", META_PREFIX, ino))?;
 
         match self.store.get(&key).await {
             Ok(data) => DirectoryContents::from_bytes(data.as_ref()),
@@ -230,7 +229,7 @@ impl VirtualFilesystem {
     pub async fn save_directory(&self, contents: &DirectoryContents) -> Result<()> {
         let key = ObjectKey::new(
             &self.bucket,
-            &format!("{}/dirs/{}", META_PREFIX, contents.self_ino),
+            format!("{}/dirs/{}", META_PREFIX, contents.self_ino),
         )?;
         let data = ObjectData::from(contents.to_bytes()?);
         self.store.put(&key, data).await?;
@@ -243,7 +242,7 @@ impl VirtualFilesystem {
 
     /// Delete directory contents from storage
     async fn delete_directory(&self, ino: Ino) -> Result<()> {
-        let key = ObjectKey::new(&self.bucket, &format!("{}/dirs/{}", META_PREFIX, ino))?;
+        let key = ObjectKey::new(&self.bucket, format!("{}/dirs/{}", META_PREFIX, ino))?;
         let _ = self.store.delete(&key).await; // Ignore if not exists
         self.cache.dentries.invalidate_parent(ino);
         Ok(())
@@ -730,7 +729,7 @@ impl VirtualFilesystem {
     pub async fn sync(&self) -> Result<()> {
         // Sync dirty inodes
         let dirty = self.cache.inodes.get_dirty();
-        for (ino, inode) in dirty {
+        for (_ino, inode) in dirty {
             let guard = inode.read();
             self.save_inode(guard.metadata()).await?;
             drop(guard);
@@ -739,7 +738,7 @@ impl VirtualFilesystem {
 
         // Sync superblock
         let sb = self.superblock.read().clone();
-        let key = ObjectKey::new(&self.bucket, &format!("{}/superblock", META_PREFIX))?;
+        let key = ObjectKey::new(&self.bucket, format!("{}/superblock", META_PREFIX))?;
         let data = ObjectData::from(sb.to_bytes()?);
         self.store.put(&key, data).await?;
 

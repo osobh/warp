@@ -89,14 +89,15 @@ pub struct CpuChunkScheduler {
     reopt_step: usize,
     /// Current assignments for reoptimization reference
     current_assignments: Vec<Assignment>,
-    /// Index for O(1) assignment lookups by chunk_hash
+    /// Index for O(1) assignment lookups by `chunk_hash`
     assignment_index: HashMap<[u8; 32], usize>,
-    /// Reverse index for O(1) ChunkId to chunk_hash lookups
+    /// Reverse index for O(1) `ChunkId` to `chunk_hash` lookups
     chunk_id_index: HashMap<ChunkId, [u8; 32]>,
 }
 
 impl CpuChunkScheduler {
     /// Creates a new CPU-based chunk scheduler.
+    #[must_use] 
     pub fn new(config: SchedulerConfig, max_chunks: usize, max_edges: usize) -> Self {
         debug_assert!(max_chunks > 0, "max_chunks must be positive");
         debug_assert!(max_edges > 0, "max_edges must be positive");
@@ -155,12 +156,13 @@ impl CpuChunkScheduler {
     }
 
     /// Returns a reference to the constraint evaluator, if set.
-    pub fn constraint_evaluator(&self) -> Option<&ConstraintEvaluator> {
+    #[must_use] 
+    pub const fn constraint_evaluator(&self) -> Option<&ConstraintEvaluator> {
         self.constraint_evaluator.as_ref()
     }
 
     /// Returns a mutable reference to the constraint evaluator, if set.
-    pub fn constraint_evaluator_mut(&mut self) -> Option<&mut ConstraintEvaluator> {
+    pub const fn constraint_evaluator_mut(&mut self) -> Option<&mut ConstraintEvaluator> {
         self.constraint_evaluator.as_mut()
     }
 
@@ -184,7 +186,8 @@ impl CpuChunkScheduler {
     }
 
     /// Check if there is a pending reoptimization plan.
-    pub fn has_pending_reopt(&self) -> bool {
+    #[must_use] 
+    pub const fn has_pending_reopt(&self) -> bool {
         self.pending_reopt.is_some()
     }
 
@@ -198,12 +201,14 @@ impl CpuChunkScheduler {
     }
 
     /// Get the current reoptimization plan, if any.
-    pub fn pending_reopt_plan(&self) -> Option<&ReoptPlan> {
+    #[must_use] 
+    pub const fn pending_reopt_plan(&self) -> Option<&ReoptPlan> {
         self.pending_reopt.as_ref()
     }
 
     /// Get the incremental scheduler's metrics.
-    pub fn reopt_metrics(&self) -> &crate::reoptimize::ReoptMetrics {
+    #[must_use] 
+    pub const fn reopt_metrics(&self) -> &crate::reoptimize::ReoptMetrics {
         self.incremental_scheduler.metrics()
     }
 
@@ -259,13 +264,17 @@ impl CpuChunkScheduler {
         Some(assignment)
     }
 
-    /// Find chunk hash by ChunkId - O(1) via reverse index.
+    /// Find chunk hash by `ChunkId` - O(1) via reverse index.
     #[inline]
     fn find_chunk_hash(&self, chunk_id: ChunkId) -> Option<[u8; 32]> {
         self.chunk_id_index.get(&chunk_id).copied()
     }
 
     /// Schedules chunks for assignment.
+    ///
+    /// # Errors
+    ///
+    /// This function currently never returns an error.
     pub fn schedule(&mut self, request: ScheduleRequest) -> crate::Result<()> {
         self.metrics.scheduled_chunks += request.chunks.len();
         self.pending_requests.push(request);
@@ -391,6 +400,7 @@ impl CpuChunkScheduler {
     }
 
     /// Gets current assignments from dispatch queue.
+    #[must_use] 
     pub fn get_assignments(&self) -> AssignmentBatch {
         self.dispatch_queue.read_assignments()
     }
@@ -403,44 +413,48 @@ impl CpuChunkScheduler {
     }
 
     /// Returns current scheduler metrics.
+    #[must_use] 
     pub fn metrics(&self) -> SchedulerMetrics {
         self.metrics.clone()
     }
 
     /// Returns reference to state buffers.
-    pub fn state(&self) -> &CpuStateBuffers {
+    #[must_use] 
+    pub const fn state(&self) -> &CpuStateBuffers {
         &self.state_buffers
     }
 
     /// Checks if scheduler is running.
-    pub fn is_running(&self) -> bool {
+    #[must_use] 
+    pub const fn is_running(&self) -> bool {
         self.state.running
     }
 
     /// Stops the scheduler.
-    pub fn stop(&mut self) {
+    pub const fn stop(&mut self) {
         self.state.running = false;
     }
 
     /// Starts the scheduler.
-    pub fn start(&mut self) {
+    pub const fn start(&mut self) {
         self.state.running = true;
     }
 
     /// Gets the configuration.
-    pub fn config(&self) -> &SchedulerConfig {
+    #[must_use] 
+    pub const fn config(&self) -> &SchedulerConfig {
         &self.config
     }
 
     /// Gets mutable reference to state buffers for testing.
-    pub fn state_mut(&mut self) -> &mut CpuStateBuffers {
+    pub const fn state_mut(&mut self) -> &mut CpuStateBuffers {
         &mut self.state_buffers
     }
 }
 
 /// GPU-accelerated chunk scheduler (delegates to CPU implementation).
 ///
-/// Currently wraps CpuChunkScheduler. Future versions will implement
+/// Currently wraps `CpuChunkScheduler`. Future versions will implement
 /// GPU-accelerated scheduling algorithms using cudarc.
 pub struct ChunkScheduler {
     cpu_scheduler: CpuChunkScheduler,
@@ -448,6 +462,7 @@ pub struct ChunkScheduler {
 
 impl ChunkScheduler {
     /// Creates a new chunk scheduler.
+    #[must_use] 
     pub fn new(config: SchedulerConfig, max_chunks: usize, max_edges: usize) -> Self {
         Self {
             cpu_scheduler: CpuChunkScheduler::new(config, max_chunks, max_edges),
@@ -455,6 +470,10 @@ impl ChunkScheduler {
     }
 
     /// Schedules chunks for assignment.
+    ///
+    /// # Errors
+    ///
+    /// This function currently never returns an error.
     pub fn schedule(&mut self, request: ScheduleRequest) -> crate::Result<()> {
         self.cpu_scheduler.schedule(request)
     }
@@ -465,6 +484,7 @@ impl ChunkScheduler {
     }
 
     /// Gets current assignments from dispatch queue.
+    #[must_use] 
     pub fn get_assignments(&self) -> AssignmentBatch {
         self.cpu_scheduler.get_assignments()
     }
@@ -475,32 +495,36 @@ impl ChunkScheduler {
     }
 
     /// Returns current scheduler metrics.
+    #[must_use] 
     pub fn metrics(&self) -> SchedulerMetrics {
         self.cpu_scheduler.metrics()
     }
 
     /// Returns reference to state buffers.
-    pub fn state(&self) -> &CpuStateBuffers {
+    #[must_use] 
+    pub const fn state(&self) -> &CpuStateBuffers {
         self.cpu_scheduler.state()
     }
 
     /// Checks if scheduler is running.
-    pub fn is_running(&self) -> bool {
+    #[must_use] 
+    pub const fn is_running(&self) -> bool {
         self.cpu_scheduler.is_running()
     }
 
     /// Stops the scheduler.
-    pub fn stop(&mut self) {
+    pub const fn stop(&mut self) {
         self.cpu_scheduler.stop();
     }
 
     /// Starts the scheduler.
-    pub fn start(&mut self) {
+    pub const fn start(&mut self) {
         self.cpu_scheduler.start();
     }
 
     /// Gets the configuration.
-    pub fn config(&self) -> &SchedulerConfig {
+    #[must_use] 
+    pub const fn config(&self) -> &SchedulerConfig {
         self.cpu_scheduler.config()
     }
 }

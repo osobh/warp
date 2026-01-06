@@ -12,16 +12,14 @@
 
 use crate::predict::{
     AccessPattern, PatternConfig, PatternDetector, Predictor, PredictorConfig, PrepositionPriority,
-    PrepositionRequest,
 };
-use crate::types::{TransferDirection, TransferId};
+use crate::types::TransferId;
 use parking_lot::RwLock;
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Instant;
-use warp_edge::BandwidthEstimator;
 use warp_sched::{ChunkId, EdgeIdx};
 
 /// Configuration for pre-positioning operations

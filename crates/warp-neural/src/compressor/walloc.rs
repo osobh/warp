@@ -275,7 +275,7 @@ impl WallocCompressor {
 
     /// Prepare input as blocks for processing
     fn prepare_blocks(&self, input: &[u8], block_size: usize) -> Result<Array2<f32>> {
-        let num_blocks = (input.len() + block_size - 1) / block_size;
+        let num_blocks = input.len().div_ceil(block_size);
         let mut blocks = Array2::zeros((num_blocks, block_size));
 
         for (i, chunk) in input.chunks(block_size).enumerate() {
@@ -438,7 +438,7 @@ impl WallocCompressor {
         let block_size = self.config.effective_block_size();
         let expansion = 4;
         let total_size = latent.len() * expansion;
-        let num_blocks = (total_size + block_size - 1) / block_size;
+        let num_blocks = total_size.div_ceil(block_size);
 
         let mut blocks = Array2::zeros((num_blocks, block_size));
 

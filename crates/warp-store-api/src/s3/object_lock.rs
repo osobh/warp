@@ -42,9 +42,17 @@ use crate::error::{ApiError, ApiResult};
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename = "ObjectLockConfiguration")]
 pub struct ObjectLockConfigurationXml {
+    /// Whether Object Lock is enabled for the bucket.
+    ///
+    /// Valid values are "Enabled" or "Disabled". When enabled, objects in the bucket
+    /// can be protected from deletion or modification using retention periods and legal holds.
     #[serde(rename = "ObjectLockEnabled")]
     pub object_lock_enabled: String,
 
+    /// Optional rule defining default retention settings.
+    ///
+    /// When specified, all objects uploaded to the bucket will automatically
+    /// receive the default retention settings unless explicitly overridden.
     #[serde(rename = "Rule", skip_serializing_if = "Option::is_none")]
     pub rule: Option<ObjectLockRuleXml>,
 }
@@ -73,9 +81,18 @@ pub struct DefaultRetentionXml {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename = "Retention")]
 pub struct RetentionXml {
+    /// Retention mode for the object.
+    ///
+    /// Valid values are "GOVERNANCE" or "COMPLIANCE". Governance mode allows users with
+    /// bypass permissions to override the retention, while compliance mode cannot be
+    /// overridden by anyone, including the root account.
     #[serde(rename = "Mode")]
     pub mode: String,
 
+    /// Date and time until which the object is retained.
+    ///
+    /// Must be in RFC3339 format (e.g., "2025-12-31T23:59:59Z"). The object cannot
+    /// be deleted or modified until this date, subject to the retention mode rules.
     #[serde(rename = "RetainUntilDate")]
     pub retain_until_date: String,
 }
@@ -84,6 +101,11 @@ pub struct RetentionXml {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename = "LegalHold")]
 pub struct LegalHoldXml {
+    /// Legal hold status for the object.
+    ///
+    /// Valid values are "ON" or "OFF". When a legal hold is ON, the object is protected
+    /// from deletion and modification regardless of any retention period. Legal holds can
+    /// be toggled on or off at any time by authorized users.
     #[serde(rename = "Status")]
     pub status: String,
 }

@@ -1,8 +1,7 @@
 //! Access pattern tracking for SLAI-driven placement
 
 use std::collections::{HashMap, VecDeque};
-use std::sync::atomic::{AtomicU64, Ordering};
-use std::time::{Duration, Instant, SystemTime};
+use std::time::{Duration, Instant};
 
 use dashmap::DashMap;
 use parking_lot::RwLock;
@@ -26,6 +25,7 @@ pub enum AccessPattern {
 }
 
 impl Default for AccessPattern {
+    /// Returns the default access pattern (Unknown)
     fn default() -> Self {
         Self::Unknown
     }
@@ -300,7 +300,7 @@ impl AccessTracker {
     }
 
     /// Check if accesses to this key are part of a sequential pattern
-    fn is_sequential_access(&self, key: &str) -> bool {
+    fn is_sequential_access(&self, _key: &str) -> bool {
         let history = self.access_history.read();
 
         // Get recent accesses around this key
@@ -416,6 +416,7 @@ impl AccessTracker {
 }
 
 impl Default for AccessTracker {
+    /// Creates a new AccessTracker with default settings
     fn default() -> Self {
         Self::new()
     }

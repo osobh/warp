@@ -205,6 +205,7 @@ impl StorageBackend for NvmeOfBackend {
             version_id: None,
             user_metadata: opts.metadata,
             is_delete_marker: false,
+            storage_class: StorageClass::Standard,
         };
 
         // Store metadata

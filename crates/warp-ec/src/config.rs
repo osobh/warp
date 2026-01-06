@@ -124,7 +124,7 @@ impl ErasureConfig {
     /// to the next even number (reed-solomon-simd requirement).
     /// The data may be padded to make it evenly divisible.
     pub fn shard_size_for_data(&self, data_size: usize) -> usize {
-        let raw_size = (data_size + self.data_shards - 1) / self.data_shards;
+        let raw_size = data_size.div_ceil(self.data_shards);
         // Round up to next even number (reed-solomon-simd requires even shard sizes)
         (raw_size + 1) & !1
     }

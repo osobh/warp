@@ -87,7 +87,6 @@ pub mod session;
 #[cfg(feature = "oidc")]
 pub mod oidc;
 
-#[cfg(feature = "ldap")]
 pub mod ldap;
 
 pub use error::{Error, Result};
@@ -273,8 +272,8 @@ pub enum Credentials {
 /// Extract bucket name from S3 ARN or path
 fn extract_bucket_from_resource(resource: &str) -> Option<String> {
     // Handle ARN format: arn:aws:s3:::bucket-name/key
-    if resource.starts_with("arn:aws:s3:::") {
-        let path = &resource[13..]; // Skip "arn:aws:s3:::"
+    if let Some(path) = resource.strip_prefix("arn:aws:s3:::") {
+        // Skip "arn:aws:s3:::"
         let bucket = path.split('/').next()?;
         return Some(bucket.to_string());
     }

@@ -6,7 +6,7 @@
 //! # Features
 //!
 //! - **Transport-Aware Placement**: Uses SLAI's network topology for optimal
-//!   chunk routing based on available transports (NVLink, RDMA, InfiniBand)
+//!   chunk routing based on available transports (`NVLink`, RDMA, InfiniBand)
 //! - **GPU Memory Awareness**: Considers GPU memory availability when placing
 //!   chunks for GPU-direct transfers
 //! - **NUMA Locality**: Optimizes chunk placement based on NUMA topology
@@ -53,11 +53,11 @@ pub enum CommunicationPattern {
     Gather,
     /// Broadcast: One-to-all.
     Broadcast,
-    /// AllGather: All-to-all collection.
+    /// `AllGather`: All-to-all collection.
     AllGather,
-    /// AllReduce: Collective reduction.
+    /// `AllReduce`: Collective reduction.
     AllReduce,
-    /// PointToPoint: Direct transfer between two edges.
+    /// `PointToPoint`: Direct transfer between two edges.
     PointToPoint,
     /// Pipeline: Sequential chain of transfers.
     Pipeline,
@@ -65,7 +65,8 @@ pub enum CommunicationPattern {
 
 impl CommunicationPattern {
     /// Get bandwidth requirement factor (0.0 - 1.0).
-    pub fn bandwidth_factor(&self) -> f64 {
+    #[must_use] 
+    pub const fn bandwidth_factor(&self) -> f64 {
         match self {
             Self::AllReduce => 1.0,
             Self::AllGather => 0.9,
@@ -78,7 +79,8 @@ impl CommunicationPattern {
     }
 
     /// Check if pattern benefits from locality.
-    pub fn benefits_from_locality(&self) -> bool {
+    #[must_use] 
+    pub const fn benefits_from_locality(&self) -> bool {
         matches!(
             self,
             Self::AllReduce | Self::AllGather | Self::Scatter | Self::Gather
@@ -97,9 +99,9 @@ pub enum TransportType {
     Rdma,
     /// InfiniBand.
     InfiniBand,
-    /// NVLink (GPU-to-GPU).
+    /// `NVLink` (GPU-to-GPU).
     NvLink,
-    /// PCIe.
+    /// `PCIe`.
     Pcie,
     /// Shared memory (same node).
     SharedMemory,
@@ -113,7 +115,8 @@ pub enum TransportType {
 
 impl TransportType {
     /// Get typical latency in microseconds.
-    pub fn latency_us(&self) -> u32 {
+    #[must_use] 
+    pub const fn latency_us(&self) -> u32 {
         match self {
             Self::SharedMemory => 1,
             Self::NvLink => 2,
@@ -129,7 +132,8 @@ impl TransportType {
     }
 
     /// Get typical bandwidth in Gbps.
-    pub fn bandwidth_gbps(&self) -> u32 {
+    #[must_use] 
+    pub const fn bandwidth_gbps(&self) -> u32 {
         match self {
             Self::NvLink => 600,
             Self::DpuRdma => 400, // BlueField-3 400Gbps
@@ -145,7 +149,8 @@ impl TransportType {
     }
 
     /// Check if this is a high-performance transport.
-    pub fn is_high_performance(&self) -> bool {
+    #[must_use] 
+    pub const fn is_high_performance(&self) -> bool {
         matches!(
             self,
             Self::NvLink
@@ -159,12 +164,14 @@ impl TransportType {
     }
 
     /// Check if this transport uses DPU.
-    pub fn uses_dpu(&self) -> bool {
+    #[must_use] 
+    pub const fn uses_dpu(&self) -> bool {
         matches!(self, Self::DpuInline | Self::DpuRdma)
     }
 
     /// Check if this transport supports inline processing.
-    pub fn supports_inline_processing(&self) -> bool {
+    #[must_use] 
+    pub const fn supports_inline_processing(&self) -> bool {
         matches!(self, Self::DpuInline | Self::DpuRdma)
     }
 }
@@ -175,7 +182,7 @@ pub enum DpuType {
     /// No DPU (CPU fallback).
     #[default]
     None,
-    /// NVIDIA BlueField DPU.
+    /// NVIDIA `BlueField` DPU.
     BlueField,
     /// AMD Pensando DPU.
     Pensando,
@@ -185,8 +192,9 @@ pub enum DpuType {
 
 impl DpuType {
     /// Check if this is a real DPU (not None).
-    pub fn is_hardware(&self) -> bool {
-        !matches!(self, DpuType::None)
+    #[must_use] 
+    pub const fn is_hardware(&self) -> bool {
+        !matches!(self, Self::None)
     }
 }
 
@@ -209,7 +217,8 @@ pub struct DpuCapabilities {
 
 impl DpuCapabilities {
     /// Create capabilities for BlueField-3.
-    pub fn bluefield3() -> Self {
+    #[must_use] 
+    pub const fn bluefield3() -> Self {
         Self {
             has_inline_crypto: true,
             has_inline_compress: true,
@@ -221,11 +230,13 @@ impl DpuCapabilities {
     }
 
     /// Check if any DPU acceleration is available.
-    pub fn has_any_acceleration(&self) -> bool {
+    #[must_use] 
+    pub const fn has_any_acceleration(&self) -> bool {
         self.has_inline_crypto || self.has_inline_compress || self.has_inline_ec
     }
 
     /// Calculate DPU score for placement (higher = better).
+    #[must_use] 
     pub fn score(&self) -> f64 {
         let mut score = 0.0;
         if self.has_inline_crypto {
@@ -240,7 +251,7 @@ impl DpuCapabilities {
         if self.has_rdma {
             score += 15.0;
         }
-        score += (self.network_bandwidth_gbps as f64 / 100.0).min(10.0);
+        score += (f64::from(self.network_bandwidth_gbps) / 100.0).min(10.0);
         score
     }
 }
@@ -346,13 +357,15 @@ impl EdgeNodeInfo {
     }
 
     /// Set GPU count.
-    pub fn with_gpus(mut self, count: u32, memory_available: u64) -> Self {
+    #[must_use] 
+    pub const fn with_gpus(mut self, count: u32, memory_available: u64) -> Self {
         self.gpu_count = count;
         self.gpu_memory_available = memory_available;
         self
     }
 
     /// Add transport.
+    #[must_use] 
     pub fn with_transport(mut self, transport: TransportType) -> Self {
         if !self.transports.contains(&transport) {
             self.transports.push(transport);
@@ -361,6 +374,7 @@ impl EdgeNodeInfo {
     }
 
     /// Set DPU configuration.
+    #[must_use] 
     pub fn with_dpu(
         mut self,
         count: u32,
@@ -383,21 +397,25 @@ impl EdgeNodeInfo {
     }
 
     /// Check if node has high-performance transport.
+    #[must_use] 
     pub fn has_high_perf_transport(&self) -> bool {
-        self.transports.iter().any(|t| t.is_high_performance())
+        self.transports.iter().any(TransportType::is_high_performance)
     }
 
     /// Check if node has DPU capabilities.
-    pub fn has_dpu(&self) -> bool {
+    #[must_use] 
+    pub const fn has_dpu(&self) -> bool {
         self.dpu_count > 0 && self.dpu_type.is_hardware()
     }
 
     /// Check if node has DPU inline processing.
-    pub fn has_dpu_inline(&self) -> bool {
+    #[must_use] 
+    pub const fn has_dpu_inline(&self) -> bool {
         self.has_dpu() && self.dpu_capabilities.has_any_acceleration()
     }
 
     /// Calculate node score for placement.
+    #[must_use] 
     pub fn placement_score(&self, request: &ChunkPlacementRequest) -> f64 {
         if !self.healthy {
             return 0.0;
@@ -470,6 +488,7 @@ pub struct NetworkLink {
 
 impl NetworkLink {
     /// Create a new link.
+    #[must_use] 
     pub fn new(source: EdgeIdx, destination: EdgeIdx, transports: Vec<TransportType>) -> Self {
         let best = transports
             .iter()
@@ -482,20 +501,21 @@ impl NetworkLink {
             destination,
             transports,
             best_transport: best,
-            bandwidth_bps: best.bandwidth_gbps() as u64 * 1_000_000_000 / 8,
+            bandwidth_bps: u64::from(best.bandwidth_gbps()) * 1_000_000_000 / 8,
             latency_us: best.latency_us(),
             healthy: true,
         }
     }
 
     /// Calculate link score (higher = better).
+    #[must_use] 
     pub fn score(&self) -> f64 {
         if !self.healthy {
             return 0.0;
         }
 
         let bw_score = (self.bandwidth_bps as f64 / 1e9).min(100.0);
-        let latency_score = 1000.0 / (self.latency_us as f64 + 1.0);
+        let latency_score = 1000.0 / (f64::from(self.latency_us) + 1.0);
 
         bw_score * 0.6 + latency_score * 0.4
     }
@@ -509,7 +529,7 @@ impl NetworkLink {
 /// # Concurrency Model
 ///
 /// Uses eventual consistency for placement decisions:
-/// - Edge and link state is protected by RwLock
+/// - Edge and link state is protected by `RwLock`
 /// - Placement queries may see slightly stale data during concurrent updates
 /// - This is acceptable since placement decisions are advisory and will be
 ///   re-evaluated if the chosen edge becomes unavailable
@@ -529,6 +549,7 @@ pub struct BrainLink {
 
 impl BrainLink {
     /// Create a new Brain-Link instance.
+    #[must_use] 
     pub fn new() -> Self {
         Self {
             edges: Arc::new(RwLock::new(HashMap::new())),
@@ -540,12 +561,18 @@ impl BrainLink {
     }
 
     /// Create with local edge.
-    pub fn with_local_edge(mut self, edge: EdgeIdx) -> Self {
+    #[must_use] 
+    pub const fn with_local_edge(mut self, edge: EdgeIdx) -> Self {
         self.local_edge = edge;
         self
     }
 
     /// Initialize with SLAI runtime.
+    ///
+    /// # Errors
+    ///
+    /// This function is designed to never return an error. If SLAI initialization
+    /// fails, it logs a warning and continues with local scheduling.
     #[cfg(feature = "slai")]
     pub async fn init_slai(&mut self) -> Result<()> {
         match slai::EmbeddedSlai::new() {
@@ -562,7 +589,12 @@ impl BrainLink {
     }
 
     /// Initialize without SLAI.
+    ///
+    /// # Errors
+    ///
+    /// This function never returns an error.
     #[cfg(not(feature = "slai"))]
+    #[allow(clippy::unused_async)]
     pub async fn init_slai(&mut self) -> Result<()> {
         info!("SLAI not available (feature not enabled)");
         Ok(())
@@ -593,6 +625,12 @@ impl BrainLink {
     }
 
     /// Request chunk placement.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - No edges are registered
+    /// - No suitable edges are found for the request
     pub async fn request_placement(
         &self,
         request: ChunkPlacementRequest,
@@ -631,7 +669,7 @@ impl BrainLink {
         let estimated_time_ms = self.estimate_transfer_time(
             request.chunk_size,
             transport,
-            best_edge.map(|e| e.load).unwrap_or(0.0),
+            best_edge.map_or(0.0, |e| e.load),
         );
 
         // Get NUMA node if available
@@ -659,6 +697,11 @@ impl BrainLink {
     }
 
     /// Request batch placement for multiple chunks.
+    ///
+    /// # Errors
+    ///
+    /// This function never returns an error. Individual placement failures are
+    /// logged as warnings and skipped.
     pub async fn request_batch_placement(
         &self,
         requests: Vec<ChunkPlacementRequest>,
@@ -710,14 +753,14 @@ impl BrainLink {
 
     /// Estimate transfer time in milliseconds.
     fn estimate_transfer_time(&self, size: u64, transport: TransportType, load: f64) -> u32 {
-        let bandwidth_bps = transport.bandwidth_gbps() as u64 * 1_000_000_000 / 8;
+        let bandwidth_bps = u64::from(transport.bandwidth_gbps()) * 1_000_000_000 / 8;
         let base_time_us = (size * 1_000_000) / bandwidth_bps.max(1);
 
         // Add latency
-        let latency = transport.latency_us() as u64;
+        let latency = u64::from(transport.latency_us());
 
         // Apply load factor (higher load = slower)
-        let load_factor = 1.0 + load * 0.5;
+        let load_factor = load.mul_add(0.5, 1.0);
 
         let total_us = ((base_time_us + latency) as f64 * load_factor) as u64;
         (total_us / 1000).max(1) as u32

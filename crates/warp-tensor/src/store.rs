@@ -1,23 +1,20 @@
 //! Main tensor store interface
 
-use std::collections::HashMap;
 use std::sync::Arc;
-use std::time::Instant;
 
 use bytes::Bytes;
 use dashmap::DashMap;
-use parking_lot::RwLock;
 use tokio::sync::Semaphore;
 
 use warp_store::Store;
 
 use crate::checkpoint::{Checkpoint, CheckpointManager, CheckpointMeta};
-use crate::config::{ChunkConfig, TensorConfig};
+use crate::config::TensorConfig;
 use crate::error::{TensorError, TensorResult};
-use crate::format::{FormatReader, FormatWriter, TensorFormat, WarpNativeReader, WarpNativeWriter};
-use crate::model::{ModelMetadata, ModelStore, ModelVersion};
-use crate::shard::{ShardStrategy, ShardedTensor, TensorShard, create_sharded_meta, shard_tensor};
-use crate::tensor::{LazyTensor, TensorData, TensorMeta};
+use crate::format::{FormatReader, FormatWriter, WarpNativeReader, WarpNativeWriter};
+use crate::model::ModelStore;
+use crate::shard::{ShardStrategy, create_sharded_meta, shard_tensor};
+use crate::tensor::{TensorData, TensorMeta};
 
 /// Tensor store - main interface for tensor storage
 pub struct TensorStore {
@@ -39,6 +36,7 @@ pub struct TensorStore {
 
 impl TensorStore {
     /// Create a new tensor store
+    #[must_use] 
     pub fn new(store: Arc<Store>, config: TensorConfig) -> Self {
         let semaphore = Semaphore::new(config.max_concurrent_ops);
 
@@ -69,6 +67,10 @@ impl TensorStore {
     }
 
     /// Save a checkpoint to storage
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if serialization or storage operations fail.
     pub async fn save_checkpoint(&self, checkpoint: &Checkpoint) -> TensorResult<()> {
         let _permit = self
             .semaphore
@@ -87,7 +89,7 @@ impl TensorStore {
             "{}/checkpoints/{}.warp",
             self.config.prefix, checkpoint.meta.name
         );
-        self.put_object(&key, data).await?;
+        self.put_object(&key, data)?;
 
         // Store metadata separately for lazy loading
         let meta_key = format!(
@@ -96,7 +98,7 @@ impl TensorStore {
         );
         let meta_bytes = rmp_serde::to_vec(&checkpoint.meta)
             .map_err(|e| TensorError::Serialization(e.to_string()))?;
-        self.put_object(&meta_key, Bytes::from(meta_bytes)).await?;
+        self.put_object(&meta_key, Bytes::from(meta_bytes))?;
 
         // Register with checkpoint manager
         self.checkpoints.register(checkpoint.meta.clone());
@@ -105,6 +107,10 @@ impl TensorStore {
     }
 
     /// Load a checkpoint from storage
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the checkpoint is not found or cannot be deserialized.
     pub async fn load_checkpoint(&self, name: &str) -> TensorResult<Checkpoint> {
         let _permit = self
             .semaphore
@@ -114,7 +120,7 @@ impl TensorStore {
 
         // Load data
         let key = format!("{}/checkpoints/{}.warp", self.config.prefix, name);
-        let data = self.get_object(&key).await?;
+        let data = self.get_object(&key)?;
 
         // Parse tensors
         let reader = WarpNativeReader::new();
@@ -130,9 +136,13 @@ impl TensorStore {
     }
 
     /// Load checkpoint metadata only (for lazy loading)
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the metadata is not found or cannot be deserialized.
     pub async fn load_checkpoint_meta(&self, name: &str) -> TensorResult<CheckpointMeta> {
         let meta_key = format!("{}/checkpoints/{}.meta", self.config.prefix, name);
-        let data = self.get_object(&meta_key).await?;
+        let data = self.get_object(&meta_key)?;
 
         let meta: CheckpointMeta =
             rmp_serde::from_slice(&data).map_err(|e| TensorError::Serialization(e.to_string()))?;
@@ -141,6 +151,10 @@ impl TensorStore {
     }
 
     /// Load a specific tensor from a checkpoint
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the checkpoint or tensor is not found.
     pub async fn load_tensor(
         &self,
         checkpoint_name: &str,
@@ -156,13 +170,17 @@ impl TensorStore {
             "{}/checkpoints/{}.warp",
             self.config.prefix, checkpoint_name
         );
-        let data = self.get_object(&key).await?;
+        let data = self.get_object(&key)?;
 
         let reader = WarpNativeReader::new();
         reader.read_tensor(&data, tensor_name)
     }
 
     /// Save a single tensor
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if serialization or storage operations fail.
     pub async fn save_tensor(&self, tensor: &TensorData) -> TensorResult<String> {
         let _permit = self
             .semaphore
@@ -177,8 +195,8 @@ impl TensorStore {
             self.save_sharded_tensor(tensor).await
         } else {
             let writer = WarpNativeWriter::new();
-            let data = writer.write(&[tensor.clone()])?;
-            self.put_object(&key, data).await?;
+            let data = writer.write(std::slice::from_ref(tensor))?;
+            self.put_object(&key, data)?;
             Ok(key)
         }
     }
@@ -194,7 +212,7 @@ impl TensorStore {
         // Save each shard
         for shard in &shards {
             let shard_key = format!("{}/tensors/{}", self.config.prefix, shard.storage_key());
-            self.put_object(&shard_key, shard.data.clone()).await?;
+            self.put_object(&shard_key, shard.data.clone())?;
         }
 
         // Save shard metadata
@@ -211,12 +229,16 @@ impl TensorStore {
         );
         let meta_bytes =
             rmp_serde::to_vec(&meta).map_err(|e| TensorError::Serialization(e.to_string()))?;
-        self.put_object(&meta_key, Bytes::from(meta_bytes)).await?;
+        self.put_object(&meta_key, Bytes::from(meta_bytes))?;
 
         Ok(meta_key)
     }
 
     /// Load a tensor by name
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the tensor is not found or cannot be deserialized.
     pub async fn get_tensor(&self, name: &str) -> TensorResult<TensorData> {
         let _permit = self
             .semaphore
@@ -225,14 +247,13 @@ impl TensorStore {
             .map_err(|_| TensorError::ConfigError("semaphore closed".to_string()))?;
 
         // Check cache first
-        if let Some(cached_data) = self.data_cache.get(name) {
-            if let Some(cached_meta) = self.meta_cache.get(name) {
+        if let Some(cached_data) = self.data_cache.get(name)
+            && let Some(cached_meta) = self.meta_cache.get(name) {
                 return Ok(TensorData::new(cached_meta.clone(), cached_data.clone()));
             }
-        }
 
         let key = format!("{}/tensors/{}.warp", self.config.prefix, name);
-        let data = self.get_object(&key).await?;
+        let data = self.get_object(&key)?;
 
         let reader = WarpNativeReader::new();
         let tensors = reader.read_all(&data)?;
@@ -244,9 +265,13 @@ impl TensorStore {
     }
 
     /// Delete a tensor
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the deletion fails.
     pub async fn delete_tensor(&self, name: &str) -> TensorResult<()> {
         let key = format!("{}/tensors/{}.warp", self.config.prefix, name);
-        self.delete_object(&key).await?;
+        self.delete_object(&key)?;
 
         // Remove from cache
         self.meta_cache.remove(name);
@@ -261,32 +286,36 @@ impl TensorStore {
     }
 
     /// Delete a checkpoint
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the deletion fails.
     pub async fn delete_checkpoint(&self, name: &str) -> TensorResult<()> {
         let key = format!("{}/checkpoints/{}.warp", self.config.prefix, name);
-        self.delete_object(&key).await?;
+        self.delete_object(&key)?;
 
         let meta_key = format!("{}/checkpoints/{}.meta", self.config.prefix, name);
-        let _ = self.delete_object(&meta_key).await;
+        let _ = self.delete_object(&meta_key);
 
         self.checkpoints.remove(name);
         Ok(())
     }
 
     /// Internal: put object to storage
-    async fn put_object(&self, key: &str, data: Bytes) -> TensorResult<()> {
+    fn put_object(&self, _key: &str, _data: Bytes) -> TensorResult<()> {
         // In a real implementation, this would use the warp-store API
         // For now, we'll simulate it
         Ok(())
     }
 
     /// Internal: get object from storage
-    async fn get_object(&self, key: &str) -> TensorResult<Bytes> {
+    fn get_object(&self, key: &str) -> TensorResult<Bytes> {
         // In a real implementation, this would use the warp-store API
         Err(TensorError::TensorNotFound(key.to_string()))
     }
 
     /// Internal: delete object from storage
-    async fn delete_object(&self, key: &str) -> TensorResult<()> {
+    fn delete_object(&self, _key: &str) -> TensorResult<()> {
         Ok(())
     }
 }
@@ -315,16 +344,19 @@ impl TensorHandle {
     }
 
     /// Check if data is loaded
+    #[must_use] 
     pub fn is_loaded(&self) -> bool {
         self.loaded
     }
 
     /// Get tensor name
+    #[must_use] 
     pub fn name(&self) -> &str {
         &self.meta.name
     }
 
     /// Get tensor shape
+    #[must_use] 
     pub fn shape(&self) -> &[usize] {
         &self.meta.shape
     }
@@ -344,6 +376,7 @@ pub struct TensorQuery {
 
 impl TensorQuery {
     /// Create a new query
+    #[must_use] 
     pub fn new() -> Self {
         Self {
             name_pattern: None,
@@ -354,24 +387,28 @@ impl TensorQuery {
     }
 
     /// Filter by name pattern
+    #[must_use]
     pub fn name(mut self, pattern: impl Into<String>) -> Self {
         self.name_pattern = Some(pattern.into());
         self
     }
 
     /// Filter by dtype
+    #[must_use] 
     pub fn dtype(mut self, dtype: crate::tensor::TensorDtype) -> Self {
         self.dtype = Some(dtype);
         self
     }
 
     /// Filter by minimum size
+    #[must_use] 
     pub fn min_size(mut self, size: u64) -> Self {
         self.min_size = Some(size);
         self
     }
 
     /// Filter by maximum size
+    #[must_use] 
     pub fn max_size(mut self, size: u64) -> Self {
         self.max_size = Some(size);
         self

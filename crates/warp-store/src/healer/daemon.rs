@@ -123,10 +123,10 @@ impl HealerDaemon {
         );
 
         // Spawn the main scan loop
-        let scan_handle = self.spawn_scan_loop();
+        let _scan_handle = self.spawn_scan_loop();
 
         // Spawn repair workers
-        let worker_handles = self.spawn_workers();
+        let _worker_handles = self.spawn_workers();
 
         // Update state
         *self.state.write().await = HealerState::Running;
@@ -201,7 +201,7 @@ impl HealerDaemon {
         let queue = self.queue.clone();
         let metrics = self.metrics.clone();
         let shard_manager = self.shard_manager.clone();
-        let state = Arc::new(self.state.read());
+        let _state = Arc::new(self.state.read());
         let mut shutdown_rx = self.shutdown_tx.subscribe();
 
         tokio::spawn(async move {

@@ -2,7 +2,7 @@
 //!
 //! This crate provides the networking layer for Portal, implementing:
 //! - Virtual IP management in the 10.portal.0.0/16 subnet
-//! - Peer-to-peer mesh networking with WireGuard integration
+//! - Peer-to-peer mesh networking with `WireGuard` integration
 //! - mDNS-based local peer discovery
 //! - Hub-based coordination and NAT traversal
 //! - Connection mode tracking (direct P2P vs relayed)

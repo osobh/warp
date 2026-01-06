@@ -16,7 +16,12 @@ pub enum ReoptScope {
     /// Only chunks on specific edges
     Edges(Vec<EdgeIdx>),
     /// Edges and their neighbors within radius
-    Region { edges: Vec<EdgeIdx>, radius: u32 },
+    Region {
+        /// Center edges of the region
+        edges: Vec<EdgeIdx>,
+        /// Hop radius for neighbor inclusion
+        radius: u32,
+    },
     /// Complete reschedule of all chunks
     Full,
 }
@@ -31,7 +36,10 @@ pub enum ReoptStrategy {
     /// Find globally optimal solution (more expensive)
     CostOptimal,
     /// Balance between disruption and optimality
-    Hybrid { disruption_weight: f64 },
+    Hybrid {
+        /// Weight for disruption cost (0.0-1.0)
+        disruption_weight: f64,
+    },
 }
 
 /// Reason for chunk reassignment
@@ -52,7 +60,7 @@ pub enum ReassignmentReason {
 }
 
 /// Single chunk reassignment
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Reassignment {
     /// Chunk being reassigned
     pub chunk_id: ChunkId,
@@ -68,7 +76,8 @@ pub struct Reassignment {
 
 impl Reassignment {
     /// Create a new reassignment
-    pub fn new(
+    #[must_use] 
+    pub const fn new(
         chunk_id: ChunkId,
         from_edge: EdgeIdx,
         to_edges: Vec<EdgeIdx>,
@@ -104,6 +113,7 @@ pub struct ReoptPlan {
 
 impl ReoptPlan {
     /// Create a new reoptimization plan
+    #[must_use] 
     pub fn new(
         scope: ReoptScope,
         strategy: ReoptStrategy,
@@ -123,11 +133,13 @@ impl ReoptPlan {
     }
 
     /// Get the number of reassignments in the plan
+    #[must_use] 
     pub fn len(&self) -> usize {
         self.reassignments.len()
     }
 
     /// Check if the plan is empty
+    #[must_use] 
     pub fn is_empty(&self) -> bool {
         self.reassignments.is_empty()
     }
@@ -159,7 +171,8 @@ impl Default for IncrementalConfig {
 
 impl IncrementalConfig {
     /// Create a new configuration
-    pub fn new(
+    #[must_use] 
+    pub const fn new(
         max_reassignments_per_tick: usize,
         min_improvement_threshold: f64,
         max_disruption: f64,
@@ -174,6 +187,14 @@ impl IncrementalConfig {
     }
 
     /// Validate configuration
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - `max_reassignments_per_tick` is 0
+    /// - `min_improvement_threshold` is not in 0.0-1.0
+    /// - `max_disruption` is not in 0.0-1.0
+    /// - `parallel_moves` is 0
     pub fn validate(&self) -> Result<()> {
         if self.max_reassignments_per_tick == 0 {
             return Err(SchedError::InvalidConfig(
@@ -220,6 +241,7 @@ pub struct ReoptMetrics {
 
 impl ReoptMetrics {
     /// Create new metrics
+    #[must_use] 
     pub fn new() -> Self {
         Self::default()
     }
@@ -233,15 +255,14 @@ impl ReoptMetrics {
         }
 
         let n = self.total_reopts as f64;
-        self.avg_improvement = ((n - 1.0) * self.avg_improvement + plan.estimated_improvement) / n;
-        self.avg_disruption = ((n - 1.0) * self.avg_disruption + plan.estimated_disruption) / n;
-        self.avg_execution_time_ms = ((n - 1.0) * self.avg_execution_time_ms as f64
-            + execution_time_ms as f64) as u64
+        self.avg_improvement = (n - 1.0).mul_add(self.avg_improvement, plan.estimated_improvement) / n;
+        self.avg_disruption = (n - 1.0).mul_add(self.avg_disruption, plan.estimated_disruption) / n;
+        self.avg_execution_time_ms = (n - 1.0).mul_add(self.avg_execution_time_ms as f64, execution_time_ms as f64) as u64
             / self.total_reopts;
     }
 
     /// Record an aborted reoptimization
-    pub fn record_abort(&mut self) {
+    pub const fn record_abort(&mut self) {
         self.aborted_reopts += 1;
     }
 }
@@ -255,24 +276,36 @@ pub enum ReoptState {
     Planning,
     /// Executing a plan
     Executing {
+        /// Reoptimization plan being executed
         plan: ReoptPlan,
+        /// Current execution step index
         current_step: usize,
     },
     /// Paused for external reason
-    Paused { reason: String },
+    Paused {
+        /// Reason for pause
+        reason: String,
+    },
     /// Reoptimization completed
-    Completed { metrics: ReoptMetrics },
+    Completed {
+        /// Final metrics for completed reoptimization
+        metrics: ReoptMetrics,
+    },
 }
 
 /// Incremental scheduler for reoptimization
 pub struct IncrementalScheduler {
+    /// Configuration for incremental scheduling
     config: IncrementalConfig,
+    /// Current reoptimization state
     state: ReoptState,
+    /// Accumulated metrics
     metrics: ReoptMetrics,
 }
 
 impl IncrementalScheduler {
     /// Create a new incremental scheduler
+    #[must_use] 
     pub fn new(config: IncrementalConfig) -> Self {
         Self {
             config,
@@ -282,33 +315,31 @@ impl IncrementalScheduler {
     }
 
     /// Plan reoptimization based on scope and strategy
+    #[must_use] 
     pub fn plan_reopt(
         scope: ReoptScope,
         strategy: ReoptStrategy,
         current: &[Assignment],
         costs: &CpuCostMatrix,
     ) -> ReoptPlan {
-        let mut reassignments = Vec::new();
-
         // Determine which chunks to consider based on scope
         let chunks_to_consider = Self::extract_chunks_from_scope(&scope, current);
 
         // Generate reassignments based on strategy
-        match strategy {
+        let mut reassignments = match strategy {
             ReoptStrategy::Greedy => {
-                reassignments = Self::plan_greedy(&chunks_to_consider, current, costs);
+                Self::plan_greedy(&chunks_to_consider, current, costs)
             }
             ReoptStrategy::MinDisruption => {
-                reassignments = Self::plan_min_disruption(&chunks_to_consider, current, costs);
+                Self::plan_min_disruption(&chunks_to_consider, current, costs)
             }
             ReoptStrategy::CostOptimal => {
-                reassignments = Self::plan_cost_optimal(&chunks_to_consider, current, costs);
+                Self::plan_cost_optimal(&chunks_to_consider, current, costs)
             }
             ReoptStrategy::Hybrid { disruption_weight } => {
-                reassignments =
-                    Self::plan_hybrid(&chunks_to_consider, current, costs, disruption_weight);
+                Self::plan_hybrid(&chunks_to_consider, current, costs, disruption_weight)
             }
-        }
+        };
 
         // Calculate estimated improvement and disruption
         let estimated_improvement = Self::calculate_improvement(&reassignments, current, costs);
@@ -327,6 +358,13 @@ impl IncrementalScheduler {
     }
 
     /// Execute a single step of the plan
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - Step index is out of bounds
+    /// - Execution order is invalid
+    /// - Reassignment index is invalid
     pub fn execute_step(&mut self, plan: &ReoptPlan, step: usize) -> Result<Reassignment> {
         if step >= plan.reassignments.len() {
             return Err(SchedError::InvalidState("step index out of bounds".into()));
@@ -347,6 +385,7 @@ impl IncrementalScheduler {
     }
 
     /// Estimate improvement for a single reassignment
+    #[must_use] 
     pub fn estimate_improvement(reassignment: &Reassignment, costs: &CpuCostMatrix) -> f64 {
         let chunk_id = reassignment.chunk_id;
         let current_cost = costs
@@ -361,15 +400,22 @@ impl IncrementalScheduler {
         if current_cost == 0.0 {
             return 0.0;
         }
-        ((current_cost - new_cost) / current_cost).max(0.0) as f64
+        f64::from(((current_cost - new_cost) / current_cost).max(0.0))
     }
 
     /// Estimate total disruption for a plan
-    pub fn estimate_disruption(plan: &ReoptPlan) -> f64 {
+    #[must_use] 
+    pub const fn estimate_disruption(plan: &ReoptPlan) -> f64 {
         plan.estimated_disruption
     }
 
     /// Validate a reoptimization plan
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - Execution order contains invalid indices
+    /// - Execution order is incomplete
     pub fn validate_plan(plan: &ReoptPlan) -> Result<()> {
         for &idx in &plan.execution_order {
             if idx >= plan.reassignments.len() {
@@ -404,12 +450,14 @@ impl IncrementalScheduler {
     }
 
     /// Get current state
-    pub fn state(&self) -> &ReoptState {
+    #[must_use] 
+    pub const fn state(&self) -> &ReoptState {
         &self.state
     }
 
     /// Get metrics
-    pub fn metrics(&self) -> &ReoptMetrics {
+    #[must_use] 
+    pub const fn metrics(&self) -> &ReoptMetrics {
         &self.metrics
     }
 
@@ -558,7 +606,7 @@ impl IncrementalScheduler {
         disruption_weight: f64,
     ) -> Vec<Reassignment> {
         let mut reassignments = Vec::new();
-        let threshold = 0.5 - (disruption_weight * 0.4); // Higher weight = higher threshold
+        let threshold = disruption_weight.mul_add(-0.4, 0.5); // Higher weight = higher threshold
 
         for &chunk_id in chunks {
             let current_assignment = current
@@ -591,7 +639,7 @@ impl IncrementalScheduler {
 
     fn calculate_improvement(
         reassignments: &[Reassignment],
-        current: &[Assignment],
+        _current: &[Assignment],
         costs: &CpuCostMatrix,
     ) -> f64 {
         if reassignments.is_empty() {

@@ -2,7 +2,7 @@
 
 use std::collections::HashMap;
 use std::sync::Arc;
-use std::time::{Duration, Instant};
+use std::time::Instant;
 
 use dashmap::DashMap;
 use parking_lot::RwLock;
@@ -288,11 +288,10 @@ impl PlacementEngine {
         if matches!(
             prediction.workload_type,
             WorkloadType::Training | WorkloadType::Inference
-        ) {
-            if node.has_gpu {
+        )
+            && node.has_gpu {
                 score += 40.0;
             }
-        }
 
         // Prefer higher bandwidth
         score += (node.bandwidth as f64 / 10_000_000_000.0) * 10.0; // 10 Gbps reference

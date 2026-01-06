@@ -39,6 +39,22 @@ pub mod io_opcode {
     pub const DATASET_MANAGEMENT: u8 = 0x09;
 }
 
+/// NVMe Admin opcodes
+#[allow(dead_code)]
+pub mod admin_opcode {
+    pub const DELETE_IO_SQ: u8 = 0x00;
+    pub const CREATE_IO_SQ: u8 = 0x01;
+    pub const GET_LOG_PAGE: u8 = 0x02;
+    pub const DELETE_IO_CQ: u8 = 0x04;
+    pub const CREATE_IO_CQ: u8 = 0x05;
+    pub const IDENTIFY: u8 = 0x06;
+    pub const ABORT: u8 = 0x08;
+    pub const SET_FEATURES: u8 = 0x09;
+    pub const GET_FEATURES: u8 = 0x0A;
+    pub const ASYNC_EVENT_REQUEST: u8 = 0x0C;
+    pub const KEEP_ALIVE: u8 = 0x18;
+}
+
 /// NVMe Fabrics opcodes
 #[allow(dead_code)]
 pub mod fabrics_opcode {
@@ -103,6 +119,39 @@ impl NvmeCommand {
         let bytes = nlb.to_le_bytes();
         self.data[48] = bytes[0];
         self.data[49] = bytes[1];
+    }
+
+    /// Get CDW10 (bytes 40-43)
+    pub fn cdw10(&self) -> u32 {
+        u32::from_le_bytes([self.data[40], self.data[41], self.data[42], self.data[43]])
+    }
+
+    /// Set CDW10 (bytes 40-43)
+    pub fn set_cdw10(&mut self, value: u32) {
+        let bytes = value.to_le_bytes();
+        self.data[40..44].copy_from_slice(&bytes);
+    }
+
+    /// Get CDW11 (bytes 44-47)
+    pub fn cdw11(&self) -> u32 {
+        u32::from_le_bytes([self.data[44], self.data[45], self.data[46], self.data[47]])
+    }
+
+    /// Set CDW11 (bytes 44-47)
+    pub fn set_cdw11(&mut self, value: u32) {
+        let bytes = value.to_le_bytes();
+        self.data[44..48].copy_from_slice(&bytes);
+    }
+
+    /// Get CDW12 (bytes 48-51)
+    pub fn cdw12(&self) -> u32 {
+        u32::from_le_bytes([self.data[48], self.data[49], self.data[50], self.data[51]])
+    }
+
+    /// Set CDW12 (bytes 48-51)
+    pub fn set_cdw12(&mut self, value: u32) {
+        let bytes = value.to_le_bytes();
+        self.data[48..52].copy_from_slice(&bytes);
     }
 
     pub fn as_bytes(&self) -> &[u8] {

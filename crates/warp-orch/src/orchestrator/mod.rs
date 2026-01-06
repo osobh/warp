@@ -4,14 +4,14 @@
 //! transfers across edge nodes. It manages connection pools, progress tracking, and
 //! delegates to specialized download/upload handlers.
 
-use crate::download::{DownloadConfig, DownloadSession, SwarmDownloader};
+use crate::download::{DownloadConfig, SwarmDownloader};
 use crate::pool::{ConnectionPool, PoolConfig};
 use crate::progress::{ProgressTracker, ProgressUpdate, TransferProgress};
 use crate::types::{
     ChunkTransfer, TransferDirection, TransferId, TransferRequest, TransferResult, TransferState,
     TransferStatus,
 };
-use crate::upload::{DistributedUploader, UploadConfig, UploadSession};
+use crate::upload::{DistributedUploader, UploadConfig};
 use crate::{OrchError, Result};
 use parking_lot::RwLock;
 use std::collections::HashMap;
@@ -27,10 +27,15 @@ mod tests;
 /// Configuration for the orchestrator
 #[derive(Debug, Clone)]
 pub struct OrchestratorConfig {
+    /// Configuration for the connection pool
     pub pool_config: PoolConfig,
+    /// Configuration for download operations
     pub download_config: DownloadConfig,
+    /// Configuration for upload operations
     pub upload_config: UploadConfig,
+    /// Interval between orchestrator ticks in milliseconds
     pub tick_interval_ms: u64,
+    /// Maximum number of concurrent transfers allowed
     pub max_concurrent_transfers: usize,
 }
 
@@ -47,10 +52,12 @@ impl Default for OrchestratorConfig {
 }
 
 impl OrchestratorConfig {
+    /// Creates a new orchestrator configuration with default values
     pub fn new() -> Self {
         Self::default()
     }
 
+    /// Validates the configuration parameters
     pub fn validate(&self) -> Result<()> {
         self.pool_config
             .validate()
@@ -71,16 +78,19 @@ impl OrchestratorConfig {
         Ok(())
     }
 
+    /// Sets the connection pool configuration
     pub fn with_pool_config(mut self, config: PoolConfig) -> Self {
         self.pool_config = config;
         self
     }
 
+    /// Sets the tick interval in milliseconds
     pub fn with_tick_interval(mut self, interval_ms: u64) -> Self {
         self.tick_interval_ms = interval_ms;
         self
     }
 
+    /// Sets the maximum number of concurrent transfers
     pub fn with_max_concurrent_transfers(mut self, max: usize) -> Self {
         self.max_concurrent_transfers = max;
         self
@@ -90,13 +100,18 @@ impl OrchestratorConfig {
 /// Transfer handle for tracking active transfers
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TransferHandle {
+    /// Unique identifier for this transfer
     pub id: TransferId,
+    /// Direction of the transfer (download or upload)
     pub direction: TransferDirection,
+    /// Current status of the transfer
     pub status: TransferStatus,
+    /// Unix timestamp in milliseconds when the transfer was created
     pub created_at_ms: u64,
 }
 
 impl TransferHandle {
+    /// Creates a new transfer handle with pending status
     pub fn new(id: TransferId, direction: TransferDirection, created_at_ms: u64) -> Self {
         Self {
             id,
@@ -106,6 +121,7 @@ impl TransferHandle {
         }
     }
 
+    /// Returns the elapsed time in milliseconds since the transfer was created
     pub fn elapsed_ms(&self) -> u64 {
         current_time_ms().saturating_sub(self.created_at_ms)
     }
@@ -596,6 +612,7 @@ impl Orchestrator {
     }
 }
 
+/// Returns the current Unix timestamp in milliseconds
 pub(crate) fn current_time_ms() -> u64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)

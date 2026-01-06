@@ -18,45 +18,65 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use thiserror::Error;
 use tokio::sync::Semaphore;
 use tokio::time::{Duration, timeout};
-use warp_net::{LocalInterface, MultiPathEndpoint, WarpConnection};
-use warp_sched::{DynamicEdgeMetrics, EdgeIdx, RttTrend};
+use warp_net::{MultiPathEndpoint, WarpConnection};
+use warp_sched::{DynamicEdgeMetrics, EdgeIdx};
 
 /// Pool-specific errors
 #[derive(Debug, Error)]
 pub enum PoolError {
+    /// Connection acquisition timed out after the specified milliseconds.
     #[error("connection timeout after {0}ms")]
     Timeout(u64),
+    /// Maximum connections per edge limit reached.
     #[error("max connections per edge reached: {0}")]
     MaxConnectionsPerEdge(usize),
+    /// Maximum total pool connections limit reached.
     #[error("max total connections reached: {0}")]
     MaxTotalConnections(usize),
+    /// The specified connection ID was not found in the pool.
     #[error("connection {0} not found")]
     ConnectionNotFound(u64),
+    /// Connection failed health check.
     #[error("connection unhealthy: {0}")]
     Unhealthy(String),
+    /// Connection was closed unexpectedly.
     #[error("connection closed")]
     Closed,
+    /// Invalid pool configuration.
     #[error("invalid config: {0}")]
     InvalidConfig(String),
+    /// Transport layer error.
     #[error("transport error: {0}")]
     Transport(String),
+    /// No transport attached to the connection.
     #[error("no transport available for connection {0}")]
     NoTransport(u64),
+    /// No network path available to the target.
     #[error("no path available: {0}")]
     NoPath(String),
+    /// Specified network interface not found.
     #[error("interface not found: {0}")]
     InterfaceNotFound(String),
 }
 
+/// Result type alias for pool operations.
 pub type Result<T> = std::result::Result<T, PoolError>;
 
-/// Configuration for connection pool
+/// Configuration for connection pool.
+///
+/// Controls connection limits, timeouts, and health checking behavior
+/// for the pool. All timeout values are in milliseconds.
 #[derive(Debug, Clone)]
 pub struct PoolConfig {
+    /// Maximum number of connections allowed per edge.
     pub max_connections_per_edge: usize,
+    /// Maximum total connections across all edges.
     pub max_total_connections: usize,
+    /// Time in milliseconds before an idle connection is eligible for cleanup.
     pub idle_timeout_ms: u64,
+    /// Timeout in milliseconds for establishing new connections.
     pub connect_timeout_ms: u64,
+    /// Interval in milliseconds between health check probes.
     pub health_check_interval_ms: u64,
 }
 
@@ -73,10 +93,14 @@ impl Default for PoolConfig {
 }
 
 impl PoolConfig {
+    /// Create a new configuration with default values.
     pub fn new() -> Self {
         Self::default()
     }
 
+    /// Validate the configuration.
+    ///
+    /// Returns an error if any configuration values are invalid.
     pub fn validate(&self) -> Result<()> {
         if self.max_connections_per_edge == 0 {
             return Err(PoolError::InvalidConfig(
@@ -97,12 +121,18 @@ impl PoolConfig {
     }
 }
 
-/// Connection state
+/// Connection state.
+///
+/// Tracks the lifecycle state of a pooled connection.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ConnectionState {
+    /// Connection is available for use.
     Idle,
+    /// Connection is currently borrowed and in use.
     InUse,
+    /// Connection failed health check and should not be used.
     Unhealthy,
+    /// Connection has been permanently closed.
     Closed,
 }
 
@@ -121,14 +151,21 @@ pub enum ConnectionState {
 #[repr(C, align(64))]
 pub struct Connection {
     // === Hot fields (checked on every acquire) ===
+    /// Current lifecycle state of the connection.
     pub state: ConnectionState, // 1 byte - checked most frequently
     _pad1: [u8; 3],             // 3 bytes padding for alignment
+    /// Edge index this connection belongs to.
     pub edge_idx: EdgeIdx,      // 4 bytes - used with state
+    /// Unique connection identifier.
     pub id: u64,                // 8 bytes - returned on match
+    /// Timestamp of last activity in milliseconds since epoch.
     pub last_used_ms: u64,      // 8 bytes - timeout checks
+    /// Timestamp when connection was created in milliseconds since epoch.
     pub created_at_ms: u64,     // 8 bytes - rarely accessed
     // === Metrics (accessed on send/recv) ===
+    /// Total bytes sent on this connection.
     pub bytes_sent: u64,     // 8 bytes
+    /// Total bytes received on this connection.
     pub bytes_received: u64, // 8 bytes
     _pad2: [u8; 16],         // 16 bytes padding to reach 64 bytes
 }
@@ -202,7 +239,11 @@ impl Connection {
     }
 }
 
-/// RAII wrapper for borrowed connection
+/// RAII wrapper for borrowed connection.
+///
+/// Represents a connection borrowed from the pool. The connection is
+/// automatically returned to the pool when this wrapper is dropped.
+/// Use the `send`, `receive`, and `send_chunk` methods for I/O operations.
 #[derive(Debug)]
 pub struct PooledConnection {
     pool: Arc<ConnectionPoolInner>,
@@ -393,14 +434,23 @@ impl Drop for PooledConnection {
     }
 }
 
-/// Pool statistics
+/// Pool statistics.
+///
+/// Provides a snapshot of the connection pool's current state,
+/// including connection counts and data transfer totals.
 #[derive(Debug, Clone, Default)]
 pub struct PoolStats {
+    /// Total number of connections in the pool.
     pub total_connections: usize,
+    /// Number of connections currently idle and available.
     pub idle_connections: usize,
+    /// Number of connections currently in use.
     pub in_use_connections: usize,
+    /// Connection count per edge.
     pub connections_per_edge: HashMap<EdgeIdx, usize>,
+    /// Total bytes sent across all connections.
     pub total_bytes_sent: u64,
+    /// Total bytes received across all connections.
     pub total_bytes_received: u64,
 }
 
@@ -573,13 +623,29 @@ impl ConnectionPoolInner {
     }
 }
 
-/// Main connection pool
+/// Main connection pool.
+///
+/// Manages reusable connections to edges with configurable limits,
+/// automatic cleanup of idle connections, and thread-safe access.
+///
+/// # Example
+///
+/// ```ignore
+/// let config = PoolConfig::default();
+/// let pool = ConnectionPool::new(config)?;
+///
+/// // Acquire a connection to an edge
+/// let conn = pool.acquire(edge_idx).await?;
+/// conn.send(data)?;
+/// // Connection is automatically returned to pool when dropped
+/// ```
 #[derive(Clone)]
 pub struct ConnectionPool {
     inner: Arc<ConnectionPoolInner>,
 }
 
 impl ConnectionPool {
+    /// Create a new connection pool with the given configuration.
     pub fn new(config: PoolConfig) -> Result<Self> {
         config.validate()?;
         Ok(Self {
@@ -587,6 +653,11 @@ impl ConnectionPool {
         })
     }
 
+    /// Acquire a connection to the specified edge.
+    ///
+    /// Returns an existing idle connection if available, or creates
+    /// a new one. The connection is automatically returned to the pool
+    /// when the `PooledConnection` is dropped.
     pub async fn acquire(&self, edge_idx: EdgeIdx) -> Result<PooledConnection> {
         let conn_id = self.inner.acquire_connection(edge_idx).await?;
         Ok(PooledConnection {
@@ -596,6 +667,10 @@ impl ConnectionPool {
         })
     }
 
+    /// Acquire a connection with a timeout.
+    ///
+    /// Returns `PoolError::Timeout` if the connection cannot be acquired
+    /// within the specified duration.
     pub async fn acquire_timeout(
         &self,
         edge_idx: EdgeIdx,
@@ -606,14 +681,17 @@ impl ConnectionPool {
             .map_err(|_| PoolError::Timeout(duration.as_millis() as u64))?
     }
 
+    /// Close all connections to the specified edge.
     pub fn close_edge(&self, edge_idx: EdgeIdx) {
         self.inner.close_edge(edge_idx);
     }
 
+    /// Get current pool statistics.
     pub fn stats(&self) -> PoolStats {
         self.inner.stats()
     }
 
+    /// Get the pool configuration.
     pub fn config(&self) -> &PoolConfig {
         &self.inner.config
     }
@@ -694,10 +772,14 @@ impl Default for MultiPathPoolConfig {
 }
 
 impl MultiPathPoolConfig {
+    /// Create a new configuration with default values.
     pub fn new() -> Self {
         Self::default()
     }
 
+    /// Validate the configuration.
+    ///
+    /// Validates both base pool config and multi-path specific settings.
     pub fn validate(&self) -> Result<()> {
         self.base.validate()?;
         if self.max_connections_per_path == 0 {
@@ -766,7 +848,11 @@ impl PathAwareConnection {
     }
 }
 
-/// RAII wrapper for borrowed path-aware connection
+/// RAII wrapper for borrowed path-aware connection.
+///
+/// Extends `PooledConnection` with path tracking for multi-path aggregation.
+/// The connection is automatically returned to the pool when dropped, and
+/// the path is marked as no longer in-flight.
 #[derive(Debug)]
 pub struct PooledPathConnection {
     pool: Arc<MultiPathConnectionPoolInner>,
@@ -898,16 +984,27 @@ impl Drop for PooledPathConnection {
     }
 }
 
-/// Statistics for multi-path connection pool
+/// Statistics for multi-path connection pool.
+///
+/// Extends basic pool statistics with path-aware metrics for
+/// monitoring multi-path network aggregation.
 #[derive(Debug, Clone, Default)]
 pub struct MultiPathPoolStats {
+    /// Total number of connections across all paths.
     pub total_connections: usize,
+    /// Number of connections currently idle.
     pub idle_connections: usize,
+    /// Number of connections currently in use.
     pub in_use_connections: usize,
+    /// Connection count per edge.
     pub connections_per_edge: HashMap<EdgeIdx, usize>,
+    /// Connection count per unique path (local_ip × remote_ip).
     pub connections_per_path: HashMap<PathId, usize>,
+    /// Total bytes sent across all connections.
     pub total_bytes_sent: u64,
+    /// Number of distinct paths currently handling active transfers.
     pub unique_paths_in_flight: usize,
+    /// Number of local network interfaces with active connections.
     pub active_local_interfaces: usize,
 }
 
@@ -1054,16 +1151,19 @@ impl MultiPathMetrics {
     }
 }
 
-/// Configuration for dynamic metrics tracking
+/// Configuration for dynamic metrics tracking.
+///
+/// Controls how throughput and RTT metrics are tracked and used for
+/// congestion detection and path selection decisions.
 #[derive(Debug, Clone)]
 pub struct DynamicMetricsConfig {
-    /// Window size for throughput calculation (milliseconds)
+    /// Window size for throughput calculation (milliseconds).
     pub throughput_window_ms: u64,
-    /// RTT change threshold for trend detection (e.g., 0.20 = 20%)
+    /// RTT change threshold for trend detection (e.g., 0.20 = 20%).
     pub rtt_threshold: f32,
-    /// Maximum RTT samples to keep per edge
+    /// Maximum RTT samples to keep per edge.
     pub max_rtt_samples: usize,
-    /// Saturation threshold (0.0-1.0)
+    /// Saturation threshold (0.0-1.0) above which an edge is considered congested.
     pub saturation_threshold: f32,
 }
 

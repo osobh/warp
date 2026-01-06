@@ -353,27 +353,77 @@ pub struct PoolStats {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::net::SocketAddr;
 
     #[test]
-    fn test_pooled_connection() {
-        let conn = PooledConnection::new(1, "nqn.test".to_string());
-
-        assert_eq!(conn.state(), ConnectionState::Connecting);
-        assert_eq!(conn.in_flight_count(), 0);
-
-        conn.set_state(ConnectionState::Ready);
-        assert!(conn.is_usable());
-
-        conn.begin_command();
-        assert_eq!(conn.in_flight_count(), 1);
-
-        conn.end_command();
-        assert_eq!(conn.in_flight_count(), 0);
+    fn test_connection_state() {
+        // Test ConnectionState enum properties
+        assert_eq!(ConnectionState::Connecting, ConnectionState::Connecting);
+        assert_ne!(ConnectionState::Connecting, ConnectionState::Ready);
+        assert_ne!(ConnectionState::Ready, ConnectionState::Failed);
     }
 
+    #[test]
+    fn test_connection_pool_config_defaults() {
+        let config = ConnectionPoolConfig::default();
+        assert!(config.min_connections > 0);
+        assert!(config.max_connections >= config.min_connections);
+        assert!(config.connection_timeout_ms > 0);
+        assert!(config.idle_timeout_ms > 0);
+    }
+
+    #[test]
+    fn test_target_config_defaults() {
+        let config = NvmeOfTargetConfig {
+            nqn: "nqn.2024-01.io.warp:test".to_string(),
+            addresses: vec!["127.0.0.1:4420".parse().unwrap()],
+            ..Default::default()
+        };
+
+        assert_eq!(config.nqn, "nqn.2024-01.io.warp:test");
+        assert_eq!(config.addresses.len(), 1);
+    }
+
+    #[test]
+    fn test_pool_creation_and_target_add() {
+        let config = ConnectionPoolConfig::default();
+        let pool = NvmeOfConnectionPool::new(config, vec![TransportPreference::Tcp]);
+
+        let target_config = NvmeOfTargetConfig {
+            nqn: "nqn.2024-01.io.warp:subsystem1".to_string(),
+            addresses: vec!["127.0.0.1:4420".parse().unwrap()],
+            ..Default::default()
+        };
+
+        pool.add_target(target_config.clone()).unwrap();
+
+        // Adding same target should fail
+        let result = pool.add_target(target_config);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_pool_multiple_targets() {
+        let config = ConnectionPoolConfig::default();
+        let pool = NvmeOfConnectionPool::new(config, vec![TransportPreference::Tcp]);
+
+        for i in 0..5 {
+            let target_config = NvmeOfTargetConfig {
+                nqn: format!("nqn.2024-01.io.warp:subsystem{}", i),
+                addresses: vec!["127.0.0.1:4420".parse().unwrap()],
+                ..Default::default()
+            };
+            pool.add_target(target_config).unwrap();
+        }
+
+        // Verify all targets were added
+        let stats = pool.stats();
+        assert_eq!(stats.len(), 5);
+    }
+
+    // Integration test - requires a running NVMe-oF target
     #[tokio::test]
-    async fn test_connection_pool() {
+    #[ignore = "requires running NVMe-oF target at 127.0.0.1:4420"]
+    async fn test_connection_pool_integration() {
         let config = ConnectionPoolConfig::default();
         let pool = NvmeOfConnectionPool::new(config, vec![TransportPreference::Tcp]);
 

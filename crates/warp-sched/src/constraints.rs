@@ -11,14 +11,24 @@ use std::collections::HashMap;
 /// Time-based scheduling window with hour range, day filter, and timezone offset
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct TimeWindow {
-    pub start_hour: u8, // 0-23
-    pub end_hour: u8,   // 0-23
+    /// Start hour of the window (0-23)
+    pub start_hour: u8,
+    /// End hour of the window (0-23)
+    pub end_hour: u8,
+    /// Days of the week when this window is active (empty means all days)
     pub days: Vec<Weekday>,
-    pub timezone_offset_hours: i8, // -12 to +14
+    /// Timezone offset in hours (-12 to +14)
+    pub timezone_offset_hours: i8,
 }
 
 impl TimeWindow {
     /// Create a new time window with validation
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - `start_hour` or `end_hour` is greater than 23
+    /// - `timezone_offset_hours` is not in the range -12 to +14
     pub fn new(
         start_hour: u8,
         end_hour: u8,
@@ -28,7 +38,7 @@ impl TimeWindow {
         if start_hour > 23 || end_hour > 23 {
             return Err(SchedError::InvalidConfig("hour must be 0-23".to_string()));
         }
-        if timezone_offset_hours < -12 || timezone_offset_hours > 14 {
+        if !(-12..=14).contains(&timezone_offset_hours) {
             return Err(SchedError::InvalidConfig(
                 "timezone_offset must be -12 to +14".to_string(),
             ));
@@ -42,8 +52,9 @@ impl TimeWindow {
     }
 
     /// Check if the given time falls within this window
+    #[must_use] 
     pub fn is_active(&self, now: DateTime<Utc>) -> bool {
-        let offset_secs = self.timezone_offset_hours as i64 * 3600;
+        let offset_secs = i64::from(self.timezone_offset_hours) * 3600;
         let local_dt = DateTime::from_timestamp(now.timestamp() + offset_secs, 0).unwrap_or(now);
         if !self.days.is_empty() && !self.days.contains(&local_dt.weekday()) {
             return false;
@@ -57,12 +68,17 @@ impl TimeWindow {
     }
 
     /// Create an all-day window
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if `timezone_offset_hours` is not in the range -12 to +14
     pub fn all_day(days: Vec<Weekday>, timezone_offset_hours: i8) -> Result<Self, SchedError> {
         Self::new(0, 23, days, timezone_offset_hours)
     }
 
     /// Create a 24/7 always-active window
-    pub fn always() -> Self {
+    #[must_use] 
+    pub const fn always() -> Self {
         Self {
             start_hour: 0,
             end_hour: 23,
@@ -73,7 +89,7 @@ impl TimeWindow {
 }
 
 /// Time-based constraint types
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum TimeConstraint {
     /// No time restrictions
     Anytime,
@@ -84,18 +100,22 @@ pub enum TimeConstraint {
     /// Avoid this window if possible
     AvoidWindow(TimeWindow),
     /// Avoid peak hours (specified as list of hours 0-23)
-    OffPeak { peak_hours: Vec<u8> },
+    OffPeak {
+        /// List of peak hours (0-23) to avoid
+        peak_hours: Vec<u8>
+    },
 }
 
 impl TimeConstraint {
     /// Check if time constraint allows transfers now
+    #[must_use] 
     pub fn is_allowed(&self, now: DateTime<Utc>) -> bool {
         match self {
-            TimeConstraint::Anytime => true,
-            TimeConstraint::PreferredWindow(_) => true,
-            TimeConstraint::RequiredWindow(window) => window.is_active(now),
-            TimeConstraint::AvoidWindow(window) => !window.is_active(now),
-            TimeConstraint::OffPeak { peak_hours } => {
+            Self::Anytime => true,
+            Self::PreferredWindow(_) => true,
+            Self::RequiredWindow(window) => window.is_active(now),
+            Self::AvoidWindow(window) => !window.is_active(now),
+            Self::OffPeak { peak_hours } => {
                 let hour = now.hour() as u8;
                 !peak_hours.contains(&hour)
             }
@@ -103,31 +123,32 @@ impl TimeConstraint {
     }
 
     /// Get cost multiplier based on preference (1.0 = normal, higher = less preferred)
+    #[must_use] 
     pub fn cost_multiplier(&self, now: DateTime<Utc>) -> f64 {
         match self {
-            TimeConstraint::Anytime => 1.0,
-            TimeConstraint::PreferredWindow(window) => {
+            Self::Anytime => 1.0,
+            Self::PreferredWindow(window) => {
                 if window.is_active(now) {
                     0.8 // Prefer this window
                 } else {
                     1.2 // Less preferred outside window
                 }
             }
-            TimeConstraint::RequiredWindow(window) => {
+            Self::RequiredWindow(window) => {
                 if window.is_active(now) {
                     1.0
                 } else {
                     f64::INFINITY // Block outside window
                 }
             }
-            TimeConstraint::AvoidWindow(window) => {
+            Self::AvoidWindow(window) => {
                 if window.is_active(now) {
                     5.0 // Strongly avoid
                 } else {
                     1.0
                 }
             }
-            TimeConstraint::OffPeak { peak_hours } => {
+            Self::OffPeak { peak_hours } => {
                 let hour = now.hour() as u8;
                 if peak_hours.contains(&hour) {
                     2.0 // Avoid peak hours
@@ -140,14 +161,22 @@ impl TimeConstraint {
 }
 
 /// Cost constraint types
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum CostConstraint {
     /// No cost concerns
     Unlimited,
     /// Metered connection with bytes remaining
-    MeteredLimit { bytes_remaining: u64 },
+    MeteredLimit {
+        /// Number of bytes remaining in the limit
+        bytes_remaining: u64
+    },
     /// Monthly budget with used and limit
-    MonthlyBudget { used: u64, limit: u64 },
+    MonthlyBudget {
+        /// Number of bytes already used
+        used: u64,
+        /// Total byte limit for the month
+        limit: u64
+    },
     /// Prefer unmetered but allow metered
     PreferUnmetered,
     /// Only use unmetered connections
@@ -156,21 +185,23 @@ pub enum CostConstraint {
 
 impl CostConstraint {
     /// Check if transfer of given size is allowed
+    #[must_use] 
     pub fn is_allowed(&self, bytes: u64) -> bool {
         match self {
-            CostConstraint::Unlimited => true,
-            CostConstraint::MeteredLimit { bytes_remaining } => bytes <= *bytes_remaining,
-            CostConstraint::MonthlyBudget { used, limit } => used + bytes <= *limit,
-            CostConstraint::PreferUnmetered => true,
-            CostConstraint::UnmeteredOnly => false, // Assumes edge is metered
+            Self::Unlimited => true,
+            Self::MeteredLimit { bytes_remaining } => bytes <= *bytes_remaining,
+            Self::MonthlyBudget { used, limit } => used + bytes <= *limit,
+            Self::PreferUnmetered => true,
+            Self::UnmeteredOnly => false, // Assumes edge is metered
         }
     }
 
     /// Get cost multiplier (1.0 = normal, higher = more expensive)
+    #[must_use] 
     pub fn cost_multiplier(&self, bytes: u64) -> f64 {
         match self {
-            CostConstraint::Unlimited => 1.0,
-            CostConstraint::MeteredLimit { bytes_remaining } => {
+            Self::Unlimited => 1.0,
+            Self::MeteredLimit { bytes_remaining } => {
                 if bytes > *bytes_remaining {
                     f64::INFINITY
                 } else {
@@ -178,7 +209,7 @@ impl CostConstraint {
                     1.0 + ratio // Cost increases as budget depletes
                 }
             }
-            CostConstraint::MonthlyBudget { used, limit } => {
+            Self::MonthlyBudget { used, limit } => {
                 if used + bytes > *limit {
                     f64::INFINITY
                 } else {
@@ -186,29 +217,36 @@ impl CostConstraint {
                     1.0 + ratio * 2.0 // Cost increases with budget usage
                 }
             }
-            CostConstraint::PreferUnmetered => 1.5, // Prefer unmetered
-            CostConstraint::UnmeteredOnly => f64::INFINITY, // Block metered
+            Self::PreferUnmetered => 1.5, // Prefer unmetered
+            Self::UnmeteredOnly => f64::INFINITY, // Block metered
         }
     }
 }
 
 /// Power constraint types
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum PowerConstraint {
     /// No power concerns
     Unlimited,
     /// Only when plugged into AC power
     PluggedInOnly,
     /// Minimum battery level required (0-100)
-    MinBattery { percent: u8 },
+    MinBattery {
+        /// Minimum battery percentage required (0-100)
+        percent: u8
+    },
     /// Low power mode (reduce activity)
     LowPowerMode,
     /// Only during charging windows
-    Scheduled { charge_windows: Vec<TimeWindow> },
+    Scheduled {
+        /// Time windows when charging is allowed
+        charge_windows: Vec<TimeWindow>
+    },
 }
 
 impl PowerConstraint {
     /// Check if constraint allows transfers
+    #[must_use] 
     pub fn is_allowed(
         &self,
         battery_level: Option<u8>,
@@ -216,21 +254,22 @@ impl PowerConstraint {
         now: DateTime<Utc>,
     ) -> bool {
         match self {
-            PowerConstraint::Unlimited => true,
-            PowerConstraint::PluggedInOnly => is_charging,
-            PowerConstraint::MinBattery { percent } => {
-                is_charging || battery_level.map(|l| l >= *percent).unwrap_or(true)
+            Self::Unlimited => true,
+            Self::PluggedInOnly => is_charging,
+            Self::MinBattery { percent } => {
+                is_charging || battery_level.is_none_or(|l| l >= *percent)
             }
-            PowerConstraint::LowPowerMode => {
-                is_charging || battery_level.map(|l| l >= 50).unwrap_or(true)
+            Self::LowPowerMode => {
+                is_charging || battery_level.is_none_or(|l| l >= 50)
             }
-            PowerConstraint::Scheduled { charge_windows } => {
+            Self::Scheduled { charge_windows } => {
                 charge_windows.iter().any(|w| w.is_active(now))
             }
         }
     }
 
     /// Get cost multiplier
+    #[must_use] 
     pub fn cost_multiplier(
         &self,
         battery_level: Option<u8>,
@@ -238,15 +277,15 @@ impl PowerConstraint {
         now: DateTime<Utc>,
     ) -> f64 {
         match self {
-            PowerConstraint::Unlimited => 1.0,
-            PowerConstraint::PluggedInOnly => {
+            Self::Unlimited => 1.0,
+            Self::PluggedInOnly => {
                 if is_charging {
                     1.0
                 } else {
                     f64::INFINITY
                 }
             }
-            PowerConstraint::MinBattery { percent } => {
+            Self::MinBattery { percent } => {
                 if is_charging {
                     return 0.9; // Prefer when charging
                 }
@@ -254,14 +293,14 @@ impl PowerConstraint {
                     if level < *percent {
                         f64::INFINITY
                     } else {
-                        let safety_margin = level.saturating_sub(*percent) as f64 / 100.0;
+                        let safety_margin = f64::from(level.saturating_sub(*percent)) / 100.0;
                         1.0 + (1.0 - safety_margin) // Higher cost as battery approaches min
                     }
                 } else {
                     1.0 // Unknown battery level, allow
                 }
             }
-            PowerConstraint::LowPowerMode => {
+            Self::LowPowerMode => {
                 if is_charging {
                     1.0
                 } else if let Some(level) = battery_level {
@@ -274,7 +313,7 @@ impl PowerConstraint {
                     1.2
                 }
             }
-            PowerConstraint::Scheduled { charge_windows } => {
+            Self::Scheduled { charge_windows } => {
                 if charge_windows.iter().any(|w| w.is_active(now)) {
                     1.0
                 } else {
@@ -286,18 +325,26 @@ impl PowerConstraint {
 }
 
 /// Complete constraints for a specific edge
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct EdgeConstraints {
+    /// The edge index this constraint applies to
     pub edge_idx: EdgeIdx,
+    /// Time-based constraint for this edge
     pub time: TimeConstraint,
+    /// Cost-based constraint for this edge
     pub cost: CostConstraint,
+    /// Power-based constraint for this edge
     pub power: PowerConstraint,
+    /// Maximum number of concurrent transfers allowed on this edge
     pub max_concurrent_transfers: Option<usize>,
+    /// Bandwidth limit in bits per second for this edge
     pub bandwidth_limit_bps: Option<u64>,
 }
 
 impl EdgeConstraints {
-    pub fn new(edge_idx: EdgeIdx) -> Self {
+    /// Create new edge constraints with all constraints set to unlimited
+    #[must_use] 
+    pub const fn new(edge_idx: EdgeIdx) -> Self {
         Self {
             edge_idx,
             time: TimeConstraint::Anytime,
@@ -308,23 +355,37 @@ impl EdgeConstraints {
         }
     }
 
+    /// Set the time constraint for this edge
+    #[must_use] 
     pub fn with_time(mut self, time: TimeConstraint) -> Self {
         self.time = time;
         self
     }
-    pub fn with_cost(mut self, cost: CostConstraint) -> Self {
+
+    /// Set the cost constraint for this edge
+    #[must_use] 
+    pub const fn with_cost(mut self, cost: CostConstraint) -> Self {
         self.cost = cost;
         self
     }
+
+    /// Set the power constraint for this edge
+    #[must_use] 
     pub fn with_power(mut self, power: PowerConstraint) -> Self {
         self.power = power;
         self
     }
-    pub fn with_max_transfers(mut self, max: usize) -> Self {
+
+    /// Set the maximum concurrent transfers for this edge
+    #[must_use] 
+    pub const fn with_max_transfers(mut self, max: usize) -> Self {
         self.max_concurrent_transfers = Some(max);
         self
     }
-    pub fn with_bandwidth_limit(mut self, bps: u64) -> Self {
+
+    /// Set the bandwidth limit in bits per second for this edge
+    #[must_use] 
+    pub const fn with_bandwidth_limit(mut self, bps: u64) -> Self {
         self.bandwidth_limit_bps = Some(bps);
         self
     }
@@ -333,20 +394,27 @@ impl EdgeConstraints {
 /// Severity of constraint violation (Soft = warning, Hard = blocking)
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 pub enum ViolationSeverity {
+    /// Soft violation (warning only, does not block)
     Soft,
+    /// Hard violation (blocks the operation)
     Hard,
 }
 
 /// Details of a constraint violation
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ConstraintViolation {
+    /// The edge where the violation occurred
     pub edge_idx: EdgeIdx,
+    /// The type of constraint that was violated
     pub constraint_type: String,
+    /// The severity of this violation
     pub severity: ViolationSeverity,
+    /// Human-readable message describing the violation
     pub message: String,
 }
 
 impl ConstraintViolation {
+    /// Create a new constraint violation
     pub fn new(
         edge_idx: EdgeIdx,
         constraint_type: impl Into<String>,
@@ -364,12 +432,17 @@ impl ConstraintViolation {
 
 /// Evaluates constraints for edges
 pub struct ConstraintEvaluator {
+    /// Map of edge constraints by edge index
     constraints: HashMap<EdgeIdx, EdgeConstraints>,
+    /// Map of battery levels by edge index (0-100)
     battery_levels: HashMap<EdgeIdx, u8>,
+    /// Map of charging states by edge index
     charging_states: HashMap<EdgeIdx, bool>,
 }
 
 impl ConstraintEvaluator {
+    /// Create a new constraint evaluator with no constraints
+    #[must_use] 
     pub fn new() -> Self {
         Self {
             constraints: HashMap::new(),
@@ -378,22 +451,26 @@ impl ConstraintEvaluator {
         }
     }
 
+    /// Add or update constraints for an edge
     pub fn add_constraint(&mut self, edge_idx: EdgeIdx, constraints: EdgeConstraints) {
         self.constraints.insert(edge_idx, constraints);
     }
 
+    /// Remove all constraints and state for an edge
     pub fn remove_constraint(&mut self, edge_idx: EdgeIdx) {
         self.constraints.remove(&edge_idx);
         self.battery_levels.remove(&edge_idx);
         self.charging_states.remove(&edge_idx);
     }
 
+    /// Update battery level and charging state for an edge
     pub fn update_battery(&mut self, edge_idx: EdgeIdx, level: u8, is_charging: bool) {
         self.battery_levels.insert(edge_idx, level);
         self.charging_states.insert(edge_idx, is_charging);
     }
 
     /// Check if edge is available for transfers now
+    #[must_use] 
     pub fn is_available(&self, edge_idx: EdgeIdx, now: DateTime<Utc>) -> bool {
         if let Some(constraints) = self.constraints.get(&edge_idx) {
             let battery = self.battery_levels.get(&edge_idx).copied();
@@ -410,6 +487,7 @@ impl ConstraintEvaluator {
     }
 
     /// Get cost multiplier for an edge
+    #[must_use] 
     pub fn cost_multiplier(&self, edge_idx: EdgeIdx, now: DateTime<Utc>, bytes: u64) -> f64 {
         if let Some(constraints) = self.constraints.get(&edge_idx) {
             let battery = self.battery_levels.get(&edge_idx).copied();
@@ -431,6 +509,7 @@ impl ConstraintEvaluator {
     }
 
     /// Get list of available edges from candidates
+    #[must_use] 
     pub fn get_available_edges(&self, edges: &[EdgeIdx], now: DateTime<Utc>) -> Vec<EdgeIdx> {
         edges
             .iter()
@@ -469,7 +548,7 @@ impl ConstraintEvaluator {
                         costs.invalidate(chunk_idx, edge_idx);
                     } else {
                         // Apply multiplier to adjust cost
-                        let new_cost = (current_cost as f64 * multiplier) as f32;
+                        let new_cost = (f64::from(current_cost) * multiplier) as f32;
                         costs.set_cost(chunk_idx, edge_idx, new_cost);
                     }
                 }
@@ -496,71 +575,88 @@ pub enum SchedulePolicy {
     /// Minimize data costs
     CostConscious,
     /// Reduce activity during quiet hours
-    Quiet { hours: TimeWindow },
+    Quiet {
+        /// Time window defining quiet hours
+        hours: TimeWindow
+    },
     /// Custom weights
     Custom {
+        /// Weight for time constraints (0.0-1.0)
         time_weight: f64,
+        /// Weight for cost constraints (0.0-1.0)
         cost_weight: f64,
+        /// Weight for power constraints (0.0-1.0)
         power_weight: f64,
     },
 }
 
 impl SchedulePolicy {
     /// Get time weight for this policy
-    pub fn time_weight(&self) -> f64 {
+    #[must_use] 
+    pub const fn time_weight(&self) -> f64 {
         match self {
-            SchedulePolicy::Performance => 0.1,
-            SchedulePolicy::Balanced => 0.3,
-            SchedulePolicy::EcoFriendly => 0.2,
-            SchedulePolicy::CostConscious => 0.2,
-            SchedulePolicy::Quiet { .. } => 0.5,
-            SchedulePolicy::Custom { time_weight, .. } => *time_weight,
+            Self::Performance => 0.1,
+            Self::Balanced => 0.3,
+            Self::EcoFriendly => 0.2,
+            Self::CostConscious => 0.2,
+            Self::Quiet { .. } => 0.5,
+            Self::Custom { time_weight, .. } => *time_weight,
         }
     }
 
     /// Get cost weight for this policy
-    pub fn cost_weight(&self) -> f64 {
+    #[must_use] 
+    pub const fn cost_weight(&self) -> f64 {
         match self {
-            SchedulePolicy::Performance => 0.1,
-            SchedulePolicy::Balanced => 0.3,
-            SchedulePolicy::EcoFriendly => 0.2,
-            SchedulePolicy::CostConscious => 0.6,
-            SchedulePolicy::Quiet { .. } => 0.2,
-            SchedulePolicy::Custom { cost_weight, .. } => *cost_weight,
+            Self::Performance => 0.1,
+            Self::Balanced => 0.3,
+            Self::EcoFriendly => 0.2,
+            Self::CostConscious => 0.6,
+            Self::Quiet { .. } => 0.2,
+            Self::Custom { cost_weight, .. } => *cost_weight,
         }
     }
 
     /// Get power weight for this policy
-    pub fn power_weight(&self) -> f64 {
+    #[must_use] 
+    pub const fn power_weight(&self) -> f64 {
         match self {
-            SchedulePolicy::Performance => 0.1,
-            SchedulePolicy::Balanced => 0.3,
-            SchedulePolicy::EcoFriendly => 0.6,
-            SchedulePolicy::CostConscious => 0.2,
-            SchedulePolicy::Quiet { .. } => 0.3,
-            SchedulePolicy::Custom { power_weight, .. } => *power_weight,
+            Self::Performance => 0.1,
+            Self::Balanced => 0.3,
+            Self::EcoFriendly => 0.6,
+            Self::CostConscious => 0.2,
+            Self::Quiet { .. } => 0.3,
+            Self::Custom { power_weight, .. } => *power_weight,
         }
     }
 }
 
 /// Policy-based scheduling engine
 pub struct PolicyEngine {
+    /// The active scheduling policy
     policy: SchedulePolicy,
 }
 
 impl PolicyEngine {
-    pub fn new(policy: SchedulePolicy) -> Self {
+    /// Create a new policy engine with the given scheduling policy
+    #[must_use] 
+    pub const fn new(policy: SchedulePolicy) -> Self {
         Self { policy }
     }
+
+    /// Update the active scheduling policy
     pub fn set_policy(&mut self, policy: SchedulePolicy) {
         self.policy = policy;
     }
-    pub fn policy(&self) -> &SchedulePolicy {
+
+    /// Get a reference to the active scheduling policy
+    #[must_use] 
+    pub const fn policy(&self) -> &SchedulePolicy {
         &self.policy
     }
 
     /// Adjust costs based on policy
-    pub fn adjust_costs(
+    pub const fn adjust_costs(
         &self,
         _costs: &mut CpuCostMatrix,
         _constraints: &ConstraintEvaluator,
@@ -572,6 +668,7 @@ impl PolicyEngine {
     }
 
     /// Filter edges based on policy and constraints
+    #[must_use] 
     pub fn filter_edges(
         &self,
         edges: &[EdgeIdx],
@@ -592,6 +689,7 @@ impl PolicyEngine {
     }
 
     /// Determine if transfers should be paused
+    #[must_use] 
     pub fn should_pause_transfers(
         &self,
         _constraints: &ConstraintEvaluator,
@@ -604,7 +702,8 @@ impl PolicyEngine {
     }
 
     /// Get transfer priority level (0-255)
-    pub fn get_transfer_priority(&self) -> u8 {
+    #[must_use] 
+    pub const fn get_transfer_priority(&self) -> u8 {
         match self.policy {
             SchedulePolicy::Performance => 255,
             SchedulePolicy::Balanced => 128,

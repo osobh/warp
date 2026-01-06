@@ -48,7 +48,7 @@ impl AppState {
         F: FnOnce(&mut DashboardState),
     {
         let mut state = self.state.write().await;
-        f(&mut *state);
+        f(&mut state);
         let _ = self.update_tx.send(());
     }
 

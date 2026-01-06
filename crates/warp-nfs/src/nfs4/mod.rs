@@ -9,7 +9,7 @@ pub mod state;
 
 use bytes::Bytes;
 
-use crate::error::{NfsResult, NfsStatus};
+use crate::error::NfsStatus;
 use crate::rpc::xdr::{XdrDecoder, XdrEncoder};
 
 /// NFSv4.1 minor version

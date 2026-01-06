@@ -263,10 +263,12 @@ pub struct ChaCha20Poly1305 {
     /// CUDA context (reserved for future multi-GPU support)
     #[allow(dead_code)]
     ctx: Arc<CudaContext>,
+    /// CUDA stream for asynchronous kernel execution and memory transfers
     stream: Arc<CudaStream>,
     /// Compiled module (kept alive for function lifetime)
     #[allow(dead_code)]
     module: Arc<CudaModule>,
+    /// CUDA function handle for the chacha20_encrypt kernel
     encrypt_fn: CudaFunction,
 }
 
@@ -574,6 +576,7 @@ impl ChaCha20Poly1305 {
 ///
 /// Highly efficient on GPU as each message can be encrypted independently.
 pub struct EncryptionBatch {
+    /// Underlying ChaCha20-Poly1305 cipher instance used for encrypting all messages in the batch
     cipher: ChaCha20Poly1305,
 }
 

@@ -69,7 +69,7 @@ use std::path::Path;
 use std::sync::Arc;
 use std::time::Duration;
 use tracing::{debug, info};
-use warp_store::{ObjectKey, Store, StoreConfig};
+use warp_store::{Store, StoreConfig};
 
 /// Configuration for the WARP filesystem
 #[derive(Debug, Clone)]
@@ -193,7 +193,7 @@ impl WarpFs {
         info!(path = %mountpoint.display(), "Mounting WARP filesystem");
 
         // Build FUSE mount options
-        let mut options = vec![
+        let options = vec![
             fuser::MountOption::FSName("warp-fs".to_string()),
             fuser::MountOption::Subtype("warp".to_string()),
             fuser::MountOption::DefaultPermissions,

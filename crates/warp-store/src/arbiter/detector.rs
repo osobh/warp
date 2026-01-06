@@ -1,14 +1,14 @@
 //! Split-brain detection and partition monitoring
 
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 use std::sync::Arc;
 use std::time::{Duration, Instant, SystemTime};
 
 use dashmap::DashMap;
 use parking_lot::RwLock;
-use tracing::{debug, info, warn};
+use tracing::{info, warn};
 
-use super::vote::{NodeId, QuorumStatus, VoteTracker};
+use super::vote::{NodeId, VoteTracker};
 use crate::replication::DomainId;
 
 /// State of a network partition
@@ -258,7 +258,7 @@ impl SplitBrainDetector {
 
         self.domain_nodes
             .entry(domain_id)
-            .or_insert_with(HashSet::new)
+            .or_default()
             .insert(node_id);
     }
 

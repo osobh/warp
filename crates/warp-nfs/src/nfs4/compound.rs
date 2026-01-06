@@ -9,67 +9,130 @@ use crate::error::NfsStatus;
 use crate::rpc::xdr::{XdrDecoder, XdrEncoder};
 
 /// NFSv4.1 operation codes (RFC 8881)
+///
+/// These codes identify individual operations within a COMPOUND request.
+/// Operations 3-39 are from NFSv4.0, operations 40-58 were added in NFSv4.1.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u32)]
 pub enum Nfs4Op {
+    // ===== NFSv4.0 Operations =====
+    /// Check access permissions.
     Access = 3,
+    /// Close a file.
     Close = 4,
+    /// Commit cached data to stable storage.
     Commit = 5,
+    /// Create a file or directory.
     Create = 6,
+    /// Purge delegations awaiting recovery.
     DelegPurge = 7,
+    /// Return a delegation.
     DelegReturn = 8,
+    /// Get file attributes.
     GetAttr = 9,
+    /// Get current filehandle.
     GetFh = 10,
+    /// Create a hard link.
     Link = 11,
+    /// Create a byte-range lock.
     Lock = 12,
+    /// Test for lock.
     LockT = 13,
+    /// Unlock byte-range.
     LockU = 14,
+    /// Look up filename.
     Lookup = 15,
+    /// Look up parent directory.
     LookupP = 16,
+    /// Verify attributes don't match.
     NVerify = 17,
+    /// Open a file.
     Open = 18,
+    /// Open named attribute directory.
     OpenAttr = 19,
+    /// Confirm open (NFSv4.0).
     OpenConfirm = 20,
+    /// Reduce open file access.
     OpenDowngrade = 21,
+    /// Set current filehandle.
     PutFh = 22,
+    /// Set public filehandle.
     PutPubFh = 23,
+    /// Set root filehandle.
     PutRootFh = 24,
+    /// Read from file.
     Read = 25,
+    /// Read directory.
     ReadDir = 26,
+    /// Read symbolic link.
     ReadLink = 27,
+    /// Remove a file or directory.
     Remove = 28,
+    /// Rename a file or directory.
     Rename = 29,
+    /// Renew lease (NFSv4.0).
     Renew = 30,
+    /// Restore saved filehandle.
     RestoreFh = 31,
+    /// Save current filehandle.
     SaveFh = 32,
+    /// Get security information.
     SecInfo = 33,
+    /// Set file attributes.
     SetAttr = 34,
+    /// Set client ID (NFSv4.0).
     SetClientId = 35,
+    /// Confirm client ID (NFSv4.0).
     SetClientIdConfirm = 36,
+    /// Verify attributes match.
     Verify = 37,
+    /// Write to file.
     Write = 38,
+    /// Release lock owner state.
     ReleaseLockOwner = 39,
-    // NFSv4.1 operations
+
+    // ===== NFSv4.1 Operations =====
+    /// Control backchannel.
     BackchannelCtl = 40,
+    /// Bind connection to session.
     BindConnToSession = 41,
+    /// Exchange client identity.
     ExchangeId = 42,
+    /// Create a session.
     CreateSession = 43,
+    /// Destroy a session.
     DestroySession = 44,
+    /// Free stateid.
     FreeStateId = 45,
+    /// Get directory delegation.
     GetDirDelegation = 46,
+    /// Get device information (pNFS).
     GetDeviceInfo = 47,
+    /// Get device list (pNFS).
     GetDeviceList = 48,
+    /// Commit layout changes (pNFS).
     LayoutCommit = 49,
+    /// Get layout information (pNFS).
     LayoutGet = 50,
+    /// Return layout (pNFS).
     LayoutReturn = 51,
+    /// Get security info without name.
     SecInfoNoName = 52,
+    /// Sequence operation (session slot).
     Sequence = 53,
+    /// Set SSV (state protection).
     SetSsv = 54,
+    /// Test state IDs.
     TestStateId = 55,
+    /// Request delegation.
     WantDelegation = 56,
+    /// Destroy client ID.
     DestroyClientId = 57,
+    /// Signal reclaim complete.
     ReclaimComplete = 58,
-    // Illegal operation marker
+
+    // ===== Error Marker =====
+    /// Illegal/unknown operation.
     Illegal = 10044,
 }
 

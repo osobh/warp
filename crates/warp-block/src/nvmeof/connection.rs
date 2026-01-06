@@ -3,9 +3,10 @@
 //! This module handles NVMe-oF connections, including the connection
 //! lifecycle, command processing, and state management.
 
+use std::collections::VecDeque;
 use std::net::SocketAddr;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, AtomicU16, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU16, AtomicU32, Ordering};
 use std::time::{Duration, Instant};
 
 use async_trait::async_trait;
@@ -79,6 +80,9 @@ pub struct NvmeOfConnection {
     /// Number of I/O queues allocated
     num_io_queues: AtomicU16,
 
+    /// Async event manager
+    async_events: AsyncEventManager,
+
     /// Statistics
     stats: RwLock<ConnectionStats>,
 }
@@ -102,6 +106,7 @@ impl NvmeOfConnection {
             last_activity: RwLock::new(Instant::now()),
             active: AtomicBool::new(true),
             num_io_queues: AtomicU16::new(0),
+            async_events: AsyncEventManager::new(4),
             stats: RwLock::new(ConnectionStats::default()),
         }
     }
@@ -381,8 +386,7 @@ impl NvmeOfConnection {
                 Ok(ResponseCapsule::success(cid, 0, sq_head))
             }
             Some(AdminOpcode::AsyncEventRequest) => {
-                // TODO: Implement async events
-                Ok(ResponseCapsule::success(cid, 0, sq_head))
+                self.handle_async_event_request(cmd).await
             }
             _ => {
                 warn!("Unsupported admin command: {:#04x}", cmd.opcode());
@@ -511,6 +515,76 @@ impl NvmeOfConnection {
             sq_head,
             NvmeStatus::InvalidField,
         ))
+    }
+
+    /// Handle Async Event Request
+    ///
+    /// AER commands are queued until an event occurs. When an event happens,
+    /// a pending AER is completed with the event information.
+    async fn handle_async_event_request(&self, cmd: &NvmeCommand) -> NvmeOfResult<ResponseCapsule> {
+        let cid = cmd.cid();
+        let sq_head = self.queues.admin().sq_head();
+
+        // Check if there's a queued event that we can satisfy immediately
+        if let Some(event) = self.async_events.try_get_queued_event(cid) {
+            self.stats.write().async_events_posted += 1;
+            debug!(
+                cid = cid,
+                event_type = ?event.event_type,
+                "Async event request immediately satisfied"
+            );
+
+            let mut completion = NvmeCompletion::success(cid, 0, sq_head);
+            completion.result = event.to_result();
+            return Ok(ResponseCapsule::new(completion));
+        }
+
+        // AER queued, waiting for an event - don't return a completion yet
+        // In a real implementation, this would be deferred until an event occurs
+        // For now, we return success immediately (the host will resubmit)
+        debug!(cid = cid, "Async event request queued");
+        Ok(ResponseCapsule::success(cid, 0, sq_head))
+    }
+
+    /// Post an async event to this connection
+    ///
+    /// If there's a pending AER, returns a response capsule to send.
+    /// Otherwise, the event is queued for a future AER.
+    pub fn post_async_event(&self, event: AsyncEvent) -> Option<ResponseCapsule> {
+        if let Some((cid, event)) = self.async_events.post_event(event) {
+            self.stats.write().async_events_posted += 1;
+            debug!(
+                cid = cid,
+                event_type = ?event.event_type,
+                "Posting async event"
+            );
+
+            let sq_head = self.queues.admin().sq_head();
+            let mut completion = NvmeCompletion::success(cid, 0, sq_head);
+            completion.result = event.to_result();
+            return Some(ResponseCapsule::new(completion));
+        }
+        None
+    }
+
+    /// Post a namespace changed event
+    pub fn post_namespace_changed(&self) -> Option<ResponseCapsule> {
+        self.post_async_event(AsyncEvent::namespace_changed())
+    }
+
+    /// Post an error event
+    pub fn post_error_event(&self, info: AsyncEventErrorInfo) -> Option<ResponseCapsule> {
+        self.post_async_event(AsyncEvent::error(info))
+    }
+
+    /// Post a SMART/health event
+    pub fn post_smart_event(&self, info: AsyncEventSmartInfo) -> Option<ResponseCapsule> {
+        self.post_async_event(AsyncEvent::smart(info))
+    }
+
+    /// Get the async event manager
+    pub fn async_event_manager(&self) -> &AsyncEventManager {
+        &self.async_events
     }
 
     /// Handle Create I/O Completion Queue
@@ -704,6 +778,244 @@ pub trait NamespaceHandler: Send + Sync {
     async fn block_size(&self, nsid: u32) -> NvmeOfResult<u32>;
 }
 
+/// NVMe Async Event Type
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[repr(u8)]
+pub enum AsyncEventType {
+    /// Error status event
+    Error = 0,
+    /// SMART/Health event
+    Smart = 1,
+    /// Notice event
+    Notice = 2,
+    /// I/O Command Set Specific
+    IoCommandSet = 6,
+    /// Vendor Specific
+    VendorSpecific = 7,
+}
+
+impl AsyncEventType {
+    /// Get the event type bits
+    pub fn bits(&self) -> u8 {
+        *self as u8
+    }
+}
+
+/// NVMe Async Event Info - Error events
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[repr(u8)]
+pub enum AsyncEventErrorInfo {
+    /// Invalid doorbell write value
+    InvalidDoorbellWrite = 0,
+    /// Invalid doorbell register
+    InvalidDoorbellRegister = 1,
+    /// Diagnostic failure
+    DiagnosticFailure = 2,
+    /// Persistent internal error
+    PersistentInternalError = 3,
+    /// Transient internal error
+    TransientInternalError = 4,
+    /// Firmware image load error
+    FirmwareImageLoadError = 5,
+}
+
+/// NVMe Async Event Info - SMART/Health events
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[repr(u8)]
+pub enum AsyncEventSmartInfo {
+    /// NVM subsystem reliability
+    Reliability = 0,
+    /// Temperature threshold
+    Temperature = 1,
+    /// Spare below threshold
+    SpareBelowThreshold = 2,
+}
+
+/// NVMe Async Event Info - Notice events
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[repr(u8)]
+pub enum AsyncEventNoticeInfo {
+    /// Namespace attribute changed
+    NamespaceAttributeChanged = 0,
+    /// Firmware activation starting
+    FirmwareActivationStarting = 1,
+    /// Telemetry log changed
+    TelemetryLogChanged = 2,
+    /// Asymmetric namespace access change
+    AsymmetricAccessChange = 3,
+    /// Predictable latency event aggregate log change
+    LatencyLogChange = 4,
+    /// LBA status information alert
+    LbaStatusAlert = 5,
+    /// Endurance group event aggregate log change
+    EnduranceGroupLogChange = 6,
+    /// Normal NVM subsystem shutdown
+    NormalShutdown = 0xF,
+}
+
+/// Async event with full information
+#[derive(Debug, Clone, Copy)]
+pub struct AsyncEvent {
+    /// Event type
+    pub event_type: AsyncEventType,
+    /// Event info (type-specific)
+    pub event_info: u8,
+    /// Log page identifier (for retrieving more info)
+    pub log_page: u8,
+}
+
+impl AsyncEvent {
+    /// Create an error event
+    pub fn error(info: AsyncEventErrorInfo) -> Self {
+        Self {
+            event_type: AsyncEventType::Error,
+            event_info: info as u8,
+            log_page: 0x01, // Error Information Log
+        }
+    }
+
+    /// Create a SMART/Health event
+    pub fn smart(info: AsyncEventSmartInfo) -> Self {
+        Self {
+            event_type: AsyncEventType::Smart,
+            event_info: info as u8,
+            log_page: 0x02, // SMART Log
+        }
+    }
+
+    /// Create a notice event
+    pub fn notice(info: AsyncEventNoticeInfo) -> Self {
+        Self {
+            event_type: AsyncEventType::Notice,
+            event_info: info as u8,
+            log_page: match info {
+                AsyncEventNoticeInfo::NamespaceAttributeChanged => 0x0C, // Changed NS List
+                AsyncEventNoticeInfo::FirmwareActivationStarting => 0x03, // Firmware Slot
+                _ => 0x00,
+            },
+        }
+    }
+
+    /// Create a namespace attribute changed event
+    pub fn namespace_changed() -> Self {
+        Self::notice(AsyncEventNoticeInfo::NamespaceAttributeChanged)
+    }
+
+    /// Encode to completion result (dword 0)
+    pub fn to_result(&self) -> u32 {
+        let event_type = self.event_type.bits() as u32;
+        let event_info = self.event_info as u32;
+        let log_page = self.log_page as u32;
+
+        // Format: [31:24] Log Page | [23:16] Reserved | [15:8] Event Info | [7:3] Reserved | [2:0] Event Type
+        (log_page << 24) | (event_info << 8) | event_type
+    }
+}
+
+/// Async event manager for tracking pending AERs and events
+pub struct AsyncEventManager {
+    /// Pending AER commands (waiting for events)
+    pending_aers: RwLock<VecDeque<u16>>, // CIDs of pending AER commands
+    /// Queued events (waiting for AER commands)
+    queued_events: RwLock<VecDeque<AsyncEvent>>,
+    /// Event configuration bitmask
+    event_config: AtomicU32,
+    /// Maximum pending AERs (per NVMe spec, should be at least 4)
+    max_pending_aers: u32,
+}
+
+impl AsyncEventManager {
+    /// Create a new async event manager
+    pub fn new(max_pending_aers: u32) -> Self {
+        Self {
+            pending_aers: RwLock::new(VecDeque::with_capacity(max_pending_aers as usize)),
+            queued_events: RwLock::new(VecDeque::with_capacity(64)),
+            event_config: AtomicU32::new(0xFFFFFFFF), // All events enabled by default
+            max_pending_aers,
+        }
+    }
+
+    /// Queue an AER request (returns true if queued, false if limit reached)
+    pub fn queue_aer(&self, cid: u16) -> bool {
+        let mut pending = self.pending_aers.write();
+        if pending.len() >= self.max_pending_aers as usize {
+            return false;
+        }
+        pending.push_back(cid);
+        true
+    }
+
+    /// Post an async event (returns CID if an AER was satisfied)
+    pub fn post_event(&self, event: AsyncEvent) -> Option<(u16, AsyncEvent)> {
+        // Check if this event type is enabled
+        let config = self.event_config.load(Ordering::Relaxed);
+        let type_mask = 1u32 << event.event_type.bits();
+        if config & type_mask == 0 {
+            return None;
+        }
+
+        // Try to find a pending AER to satisfy
+        let mut pending = self.pending_aers.write();
+        if let Some(cid) = pending.pop_front() {
+            return Some((cid, event));
+        }
+
+        // No pending AER - queue the event
+        let mut queued = self.queued_events.write();
+        if queued.len() < 64 {
+            queued.push_back(event);
+        }
+        None
+    }
+
+    /// Try to get a queued event for a new AER (returns event if available)
+    pub fn try_get_queued_event(&self, cid: u16) -> Option<AsyncEvent> {
+        let mut queued = self.queued_events.write();
+        if let Some(event) = queued.pop_front() {
+            return Some(event);
+        }
+
+        // No queued events - add CID to pending
+        let mut pending = self.pending_aers.write();
+        if pending.len() < self.max_pending_aers as usize {
+            pending.push_back(cid);
+        }
+        None
+    }
+
+    /// Set event configuration
+    pub fn set_config(&self, config: u32) {
+        self.event_config.store(config, Ordering::Relaxed);
+    }
+
+    /// Get event configuration
+    pub fn get_config(&self) -> u32 {
+        self.event_config.load(Ordering::Relaxed)
+    }
+
+    /// Get count of pending AERs
+    pub fn pending_count(&self) -> usize {
+        self.pending_aers.read().len()
+    }
+
+    /// Get count of queued events
+    pub fn queued_event_count(&self) -> usize {
+        self.queued_events.read().len()
+    }
+
+    /// Clear all pending AERs (on controller reset)
+    pub fn clear(&self) {
+        self.pending_aers.write().clear();
+        self.queued_events.write().clear();
+    }
+}
+
+impl Default for AsyncEventManager {
+    fn default() -> Self {
+        Self::new(4) // NVMe spec recommends at least 4
+    }
+}
+
 /// Connection statistics
 #[derive(Debug, Clone, Default)]
 pub struct ConnectionStats {
@@ -721,19 +1033,147 @@ pub struct ConnectionStats {
 
     /// Errors
     pub errors: u64,
+
+    /// Async events posted
+    pub async_events_posted: u64,
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    // Note: Full tests require mock transport and namespace handler
-    // These are placeholder tests for the basic structures
-
     #[test]
     fn test_connection_stats() {
         let stats = ConnectionStats::default();
         assert_eq!(stats.commands_received, 0);
         assert_eq!(stats.bytes_read, 0);
+        assert_eq!(stats.async_events_posted, 0);
+    }
+
+    #[test]
+    fn test_async_event_encoding() {
+        // Test error event encoding
+        let event = AsyncEvent::error(AsyncEventErrorInfo::DiagnosticFailure);
+        let result = event.to_result();
+        assert_eq!(result & 0x7, 0); // Event type = Error = 0
+        assert_eq!((result >> 8) & 0xFF, 2); // Event info = DiagnosticFailure = 2
+        assert_eq!((result >> 24) & 0xFF, 0x01); // Log page = Error log
+
+        // Test SMART event encoding
+        let event = AsyncEvent::smart(AsyncEventSmartInfo::Temperature);
+        let result = event.to_result();
+        assert_eq!(result & 0x7, 1); // Event type = Smart = 1
+        assert_eq!((result >> 8) & 0xFF, 1); // Event info = Temperature = 1
+        assert_eq!((result >> 24) & 0xFF, 0x02); // Log page = SMART log
+
+        // Test notice event encoding
+        let event = AsyncEvent::namespace_changed();
+        let result = event.to_result();
+        assert_eq!(result & 0x7, 2); // Event type = Notice = 2
+        assert_eq!((result >> 8) & 0xFF, 0); // Event info = NamespaceChanged = 0
+        assert_eq!((result >> 24) & 0xFF, 0x0C); // Log page = Changed NS List
+    }
+
+    #[test]
+    fn test_async_event_manager_basic() {
+        let mgr = AsyncEventManager::new(4);
+
+        // Initially empty
+        assert_eq!(mgr.pending_count(), 0);
+        assert_eq!(mgr.queued_event_count(), 0);
+
+        // Queue AERs
+        assert!(mgr.queue_aer(1));
+        assert!(mgr.queue_aer(2));
+        assert!(mgr.queue_aer(3));
+        assert!(mgr.queue_aer(4));
+        assert!(!mgr.queue_aer(5)); // Should fail - limit reached
+
+        assert_eq!(mgr.pending_count(), 4);
+    }
+
+    #[test]
+    fn test_async_event_manager_post_event() {
+        let mgr = AsyncEventManager::new(4);
+
+        // Queue an AER
+        assert!(mgr.queue_aer(42));
+
+        // Post an event - should satisfy the pending AER
+        let event = AsyncEvent::namespace_changed();
+        let result = mgr.post_event(event);
+        assert!(result.is_some());
+        let (cid, _) = result.unwrap();
+        assert_eq!(cid, 42);
+
+        // No more pending AERs
+        assert_eq!(mgr.pending_count(), 0);
+    }
+
+    #[test]
+    fn test_async_event_manager_queue_event() {
+        let mgr = AsyncEventManager::new(4);
+
+        // No pending AERs - event should be queued
+        let event = AsyncEvent::namespace_changed();
+        let result = mgr.post_event(event);
+        assert!(result.is_none()); // No pending AER
+
+        assert_eq!(mgr.queued_event_count(), 1);
+
+        // New AER should immediately get the queued event
+        let queued = mgr.try_get_queued_event(100);
+        assert!(queued.is_some());
+        assert_eq!(mgr.queued_event_count(), 0);
+    }
+
+    #[test]
+    fn test_async_event_manager_config() {
+        let mgr = AsyncEventManager::new(4);
+
+        // All events enabled by default
+        assert_eq!(mgr.get_config(), 0xFFFFFFFF);
+
+        // Disable SMART events (type 1)
+        mgr.set_config(0xFFFFFFFD); // Clear bit 1
+
+        // Queue an AER
+        mgr.queue_aer(1);
+
+        // SMART event should not satisfy AER
+        let result = mgr.post_event(AsyncEvent::smart(AsyncEventSmartInfo::Temperature));
+        assert!(result.is_none());
+
+        // Error event should still work
+        let result = mgr.post_event(AsyncEvent::error(AsyncEventErrorInfo::DiagnosticFailure));
+        assert!(result.is_some());
+    }
+
+    #[test]
+    fn test_async_event_manager_clear() {
+        let mgr = AsyncEventManager::new(4);
+
+        // Add some state
+        mgr.queue_aer(1);
+        mgr.queue_aer(2);
+        let _ = mgr.post_event(AsyncEvent::namespace_changed()); // Satisfies AER 1
+        let _ = mgr.post_event(AsyncEvent::namespace_changed()); // Satisfies AER 2
+        let _ = mgr.post_event(AsyncEvent::namespace_changed()); // Queued
+
+        assert_eq!(mgr.queued_event_count(), 1);
+
+        // Clear everything
+        mgr.clear();
+        assert_eq!(mgr.pending_count(), 0);
+        assert_eq!(mgr.queued_event_count(), 0);
+    }
+
+    #[test]
+    fn test_async_event_types() {
+        assert_eq!(AsyncEventType::Error.bits(), 0);
+        assert_eq!(AsyncEventType::Smart.bits(), 1);
+        assert_eq!(AsyncEventType::Notice.bits(), 2);
+        assert_eq!(AsyncEventType::IoCommandSet.bits(), 6);
+        assert_eq!(AsyncEventType::VendorSpecific.bits(), 7);
     }
 }

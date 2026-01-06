@@ -213,7 +213,7 @@ impl DpuCipher for CpuCipher {
         } else {
             cipher.encrypt(nonce, plaintext)
         }
-        .map_err(|e| Error::CryptoAccel(format!("Encryption failed: {}", e)))?;
+        .map_err(|e| Error::CryptoAccel(format!("Encryption failed: {e}")))?;
 
         Ok(ciphertext)
     }
@@ -249,7 +249,7 @@ impl DpuCipher for CpuCipher {
         } else {
             cipher.decrypt(nonce, ciphertext)
         }
-        .map_err(|e| Error::CryptoAccel(format!("Decryption failed: {}", e)))?;
+        .map_err(|e| Error::CryptoAccel(format!("Decryption failed: {e}")))?;
 
         Ok(plaintext)
     }
@@ -426,7 +426,7 @@ impl DpuCompressor for CpuCompressor {
 
         let result = match self.algorithm {
             CompressionAlgorithm::Zstd => zstd::bulk::compress(input, self.level)
-                .map_err(|e| Error::CompressAccel(format!("Zstd compression failed: {}", e)))?,
+                .map_err(|e| Error::CompressAccel(format!("Zstd compression failed: {e}")))?,
             CompressionAlgorithm::Lz4 => lz4_flex::compress_prepend_size(input),
         };
 
@@ -444,9 +444,9 @@ impl DpuCompressor for CpuCompressor {
 
         let result = match self.algorithm {
             CompressionAlgorithm::Zstd => zstd::bulk::decompress(input, 64 * 1024 * 1024)
-                .map_err(|e| Error::DecompressAccel(format!("Zstd decompression failed: {}", e)))?,
+                .map_err(|e| Error::DecompressAccel(format!("Zstd decompression failed: {e}")))?,
             CompressionAlgorithm::Lz4 => lz4_flex::decompress_size_prepended(input)
-                .map_err(|e| Error::DecompressAccel(format!("LZ4 decompression failed: {}", e)))?,
+                .map_err(|e| Error::DecompressAccel(format!("LZ4 decompression failed: {e}")))?,
         };
 
         self.stats
@@ -590,7 +590,7 @@ impl DpuErasureCoder for CpuErasureCoder {
 
         // Calculate shard size (must be same for all shards, and multiple of 2 for reed-solomon-simd)
         let shard_size = {
-            let base = (data.len() + self.data_shards - 1) / self.data_shards;
+            let base = data.len().div_ceil(self.data_shards);
             // Round up to next multiple of 2
             (base + 1) & !1
         };
@@ -610,10 +610,10 @@ impl DpuErasureCoder for CpuErasureCoder {
         }
 
         // Use the simple encode API
-        let original_refs: Vec<&[u8]> = original_shards.iter().map(|s| s.as_slice()).collect();
+        let original_refs: Vec<&[u8]> = original_shards.iter().map(std::vec::Vec::as_slice).collect();
         let recovery =
             reed_solomon_simd::encode(self.data_shards, self.parity_shards, &original_refs)
-                .map_err(|e| Error::ErasureCoding(format!("Encoding failed: {}", e)))?;
+                .map_err(|e| Error::ErasureCoding(format!("Encoding failed: {e}")))?;
 
         // Combine original and recovery shards
         let mut all_shards = original_shards;
@@ -647,7 +647,7 @@ impl DpuErasureCoder for CpuErasureCoder {
         // Get shard size from first available shard
         let shard_size = shards
             .iter()
-            .find_map(|s| s.as_ref().map(|v| v.len()))
+            .find_map(|s| s.as_ref().map(std::vec::Vec::len))
             .ok_or_else(|| Error::ErasureCoding("No shards available".into()))?;
 
         // Build original and recovery shard maps
@@ -667,7 +667,7 @@ impl DpuErasureCoder for CpuErasureCoder {
         // Use the simple decode API
         let restored =
             reed_solomon_simd::decode(self.data_shards, self.parity_shards, original, recovery)
-                .map_err(|e| Error::ErasureCoding(format!("Decoding failed: {}", e)))?;
+                .map_err(|e| Error::ErasureCoding(format!("Decoding failed: {e}")))?;
 
         // Reconstruct original data from restored shards
         // The restored map contains only the shards that were missing
@@ -682,7 +682,7 @@ impl DpuErasureCoder for CpuErasureCoder {
                 // This shard was already available
                 result.extend_from_slice(shard);
             } else {
-                return Err(Error::ErasureCoding(format!("Missing shard {}", i)));
+                return Err(Error::ErasureCoding(format!("Missing shard {i}")));
             }
         }
 

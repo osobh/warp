@@ -1,7 +1,5 @@
 //! Tensor format readers and writers
 
-use std::collections::HashMap;
-use std::io::{Read, Write};
 
 use bytes::Bytes;
 use serde::{Deserialize, Serialize};
@@ -14,13 +12,13 @@ use crate::tensor::{TensorData, TensorDtype, TensorMeta};
 pub enum TensorFormat {
     /// WARP native format (efficient for storage)
     WarpNative,
-    /// Safetensors format (HuggingFace)
+    /// Safetensors format (`HuggingFace`)
     Safetensors,
-    /// NumPy .npy format
+    /// `NumPy` .npy format
     Numpy,
     /// GGUF format (llama.cpp)
     Gguf,
-    /// PyTorch .pt format (pickle-based, limited support)
+    /// `PyTorch` .pt format (pickle-based, limited support)
     PyTorch,
     /// Raw binary format
     Raw,
@@ -28,6 +26,7 @@ pub enum TensorFormat {
 
 impl TensorFormat {
     /// Get file extension for format
+    #[must_use] 
     pub fn extension(&self) -> &'static str {
         match self {
             Self::WarpNative => ".warp",
@@ -40,6 +39,7 @@ impl TensorFormat {
     }
 
     /// Detect format from file extension
+    #[must_use] 
     pub fn from_extension(ext: &str) -> Option<Self> {
         match ext.to_lowercase().as_str() {
             ".warp" | "warp" => Some(Self::WarpNative),
@@ -56,18 +56,34 @@ impl TensorFormat {
 /// Format reader trait
 pub trait FormatReader: Send + Sync {
     /// Read tensor metadata without loading data
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the data format is invalid or corrupted.
     fn read_metadata(&self, data: &[u8]) -> TensorResult<Vec<TensorMeta>>;
 
     /// Read a specific tensor's data
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the tensor is not found or the data format is invalid.
     fn read_tensor(&self, data: &[u8], name: &str) -> TensorResult<TensorData>;
 
     /// Read all tensors
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the data format is invalid or corrupted.
     fn read_all(&self, data: &[u8]) -> TensorResult<Vec<TensorData>>;
 }
 
 /// Format writer trait
 pub trait FormatWriter: Send + Sync {
     /// Write tensors to bytes
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if serialization fails.
     fn write(&self, tensors: &[TensorData]) -> TensorResult<Bytes>;
 
     /// Get the format
@@ -111,6 +127,7 @@ pub struct WarpNativeReader;
 
 impl WarpNativeReader {
     /// Create a new reader
+    #[must_use] 
     pub fn new() -> Self {
         Self
     }
@@ -147,7 +164,9 @@ impl FormatReader for WarpNativeReader {
             .find(|e| e.name == name)
             .ok_or_else(|| TensorError::TensorNotFound(name.to_string()))?;
 
+        #[allow(clippy::cast_possible_truncation)]
         let start = header.header_size as usize + entry.offset as usize;
+        #[allow(clippy::cast_possible_truncation)]
         let end = start + entry.size as usize;
 
         if end > data.len() {
@@ -170,7 +189,9 @@ impl FormatReader for WarpNativeReader {
 
         let mut tensors = Vec::with_capacity(header.tensors.len());
         for entry in header.tensors {
+            #[allow(clippy::cast_possible_truncation)]
             let start = header.header_size as usize + entry.offset as usize;
+            #[allow(clippy::cast_possible_truncation)]
             let end = start + entry.size as usize;
 
             if end > data.len() {
@@ -197,6 +218,7 @@ pub struct WarpNativeWriter;
 
 impl WarpNativeWriter {
     /// Create a new writer
+    #[must_use] 
     pub fn new() -> Self {
         Self
     }
@@ -226,6 +248,7 @@ impl FormatWriter for WarpNativeWriter {
             offset += tensor.data.len() as u64;
         }
 
+        #[allow(clippy::cast_possible_truncation)]
         let header = WarpNativeHeader {
             magic: *b"WARP",
             version: 1,
@@ -238,6 +261,7 @@ impl FormatWriter for WarpNativeWriter {
             rmp_serde::to_vec(&header).map_err(|e| TensorError::Serialization(e.to_string()))?;
 
         // Create final buffer
+        #[allow(clippy::cast_possible_truncation)]
         let mut buffer = Vec::with_capacity(header_bytes.len() + offset as usize);
 
         // Write header length (8 bytes) + header + data
@@ -264,6 +288,7 @@ fn parse_warp_header(data: &[u8]) -> TensorResult<WarpNativeHeader> {
         ));
     }
 
+    #[allow(clippy::cast_possible_truncation)]
     let header_len = u64::from_le_bytes(data[0..8].try_into().unwrap()) as usize;
 
     if data.len() < 8 + header_len {
@@ -292,6 +317,10 @@ fn compute_checksum(data: &[u8]) -> String {
 }
 
 /// Create a reader for a specific format
+///
+/// # Errors
+///
+/// Returns an error if the format is not supported or not yet implemented.
 pub fn create_reader(format: TensorFormat) -> TensorResult<Box<dyn FormatReader>> {
     match format {
         TensorFormat::WarpNative => Ok(Box::new(WarpNativeReader::new())),
@@ -314,6 +343,10 @@ pub fn create_reader(format: TensorFormat) -> TensorResult<Box<dyn FormatReader>
 }
 
 /// Create a writer for a specific format
+///
+/// # Errors
+///
+/// Returns an error if the format is not supported for writing.
 pub fn create_writer(format: TensorFormat) -> TensorResult<Box<dyn FormatWriter>> {
     match format {
         TensorFormat::WarpNative => Ok(Box::new(WarpNativeWriter::new())),

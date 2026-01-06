@@ -9,7 +9,7 @@
 
 use axum::{
     Json,
-    extract::{Path, State},
+    extract::State,
 };
 use serde::{Deserialize, Serialize};
 use std::time::Instant;

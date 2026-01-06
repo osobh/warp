@@ -125,7 +125,7 @@ impl AdaptiveNeuralCompressor {
         }
 
         // Try zstd (check for zstd magic)
-        if input.len() >= 4 && &input[0..4] == &[0x28, 0xB5, 0x2F, 0xFD] {
+        if input.len() >= 4 && input[0..4] == [0x28, 0xB5, 0x2F, 0xFD] {
             return self.zstd.decompress(input);
         }
 

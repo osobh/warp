@@ -11,7 +11,7 @@ pub fn generate_self_signed() -> Result<(Vec<CertificateDer<'static>>, PrivateKe
     let cert = rcgen::generate_simple_self_signed(subject_alt_names)
         .map_err(|e| Error::Tls(format!("Failed to generate certificate: {}", e)))?;
 
-    let cert_der = CertificateDer::from(cert.cert.der().clone());
+    let cert_der = cert.cert.der().clone();
     let key_der = PrivateKeyDer::try_from(cert.key_pair.serialize_der())
         .map_err(|e| Error::Tls(format!("Failed to serialize private key: {}", e)))?;
 

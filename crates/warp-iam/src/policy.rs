@@ -286,12 +286,12 @@ impl Statement {
         }
 
         // Check resource
-        let resource_matches = match (&self.not_resource, &self.resource) {
+        
+
+        match (&self.not_resource, &self.resource) {
             (Some(nr), _) => !nr.matches(resource),
             (None, r) => r.matches(resource),
-        };
-
-        resource_matches
+        }
     }
 }
 
@@ -378,7 +378,7 @@ impl PolicyDocument {
 
     /// Convert to JSON string
     pub fn to_json(&self) -> Result<String> {
-        serde_json::to_string_pretty(self).map_err(|e| Error::Json(e))
+        serde_json::to_string_pretty(self).map_err(Error::Json)
     }
 }
 

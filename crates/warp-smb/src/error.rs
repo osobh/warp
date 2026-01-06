@@ -160,7 +160,7 @@ impl NtStatus {
     /// Check if this is a warning (informational)
     pub fn is_warning(&self) -> bool {
         let val = *self as u32;
-        val >= 0x40000000 && val < 0x80000000
+        (0x40000000..0x80000000).contains(&val)
     }
 
     /// Check if this is an error

@@ -31,7 +31,7 @@ pub struct DriftConfig {
 }
 
 impl DriftConfig {
-    /// Create a new DriftConfig with default values
+    /// Creates a new DriftConfig with default values.
     pub fn new() -> Self {
         Self {
             sample_window_ms: 5000,
@@ -41,7 +41,7 @@ impl DriftConfig {
         }
     }
 
-    /// Validate configuration values
+    /// Validates that all configuration values are within acceptable ranges.
     pub fn validate(&self) -> Result<(), String> {
         if self.sample_window_ms == 0 {
             return Err("sample_window_ms must be greater than 0".to_string());
@@ -58,25 +58,25 @@ impl DriftConfig {
         Ok(())
     }
 
-    /// Set sample window
+    /// Sets the sample window duration in milliseconds.
     pub fn with_sample_window_ms(mut self, ms: u64) -> Self {
         self.sample_window_ms = ms;
         self
     }
 
-    /// Set minimum samples
+    /// Sets the minimum number of samples required before calculating drift.
     pub fn with_min_samples(mut self, samples: usize) -> Self {
         self.min_samples = samples;
         self
     }
 
-    /// Set drift threshold
+    /// Sets the threshold for considering drift significant.
     pub fn with_drift_threshold(mut self, threshold: f64) -> Self {
         self.drift_threshold = threshold;
         self
     }
 
-    /// Set EMA alpha
+    /// Sets the EMA (Exponential Moving Average) smoothing factor.
     pub fn with_ema_alpha(mut self, alpha: f64) -> Self {
         self.ema_alpha = alpha;
         self
@@ -107,7 +107,7 @@ pub struct DriftMetrics {
 }
 
 impl DriftMetrics {
-    /// Create new DriftMetrics with zero values
+    /// Creates new DriftMetrics with zero values and default drift ratio of 1.0.
     pub fn new() -> Self {
         Self {
             expected_speed_bps: 0,
@@ -119,12 +119,12 @@ impl DriftMetrics {
         }
     }
 
-    /// Check if performance is slower than expected
+    /// Checks if actual performance is slower than expected (drift ratio > 1.0).
     pub fn is_slower(&self) -> bool {
         self.drift_ratio > 1.0
     }
 
-    /// Check if performance is faster than expected
+    /// Checks if actual performance is faster than expected (drift ratio < 1.0).
     pub fn is_faster(&self) -> bool {
         self.drift_ratio < 1.0
     }
@@ -222,14 +222,14 @@ impl TransferTracking {
     }
 }
 
-/// Monitor transfer performance drift
+/// Monitors transfer performance drift by tracking actual vs expected metrics.
 pub struct DriftDetector {
     config: DriftConfig,
     transfers: HashMap<TransferId, TransferTracking>,
 }
 
 impl DriftDetector {
-    /// Create a new DriftDetector with the given configuration
+    /// Creates a new DriftDetector with the given configuration.
     pub fn new(config: DriftConfig) -> Self {
         Self {
             config,
@@ -237,7 +237,7 @@ impl DriftDetector {
         }
     }
 
-    /// Record a transfer sample for drift calculation
+    /// Records a transfer sample for drift calculation and updates EMA metrics.
     pub fn record_sample(
         &mut self,
         transfer_id: TransferId,
@@ -266,7 +266,7 @@ impl DriftDetector {
         edge_perf.prune_old_samples(self.config.sample_window_ms);
     }
 
-    /// Set expected performance baseline for a transfer
+    /// Sets the expected performance baseline for a transfer.
     pub fn set_baseline(
         &mut self,
         transfer_id: TransferId,
@@ -279,7 +279,7 @@ impl DriftDetector {
         );
     }
 
-    /// Calculate drift metrics for a transfer
+    /// Calculates drift metrics for a transfer based on collected samples.
     pub fn calculate_drift(&self, transfer_id: TransferId) -> DriftMetrics {
         let tracking = match self.transfers.get(&transfer_id) {
             Some(t) => t,
@@ -329,13 +329,13 @@ impl DriftDetector {
         }
     }
 
-    /// Check if a transfer is drifting beyond the threshold
+    /// Checks if a transfer is drifting beyond the specified threshold.
     pub fn is_drifting(&self, transfer_id: TransferId, threshold: f64) -> bool {
         let metrics = self.calculate_drift(transfer_id);
         (metrics.drift_ratio - 1.0).abs() > threshold
     }
 
-    /// Get edges performing below the threshold
+    /// Gets all edges performing below the specified performance threshold.
     pub fn get_slow_edges(&self, threshold: f64) -> Vec<EdgeIdx> {
         let mut slow_edges = Vec::new();
 
@@ -358,7 +358,7 @@ impl DriftDetector {
         slow_edges
     }
 
-    /// Get edges performing above the threshold
+    /// Gets all edges performing above the specified performance threshold.
     pub fn get_fast_edges(&self, threshold: f64) -> Vec<EdgeIdx> {
         let mut fast_edges = Vec::new();
 
@@ -381,12 +381,12 @@ impl DriftDetector {
         fast_edges
     }
 
-    /// Clear tracking data for a transfer
+    /// Clears all tracking data for a specific transfer.
     pub fn clear(&mut self, transfer_id: TransferId) {
         self.transfers.remove(&transfer_id);
     }
 
-    /// Clear all tracking data
+    /// Clears all tracking data for all transfers.
     pub fn clear_all(&mut self) {
         self.transfers.clear();
     }
@@ -396,24 +396,40 @@ impl DriftDetector {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum ReoptTrigger {
     /// Drift exceeded acceptable threshold
-    DriftExceeded { drift_ratio: f64, threshold: f64 },
+    DriftExceeded {
+        /// The actual drift ratio observed
+        drift_ratio: f64,
+        /// The threshold that was exceeded
+        threshold: f64,
+    },
     /// Edge health degraded
     EdgeDegraded {
+        /// The edge that has degraded
         edge_idx: EdgeIdx,
+        /// The current health score of the edge
         health_score: f64,
     },
     /// Edge health recovered
     EdgeRecovered {
+        /// The edge that has recovered
         edge_idx: EdgeIdx,
+        /// The current health score of the edge
         health_score: f64,
     },
     /// Load imbalance detected
     LoadImbalance {
+        /// Edges that are overloaded
         overloaded: Vec<EdgeIdx>,
+        /// Edges that are underloaded
         underloaded: Vec<EdgeIdx>,
     },
     /// Schedule is stale
-    ScheduleStale { age_ms: u64, max_age_ms: u64 },
+    ScheduleStale {
+        /// The current age of the schedule in milliseconds
+        age_ms: u64,
+        /// The maximum allowed age in milliseconds
+        max_age_ms: u64,
+    },
     /// Manual trigger
     Manual,
 }
@@ -425,13 +441,23 @@ pub enum ReoptDecision {
     NoAction,
     /// Partial reoptimization for specific chunks/edges
     PartialReopt {
+        /// Chunks that need to be rescheduled
         affected_chunks: Vec<ChunkId>,
+        /// Edges that are affected by the reoptimization
         affected_edges: Vec<EdgeIdx>,
     },
     /// Full reoptimization needed
-    FullReopt { reason: String },
+    FullReopt {
+        /// The reason for full reoptimization
+        reason: String,
+    },
     /// Wait before deciding
-    Pause { duration_ms: u64, reason: String },
+    Pause {
+        /// How long to wait in milliseconds
+        duration_ms: u64,
+        /// The reason for pausing
+        reason: String,
+    },
 }
 
 /// Configuration for reoptimization evaluation
@@ -450,7 +476,7 @@ pub struct ReoptConfig {
 }
 
 impl ReoptConfig {
-    /// Create a new ReoptConfig with default values
+    /// Creates a new ReoptConfig with default values.
     pub fn new() -> Self {
         Self {
             min_drift_for_partial: 0.3,
@@ -461,7 +487,7 @@ impl ReoptConfig {
         }
     }
 
-    /// Validate configuration values
+    /// Validates that all configuration values are within acceptable ranges.
     pub fn validate(&self) -> Result<(), String> {
         if self.min_drift_for_partial < 0.0 {
             return Err("min_drift_for_partial must be >= 0.0".to_string());
@@ -482,14 +508,14 @@ impl Default for ReoptConfig {
     }
 }
 
-/// Decide when to trigger reoptimization
+/// Evaluates drift metrics and edge health to decide when to trigger reoptimization.
 pub struct ReoptEvaluator {
     config: ReoptConfig,
     last_reopt: Option<Instant>,
 }
 
 impl ReoptEvaluator {
-    /// Create a new ReoptEvaluator with the given configuration
+    /// Creates a new ReoptEvaluator with the given configuration.
     pub fn new(config: ReoptConfig) -> Self {
         Self {
             config,
@@ -497,7 +523,7 @@ impl ReoptEvaluator {
         }
     }
 
-    /// Evaluate drift metrics and edge health to make a reoptimization decision
+    /// Evaluates drift metrics and edge health to determine the appropriate reoptimization action.
     pub fn evaluate(
         &self,
         drift: &DriftMetrics,
@@ -553,7 +579,7 @@ impl ReoptEvaluator {
         ReoptDecision::NoAction
     }
 
-    /// Evaluate a list of triggers to make a reoptimization decision
+    /// Evaluates a list of triggers to determine if reoptimization should occur.
     pub fn should_reoptimize(&self, triggers: &[ReoptTrigger]) -> ReoptDecision {
         if let Some(remaining) = self.cooldown_remaining() {
             return ReoptDecision::Pause {
@@ -643,7 +669,7 @@ impl ReoptEvaluator {
         ReoptDecision::NoAction
     }
 
-    /// Get remaining cooldown time
+    /// Returns the remaining cooldown time before another reoptimization can occur.
     pub fn cooldown_remaining(&self) -> Option<Duration> {
         if let Some(last) = self.last_reopt {
             let elapsed = last.elapsed();
@@ -655,7 +681,7 @@ impl ReoptEvaluator {
         None
     }
 
-    /// Record that a reoptimization occurred
+    /// Records that a reoptimization occurred to enforce cooldown periods.
     pub fn record_reopt(&mut self) {
         self.last_reopt = Some(Instant::now());
     }

@@ -1,6 +1,5 @@
 //! Tensor cache with GPU-optimized eviction
 
-use std::collections::HashMap;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Duration, Instant};
@@ -8,30 +7,26 @@ use std::time::{Duration, Instant};
 use dashmap::DashMap;
 use parking_lot::RwLock;
 
-use crate::config::SpillPolicy;
-use crate::tensor::{TensorHandle, TensorId, TensorMeta};
+use crate::tensor::{TensorHandle, TensorId};
 
 /// Cache configuration
 pub use crate::config::CacheConfig;
 
 /// Eviction policy
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Default)]
 pub enum EvictionPolicy {
     /// Least Recently Used
     Lru,
     /// Least Frequently Used
     Lfu,
     /// Size-weighted LRU (prefer evicting larger tensors)
+    #[default]
     SizeWeightedLru,
     /// Gradient-aware (prefer evicting activations)
     GradientAware,
 }
 
-impl Default for EvictionPolicy {
-    fn default() -> Self {
-        Self::SizeWeightedLru
-    }
-}
 
 /// Cache entry
 struct CacheEntry {

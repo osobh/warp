@@ -5,7 +5,7 @@ use std::time::Duration;
 
 use dashmap::DashMap;
 use parking_lot::RwLock;
-use tracing::{debug, info, warn};
+use tracing::{debug, info};
 
 use super::{
     AlertLevel, EnforcementResult, QuotaAlert, QuotaEnforcement, QuotaPolicy, QuotaScope,
@@ -216,7 +216,7 @@ impl QuotaManager {
     }
 
     /// Check if a GET operation is allowed (bandwidth/rate limiting)
-    pub fn check_get(&self, bucket: &str, user: Option<&str>, bytes: u64) -> EnforcementResult {
+    pub fn check_get(&self, bucket: &str, _user: Option<&str>, bytes: u64) -> EnforcementResult {
         if !self.config.enabled {
             return EnforcementResult::Allowed;
         }

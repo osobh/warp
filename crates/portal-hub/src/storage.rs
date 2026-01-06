@@ -1,18 +1,18 @@
 //! In-memory storage for Portal Hub
 //!
 //! This module provides thread-safe in-memory storage for portals, chunks, manifests,
-//! and edge registrations. Uses DashMap for concurrent access without locks.
+//! and edge registrations. Uses `DashMap` for concurrent access without locks.
 //!
 //! # Storage Layout
 //!
-//! - Portals: Metadata and ACLs indexed by PortalId
-//! - Chunks: Encrypted content indexed by ContentId (BLAKE3 hash)
-//! - Manifests: Encrypted manifests indexed by PortalId
+//! - Portals: Metadata and ACLs indexed by `PortalId`
+//! - Chunks: Encrypted content indexed by `ContentId` (BLAKE3 hash)
+//! - Manifests: Encrypted manifests indexed by `PortalId`
 //! - Edges: Registered edge devices indexed by edge UUID
 //!
 //! # Thread Safety
 //!
-//! All storage operations are thread-safe and lock-free using DashMap.
+//! All storage operations are thread-safe and lock-free using `DashMap`.
 
 use crate::{Error, Result};
 use chrono::{DateTime, Utc};
@@ -77,14 +77,14 @@ impl EdgeInfo {
 
 /// In-memory Hub storage
 ///
-/// Thread-safe storage using DashMap for concurrent access.
+/// Thread-safe storage using `DashMap` for concurrent access.
 /// All operations are atomic and lock-free.
 pub struct HubStorage {
-    /// Portal metadata indexed by PortalId
+    /// Portal metadata indexed by `PortalId`
     portals: DashMap<PortalId, StoredPortal>,
-    /// Encrypted chunks indexed by ContentId
+    /// Encrypted chunks indexed by `ContentId`
     chunks: DashMap<ContentId, Vec<u8>>,
-    /// Encrypted manifests indexed by PortalId
+    /// Encrypted manifests indexed by `PortalId`
     manifests: DashMap<PortalId, Vec<u8>>,
     /// Edge registrations indexed by edge UUID
     edges: DashMap<Uuid, EdgeInfo>,
@@ -223,8 +223,8 @@ impl HubStorage {
     ///
     /// * `content_id` - BLAKE3 hash of the plaintext content
     /// * `encrypted_data` - The encrypted chunk data
-    pub fn store_chunk(&self, content_id: ContentId, encrypted_data: Vec<u8>) {
-        self.chunks.insert(content_id, encrypted_data);
+    pub fn store_chunk(&self, content_id: ContentId, encrypted_data: &[u8]) {
+        self.chunks.insert(content_id, encrypted_data.to_vec());
     }
 
     /// Get an encrypted chunk
@@ -276,8 +276,8 @@ impl HubStorage {
     // ========== Manifest Operations ==========
 
     /// Store an encrypted manifest
-    pub fn store_manifest(&self, portal_id: PortalId, encrypted_manifest: Vec<u8>) {
-        self.manifests.insert(portal_id, encrypted_manifest);
+    pub fn store_manifest(&self, portal_id: PortalId, encrypted_manifest: &[u8]) {
+        self.manifests.insert(portal_id, encrypted_manifest.to_vec());
     }
 
     /// Get an encrypted manifest
@@ -687,7 +687,7 @@ mod tests {
         let portal_id = Uuid::new_v4();
         let manifest_data = vec![1, 2, 3, 4, 5];
 
-        storage.store_manifest(portal_id, manifest_data.clone());
+        storage.store_manifest(portal_id, &manifest_data);
 
         let retrieved = storage
             .get_manifest(&portal_id)
@@ -711,7 +711,7 @@ mod tests {
 
         assert!(!storage.has_manifest(&portal_id));
 
-        storage.store_manifest(portal_id, vec![1, 2, 3]);
+        storage.store_manifest(portal_id, &[1, 2, 3]);
         assert!(storage.has_manifest(&portal_id));
     }
 
@@ -721,7 +721,7 @@ mod tests {
         let portal_id = Uuid::new_v4();
         let data = vec![1, 2, 3, 4, 5];
 
-        storage.store_manifest(portal_id, data.clone());
+        storage.store_manifest(portal_id, &data);
         let deleted = storage
             .delete_manifest(&portal_id)
             .expect("Failed to delete manifest");
@@ -752,7 +752,7 @@ mod tests {
         storage.store_chunk(create_test_content_id(2), vec![4, 5, 6, 7]); // 4 bytes
 
         // Add manifest
-        storage.store_manifest(portal.id, vec![8, 9, 10, 11, 12]); // 5 bytes
+        storage.store_manifest(portal.id, &[8, 9, 10, 11, 12]); // 5 bytes
 
         // Add edge
         storage

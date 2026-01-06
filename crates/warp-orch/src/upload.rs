@@ -7,7 +7,7 @@
 //! - Progress tracking and verification
 //! - Connection pooling for efficient resource usage
 
-use crate::pool::{ConnectionPool, PooledConnection};
+use crate::pool::ConnectionPool;
 use crate::progress::ProgressTracker;
 use crate::striping::StripingConfig;
 use crate::types::{
@@ -39,6 +39,7 @@ pub struct UploadConfig {
 }
 
 impl Default for UploadConfig {
+    /// Creates default upload configuration with sensible values
     fn default() -> Self {
         Self {
             max_concurrent_chunks: 8,
@@ -52,10 +53,12 @@ impl Default for UploadConfig {
 }
 
 impl UploadConfig {
+    /// Creates a new upload configuration with default values
     pub fn new() -> Self {
         Self::default()
     }
 
+    /// Validates the configuration ensuring all parameters are valid
     pub fn validate(&self) -> Result<()> {
         if self.max_concurrent_chunks == 0 {
             return Err(OrchError::InvalidState(
@@ -70,26 +73,31 @@ impl UploadConfig {
         Ok(())
     }
 
+    /// Sets the maximum number of concurrent chunk uploads
     pub fn with_max_concurrent_chunks(mut self, max: usize) -> Self {
         self.max_concurrent_chunks = max;
         self
     }
 
+    /// Sets the replication factor for chunk redundancy
     pub fn with_replication_factor(mut self, factor: usize) -> Self {
         self.replication_factor = factor;
         self
     }
 
+    /// Sets the timeout for individual chunk uploads in milliseconds
     pub fn with_chunk_timeout_ms(mut self, timeout: u64) -> Self {
         self.chunk_timeout_ms = timeout;
         self
     }
 
+    /// Sets the maximum number of retry attempts per chunk
     pub fn with_max_retries(mut self, retries: u8) -> Self {
         self.max_retries = retries;
         self
     }
 
+    /// Enables or disables upload verification
     pub fn with_verify_upload(mut self, verify: bool) -> Self {
         self.verify_upload = verify;
         self
@@ -116,19 +124,30 @@ impl UploadConfig {
 /// Tracks a single chunk being uploaded to potentially multiple destinations
 #[derive(Debug, Clone)]
 pub struct ActiveChunkUpload {
+    /// Unique identifier for the chunk
     pub chunk_id: ChunkId,
+    /// SHA-256 hash of the chunk data
     pub chunk_hash: [u8; 32],
+    /// Size of the chunk in bytes
     pub chunk_size: u32,
+    /// Optional chunk data buffer for upload
     pub chunk_data: Option<Vec<u8>>,
+    /// List of edge nodes to receive this chunk
     pub destinations: Vec<EdgeIdx>,
+    /// Edge nodes that successfully received the chunk
     pub successful_destinations: Vec<EdgeIdx>,
+    /// Edge nodes that failed to receive the chunk
     pub failed_destinations: Vec<EdgeIdx>,
+    /// Total bytes sent across all destinations
     pub bytes_sent: u64,
+    /// Timestamp when upload started in milliseconds
     pub started_at_ms: u64,
+    /// Number of retry attempts made
     pub retries: u8,
 }
 
 impl ActiveChunkUpload {
+    /// Creates a new active chunk upload with the specified parameters
     pub fn new(
         chunk_id: ChunkId,
         chunk_hash: [u8; 32],
@@ -149,14 +168,17 @@ impl ActiveChunkUpload {
         }
     }
 
+    /// Checks if all destinations have successfully received the chunk
     pub fn is_complete(&self) -> bool {
         self.successful_destinations.len() >= self.destinations.len()
     }
 
+    /// Checks if there are destinations that haven't received the chunk yet
     pub fn has_remaining_destinations(&self) -> bool {
         self.successful_destinations.len() < self.destinations.len()
     }
 
+    /// Gets the next destination that needs to receive the chunk
     pub fn next_destination(&self) -> Option<EdgeIdx> {
         for dest in &self.destinations {
             if !self.successful_destinations.contains(dest)
@@ -168,27 +190,32 @@ impl ActiveChunkUpload {
         None
     }
 
+    /// Marks a destination as successfully received the chunk
     pub fn mark_success(&mut self, edge: EdgeIdx) {
         if !self.successful_destinations.contains(&edge) {
             self.successful_destinations.push(edge);
         }
     }
 
+    /// Marks a destination as failed to receive the chunk
     pub fn mark_failed(&mut self, edge: EdgeIdx) {
         if !self.failed_destinations.contains(&edge) {
             self.failed_destinations.push(edge);
         }
     }
 
+    /// Checks if the upload has exceeded the timeout duration
     pub fn is_timed_out(&self, timeout_ms: u64) -> bool {
         let now = current_time_ms();
         now - self.started_at_ms > timeout_ms
     }
 
+    /// Checks if the upload can be retried
     pub fn can_retry(&self, max_retries: u8) -> bool {
         self.retries < max_retries
     }
 
+    /// Increments the retry counter
     pub fn increment_retry(&mut self) {
         self.retries += 1;
     }
@@ -197,17 +224,24 @@ impl ActiveChunkUpload {
 /// Chunk metadata for uploads (hash and size)
 #[derive(Debug, Clone, Copy)]
 pub struct ChunkMeta {
+    /// SHA-256 hash of the chunk
     pub hash: [u8; 32],
+    /// Size of the chunk in bytes
     pub size: u32,
 }
 
 /// Active upload session tracking in-progress upload
 #[derive(Debug, Clone)]
 pub struct UploadSession {
+    /// Unique identifier for this transfer
     pub transfer_id: TransferId,
+    /// Current state of the transfer
     pub state: TransferState,
+    /// Chunks currently being uploaded
     pub active_chunks: HashMap<ChunkId, ActiveChunkUpload>,
+    /// Chunks waiting to be uploaded
     pub pending_chunks: VecDeque<ChunkId>,
+    /// Chunks that have completed uploading
     pub completed_chunks: HashSet<ChunkId>,
     /// Chunk metadata indexed by chunk ID
     pub chunk_metadata: HashMap<ChunkId, ChunkMeta>,
@@ -216,6 +250,7 @@ pub struct UploadSession {
 }
 
 impl UploadSession {
+    /// Creates a new upload session with the given transfer ID and state
     pub fn new(transfer_id: TransferId, state: TransferState) -> Self {
         Self {
             transfer_id,
@@ -228,20 +263,24 @@ impl UploadSession {
         }
     }
 
+    /// Checks if the upload session is complete
     pub fn is_complete(&self) -> bool {
         self.pending_chunks.is_empty()
             && self.active_chunks.is_empty()
             && !self.completed_chunks.is_empty()
     }
 
+    /// Checks if there is still work pending in this session
     pub fn has_pending_work(&self) -> bool {
         !self.pending_chunks.is_empty() || !self.active_chunks.is_empty()
     }
 
+    /// Returns the total number of chunks in this transfer
     pub fn total_chunks(&self) -> usize {
         self.state.total_chunks
     }
 
+    /// Calculates the upload progress as a percentage
     pub fn progress_percent(&self) -> f64 {
         if self.total_chunks() == 0 {
             return 100.0;
@@ -258,6 +297,7 @@ pub struct DistributedUploader {
 }
 
 impl DistributedUploader {
+    /// Creates a new distributed uploader with the given configuration
     pub fn new(config: UploadConfig, pool: ConnectionPool, progress: ProgressTracker) -> Self {
         Self {
             config,
@@ -478,7 +518,7 @@ impl DistributedUploader {
         Ok(data.len() as u64)
     }
 
-    /// Cancel an upload session
+    /// Cancels an upload session and clears all pending work
     pub fn cancel(&self, session: &mut UploadSession) {
         session.state.status = TransferStatus::Cancelled;
         session.active_chunks.clear();
@@ -486,7 +526,7 @@ impl DistributedUploader {
         self.progress.cancel(session.transfer_id);
     }
 
-    /// Get upload result when complete
+    /// Finalizes the upload session and returns the transfer result
     pub fn finalize(&self, session: UploadSession) -> TransferResult {
         let now = current_time_ms();
         TransferResult::from_state(&session.state, now)

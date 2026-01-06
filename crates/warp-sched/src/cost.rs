@@ -67,8 +67,9 @@ impl Default for CostConfig {
 }
 
 impl CostConfig {
-    /// Create a new CostConfig with custom weights
-    pub fn new(
+    /// Create a new `CostConfig` with custom weights
+    #[must_use] 
+    pub const fn new(
         bandwidth_weight: f32,
         rtt_weight: f32,
         health_weight: f32,
@@ -87,7 +88,8 @@ impl CostConfig {
     }
 
     /// Create a config that prioritizes bandwidth
-    pub fn bandwidth_priority() -> Self {
+    #[must_use] 
+    pub const fn bandwidth_priority() -> Self {
         Self {
             bandwidth_weight: 0.6,
             rtt_weight: 0.2,
@@ -101,7 +103,8 @@ impl CostConfig {
     }
 
     /// Create a config that prioritizes latency
-    pub fn latency_priority() -> Self {
+    #[must_use] 
+    pub const fn latency_priority() -> Self {
         Self {
             bandwidth_weight: 0.1,
             rtt_weight: 0.6,
@@ -118,7 +121,8 @@ impl CostConfig {
     ///
     /// Prioritizes using diverse network paths to maximize aggregate throughput.
     /// Enables both diversity and saturation weights for adaptive load balancing.
-    pub fn multi_path() -> Self {
+    #[must_use] 
+    pub const fn multi_path() -> Self {
         Self {
             bandwidth_weight: 0.20,
             rtt_weight: 0.20,
@@ -135,7 +139,8 @@ impl CostConfig {
     ///
     /// Heavily weights saturation metrics for aggressive load shifting
     /// away from congested paths.
-    pub fn congestion_aware() -> Self {
+    #[must_use] 
+    pub const fn congestion_aware() -> Self {
         Self {
             bandwidth_weight: 0.20,
             rtt_weight: 0.20,
@@ -149,25 +154,29 @@ impl CostConfig {
     }
 
     /// Set maximum acceptable RTT
-    pub fn with_max_rtt(mut self, max_rtt_us: u32) -> Self {
+    #[must_use] 
+    pub const fn with_max_rtt(mut self, max_rtt_us: u32) -> Self {
         self.max_acceptable_rtt_us = max_rtt_us;
         self
     }
 
     /// Set diversity weight for multi-path scheduling
-    pub fn with_diversity_weight(mut self, weight: f32) -> Self {
+    #[must_use] 
+    pub const fn with_diversity_weight(mut self, weight: f32) -> Self {
         self.diversity_weight = weight.clamp(0.0, 1.0);
         self
     }
 
     /// Set saturation weight for congestion-aware scheduling
-    pub fn with_saturation_weight(mut self, weight: f32) -> Self {
+    #[must_use] 
+    pub const fn with_saturation_weight(mut self, weight: f32) -> Self {
         self.saturation_weight = weight.clamp(0.0, 1.0);
         self
     }
 
     /// Set saturation threshold for congestion detection
-    pub fn with_saturation_threshold(mut self, threshold: f32) -> Self {
+    #[must_use] 
+    pub const fn with_saturation_threshold(mut self, threshold: f32) -> Self {
         self.saturation_threshold = threshold.clamp(0.0, 1.0);
         self
     }
@@ -176,9 +185,9 @@ impl CostConfig {
 /// CPU-based cost matrix computation
 ///
 /// Stores costs for all (chunk, edge) pairs in a flattened 2D array.
-/// Layout: row-major [chunk_0_edge_0, chunk_0_edge_1, ..., chunk_1_edge_0, ...]
+/// Layout: row-major [`chunk_0_edge_0`, `chunk_0_edge_1`, ..., `chunk_1_edge_0`, ...]
 pub struct CpuCostMatrix {
-    /// Flattened cost matrix [num_chunks * num_edges]
+    /// Flattened cost matrix [`num_chunks` * `num_edges`]
     costs: Vec<f32>,
     /// Valid mask: true if edge has replica of chunk
     valid_mask: Vec<bool>,
@@ -197,6 +206,7 @@ impl CpuCostMatrix {
     /// * `num_chunks` - Number of chunks to track
     /// * `num_edges` - Number of edges to track
     /// * `config` - Cost function configuration
+    #[must_use] 
     pub fn new(num_chunks: usize, num_edges: usize, config: CostConfig) -> Self {
         let size = num_chunks * num_edges;
         Self {
@@ -262,10 +272,7 @@ impl CpuCostMatrix {
                         Self::compute_load_cost_static(edge.active_transfers, edge.max_transfers);
 
                     // Weighted sum of all components
-                    let total_cost = bandwidth_weight * bandwidth_cost
-                        + rtt_weight * rtt_cost
-                        + health_weight * health_cost
-                        + load_weight * load_cost;
+                    let total_cost = load_weight.mul_add(load_cost, health_weight.mul_add(health_cost, bandwidth_weight.mul_add(bandwidth_cost, rtt_weight * rtt_cost)));
 
                     let index = chunk_idx * num_edges + edge_idx;
                     chunk_costs.push((index, total_cost));
@@ -290,7 +297,7 @@ impl CpuCostMatrix {
         if bandwidth_bps == 0 {
             return 1.0;
         }
-        let bits = chunk_size as f64 * 8.0;
+        let bits = f64::from(chunk_size) * 8.0;
         let transfer_time_sec = bits / bandwidth_bps as f64;
         (transfer_time_sec / 10.0).min(1.0) as f32
     }
@@ -313,13 +320,13 @@ impl CpuCostMatrix {
         if max_transfers == 0 {
             return 1.0;
         }
-        active_transfers as f32 / max_transfers as f32
+        f32::from(active_transfers) / f32::from(max_transfers)
     }
 
     /// Static saturation cost computation for use in parallel contexts
     ///
     /// Computes a penalty based on path saturation and RTT trend.
-    /// - When saturation_ratio exceeds threshold, penalty increases exponentially
+    /// - When `saturation_ratio` exceeds threshold, penalty increases exponentially
     /// - When RTT is increasing (congestion signal), adds additional penalty
     ///
     /// Returns value in range [0.0, 1.0]
@@ -432,11 +439,7 @@ impl CpuCostMatrix {
                         Self::compute_saturation_cost_static(edge_metrics, saturation_threshold);
 
                     // Weighted sum of all components
-                    let total_cost = bandwidth_weight * bandwidth_cost
-                        + rtt_weight * rtt_cost
-                        + health_weight * health_cost
-                        + load_weight * load_cost
-                        + saturation_weight * saturation_cost;
+                    let total_cost = saturation_weight.mul_add(saturation_cost, load_weight.mul_add(load_cost, health_weight.mul_add(health_cost, bandwidth_weight.mul_add(bandwidth_cost, rtt_weight * rtt_cost))));
 
                     let index = chunk_idx * num_edges + edge_idx;
                     chunk_costs.push((index, total_cost));
@@ -465,12 +468,12 @@ impl CpuCostMatrix {
         }
 
         // Calculate transfer time in seconds
-        let bits = chunk_size as f64 * 8.0;
+        let bits = f64::from(chunk_size) * 8.0;
         let transfer_time_sec = bits / bandwidth_bps as f64;
 
         // Normalize to 0-1 range (assume 10 seconds is max acceptable)
-        let normalized = (transfer_time_sec / 10.0).min(1.0) as f32;
-        normalized
+        
+        (transfer_time_sec / 10.0).min(1.0) as f32
     }
 
     /// Compute RTT cost component
@@ -495,12 +498,13 @@ impl CpuCostMatrix {
         if max_transfers == 0 {
             return 1.0;
         }
-        active_transfers as f32 / max_transfers as f32
+        f32::from(active_transfers) / f32::from(max_transfers)
     }
 
     /// Get cost for specific (chunk, edge) pair
     ///
     /// Returns None if the pair is invalid (edge doesn't have chunk replica).
+    #[must_use] 
     pub fn get_cost(&self, chunk_id: ChunkId, edge_idx: EdgeIdx) -> Option<f32> {
         let chunk_idx = chunk_id.0 as usize;
         let edge_idx = edge_idx.0 as usize;
@@ -518,6 +522,7 @@ impl CpuCostMatrix {
     }
 
     /// Check if edge is valid source for chunk
+    #[must_use] 
     pub fn is_valid(&self, chunk_id: ChunkId, edge_idx: EdgeIdx) -> bool {
         let chunk_idx = chunk_id.0 as usize;
         let edge_idx = edge_idx.0 as usize;
@@ -533,6 +538,7 @@ impl CpuCostMatrix {
     /// Get all valid edges for a chunk with their costs
     ///
     /// Returns edges sorted by cost (lowest first).
+    #[must_use] 
     pub fn get_valid_edges(&self, chunk_id: ChunkId) -> Vec<(EdgeIdx, f32)> {
         let chunk_idx = chunk_id.0 as usize;
         if chunk_idx >= self.num_chunks {
@@ -553,8 +559,9 @@ impl CpuCostMatrix {
         edges
     }
 
-    /// Get matrix dimensions (num_chunks, num_edges)
-    pub fn dimensions(&self) -> (usize, usize) {
+    /// Get matrix dimensions (`num_chunks`, `num_edges`)
+    #[must_use] 
+    pub const fn dimensions(&self) -> (usize, usize) {
         (self.num_chunks, self.num_edges)
     }
 
@@ -570,13 +577,14 @@ impl CpuCostMatrix {
     }
 
     /// Get cost configuration
-    pub fn config(&self) -> &CostConfig {
+    #[must_use] 
+    pub const fn config(&self) -> &CostConfig {
         &self.config
     }
 
     /// Set cost for a specific (chunk, edge) pair
     ///
-    /// Used by ConstraintEvaluator to apply multipliers after initial compute.
+    /// Used by `ConstraintEvaluator` to apply multipliers after initial compute.
     /// Returns false if the pair is out of bounds or was invalid.
     pub fn set_cost(&mut self, chunk_idx: usize, edge_idx: usize, new_cost: f32) -> bool {
         if chunk_idx >= self.num_chunks || edge_idx >= self.num_edges {
@@ -605,7 +613,7 @@ impl CpuCostMatrix {
 
     /// Calculate flat index from 2D coordinates
     #[inline]
-    fn index(&self, chunk_idx: usize, edge_idx: usize) -> usize {
+    const fn index(&self, chunk_idx: usize, edge_idx: usize) -> usize {
         chunk_idx * self.num_edges + edge_idx
     }
 }
@@ -619,6 +627,7 @@ pub struct CostMatrix {
 
 impl CostMatrix {
     /// Create a new GPU cost matrix
+    #[must_use] 
     pub fn new(num_chunks: usize, num_edges: usize, config: CostConfig) -> Self {
         Self {
             inner: CpuCostMatrix::new(num_chunks, num_edges, config),
@@ -642,22 +651,26 @@ impl CostMatrix {
     }
 
     /// Get cost for specific pair
+    #[must_use] 
     pub fn get_cost(&self, chunk_id: ChunkId, edge_idx: EdgeIdx) -> Option<f32> {
         self.inner.get_cost(chunk_id, edge_idx)
     }
 
     /// Check if edge is valid source
+    #[must_use] 
     pub fn is_valid(&self, chunk_id: ChunkId, edge_idx: EdgeIdx) -> bool {
         self.inner.is_valid(chunk_id, edge_idx)
     }
 
     /// Get all valid edges for a chunk
+    #[must_use] 
     pub fn get_valid_edges(&self, chunk_id: ChunkId) -> Vec<(EdgeIdx, f32)> {
         self.inner.get_valid_edges(chunk_id)
     }
 
     /// Get dimensions
-    pub fn dimensions(&self) -> (usize, usize) {
+    #[must_use] 
+    pub const fn dimensions(&self) -> (usize, usize) {
         self.inner.dimensions()
     }
 
@@ -667,7 +680,8 @@ impl CostMatrix {
     }
 
     /// Get configuration
-    pub fn config(&self) -> &CostConfig {
+    #[must_use] 
+    pub const fn config(&self) -> &CostConfig {
         self.inner.config()
     }
 

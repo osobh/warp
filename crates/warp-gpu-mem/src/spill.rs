@@ -1,8 +1,6 @@
 //! Spill manager - handles tensor spilling to storage
 
-use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::time::Instant;
 
 use dashmap::DashMap;
 use parking_lot::RwLock;
@@ -10,7 +8,7 @@ use tokio::sync::Semaphore;
 
 use crate::config::{GpuMemConfig, SpillPolicy};
 use crate::error::{GpuMemError, GpuMemResult};
-use crate::tensor::{TensorHandle, TensorId, TensorMeta};
+use crate::tensor::{TensorHandle, TensorId};
 
 /// Spilled tensor record
 #[derive(Debug, Clone)]
@@ -102,7 +100,7 @@ impl SpillManager {
     pub fn num_chunks(&self, tensor: &TensorHandle) -> usize {
         let size = tensor.size_bytes() as usize;
         let chunk_size = self.config.spill_chunk_size;
-        (size + chunk_size - 1) / chunk_size
+        size.div_ceil(chunk_size)
     }
 
     /// Record a spill

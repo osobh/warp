@@ -8,6 +8,14 @@ use console::{Term, style};
 use std::path::Path;
 
 /// Parse a storage path like "alias/bucket/key" or "bucket/key"
+///
+/// # Arguments
+///
+/// * `path` - Storage path string to parse
+///
+/// # Returns
+///
+/// Tuple of (alias, bucket, key) where each component is optional
 pub fn parse_path(path: &str) -> (Option<&str>, Option<&str>, Option<&str>) {
     let parts: Vec<&str> = path.trim_matches('/').splitn(3, '/').collect();
     match parts.len() {
@@ -20,6 +28,14 @@ pub fn parse_path(path: &str) -> (Option<&str>, Option<&str>, Option<&str>) {
 }
 
 /// Check if a path is a local file path
+///
+/// # Arguments
+///
+/// * `path` - Path string to check
+///
+/// # Returns
+///
+/// `true` if the path is a local filesystem path, `false` otherwise
 pub fn is_local_path(path: &str) -> bool {
     path.starts_with('/')
         || path.starts_with("./")
@@ -28,9 +44,15 @@ pub fn is_local_path(path: &str) -> bool {
 }
 
 /// List buckets or objects
+///
+/// # Arguments
+///
+/// * `path` - Storage path in format "bucket" or "bucket/prefix"
+/// * `recursive` - Enable recursive listing of objects
+/// * `json` - Output results in JSON format
 pub async fn list(path: &str, recursive: bool, json: bool) -> Result<()> {
     let term = Term::stdout();
-    let (_, bucket, prefix) = parse_path(path);
+    let (_, bucket, _prefix) = parse_path(path);
 
     if bucket.is_none() {
         // List buckets
@@ -74,6 +96,12 @@ pub async fn list(path: &str, recursive: bool, json: bool) -> Result<()> {
 }
 
 /// Create a bucket
+///
+/// # Arguments
+///
+/// * `bucket` - Name of the bucket to create (3-63 chars, lowercase, numbers, hyphens only)
+/// * `with_lock` - Enable Object Lock for compliance and governance retention modes
+/// * `with_versioning` - Enable versioning for the bucket
 pub async fn make_bucket(bucket: &str, with_lock: bool, with_versioning: bool) -> Result<()> {
     let term = Term::stdout();
 
@@ -116,6 +144,11 @@ pub async fn make_bucket(bucket: &str, with_lock: bool, with_versioning: bool) -
 }
 
 /// Remove a bucket
+///
+/// # Arguments
+///
+/// * `bucket` - Name of the bucket to remove
+/// * `force` - Force removal without confirmation prompt
 pub async fn remove_bucket(bucket: &str, force: bool) -> Result<()> {
     let term = Term::stdout();
 
@@ -145,6 +178,13 @@ pub async fn remove_bucket(bucket: &str, force: bool) -> Result<()> {
 }
 
 /// Copy objects
+///
+/// # Arguments
+///
+/// * `source` - Source path (local file path or bucket/key)
+/// * `destination` - Destination path (local file path or bucket/key)
+/// * `recursive` - Enable recursive copy for directories
+/// * `_preserve` - Preserve file attributes (currently unused)
 pub async fn copy(source: &str, destination: &str, recursive: bool, _preserve: bool) -> Result<()> {
     let term = Term::stdout();
 
@@ -179,6 +219,12 @@ pub async fn copy(source: &str, destination: &str, recursive: bool, _preserve: b
 }
 
 /// Move objects
+///
+/// # Arguments
+///
+/// * `source` - Source path (bucket/key)
+/// * `destination` - Destination path (bucket/key)
+/// * `recursive` - Enable recursive move for directories
 pub async fn mv(source: &str, destination: &str, recursive: bool) -> Result<()> {
     let term = Term::stdout();
 
@@ -197,6 +243,14 @@ pub async fn mv(source: &str, destination: &str, recursive: bool) -> Result<()> 
 }
 
 /// Remove objects
+///
+/// # Arguments
+///
+/// * `path` - Path to objects to remove (bucket/key)
+/// * `recursive` - Enable recursive removal for directories
+/// * `force` - Force removal without confirmation prompt
+/// * `bypass_governance` - Bypass governance retention mode
+/// * `versions` - Remove all versions of objects
 pub async fn remove(
     path: &str,
     recursive: bool,
@@ -206,7 +260,7 @@ pub async fn remove(
 ) -> Result<()> {
     let term = Term::stdout();
 
-    let (_, bucket, key) = parse_path(path);
+    let (_, bucket, _key) = parse_path(path);
 
     if bucket.is_none() {
         bail!("Invalid path: must specify bucket/key");
@@ -241,6 +295,11 @@ pub async fn remove(
 }
 
 /// Display object contents
+///
+/// # Arguments
+///
+/// * `path` - Object path (bucket/key)
+/// * `version_id` - Specific version ID to display (optional)
 pub async fn cat(path: &str, version_id: Option<&str>) -> Result<()> {
     let (_, bucket, key) = parse_path(path);
 
@@ -262,6 +321,11 @@ pub async fn cat(path: &str, version_id: Option<&str>) -> Result<()> {
 }
 
 /// Get object info
+///
+/// # Arguments
+///
+/// * `path` - Object path (bucket/key)
+/// * `version_id` - Specific version ID to query (optional)
 pub async fn stat(path: &str, version_id: Option<&str>) -> Result<()> {
     let term = Term::stdout();
     let (_, bucket, key) = parse_path(path);
@@ -292,12 +356,20 @@ pub async fn stat(path: &str, version_id: Option<&str>) -> Result<()> {
 }
 
 /// Set object retention
+///
+/// # Arguments
+///
+/// * `path` - Object path (bucket/key)
+/// * `mode` - Retention mode (GOVERNANCE or COMPLIANCE)
+/// * `days` - Retention period in days (optional)
+/// * `until` - Retain until date in ISO 8601 format (optional)
+/// * `version_id` - Specific version ID to set retention on (optional)
 pub async fn retention_set(
     path: &str,
     mode: &str,
     days: Option<u32>,
     until: Option<&str>,
-    version_id: Option<&str>,
+    _version_id: Option<&str>,
 ) -> Result<()> {
     let term = Term::stdout();
     let (_, bucket, key) = parse_path(path);
@@ -340,6 +412,11 @@ pub async fn retention_set(
 }
 
 /// Get object retention
+///
+/// # Arguments
+///
+/// * `path` - Object path (bucket/key)
+/// * `version_id` - Specific version ID to query retention for (optional)
 pub async fn retention_get(path: &str, version_id: Option<&str>) -> Result<()> {
     let term = Term::stdout();
     let (_, bucket, key) = parse_path(path);
@@ -365,9 +442,15 @@ pub async fn retention_get(path: &str, version_id: Option<&str>) -> Result<()> {
 }
 
 /// Clear object retention
+///
+/// # Arguments
+///
+/// * `path` - Object path (bucket/key)
+/// * `version_id` - Specific version ID to clear retention from (optional)
+/// * `bypass_governance` - Bypass governance retention mode
 pub async fn retention_clear(
     path: &str,
-    version_id: Option<&str>,
+    _version_id: Option<&str>,
     bypass_governance: bool,
 ) -> Result<()> {
     let term = Term::stdout();
@@ -395,6 +478,11 @@ pub async fn retention_clear(
 }
 
 /// Set legal hold
+///
+/// # Arguments
+///
+/// * `path` - Object path (bucket/key)
+/// * `version_id` - Specific version ID to set legal hold on (optional)
 pub async fn legal_hold_set(path: &str, version_id: Option<&str>) -> Result<()> {
     let term = Term::stdout();
     let (_, bucket, key) = parse_path(path);
@@ -419,6 +507,11 @@ pub async fn legal_hold_set(path: &str, version_id: Option<&str>) -> Result<()> 
 }
 
 /// Clear legal hold
+///
+/// # Arguments
+///
+/// * `path` - Object path (bucket/key)
+/// * `version_id` - Specific version ID to clear legal hold from (optional)
 pub async fn legal_hold_clear(path: &str, version_id: Option<&str>) -> Result<()> {
     let term = Term::stdout();
     let (_, bucket, key) = parse_path(path);
@@ -443,6 +536,11 @@ pub async fn legal_hold_clear(path: &str, version_id: Option<&str>) -> Result<()
 }
 
 /// Get legal hold status
+///
+/// # Arguments
+///
+/// * `path` - Object path (bucket/key)
+/// * `version_id` - Specific version ID to query legal hold status for (optional)
 pub async fn legal_hold_get(path: &str, version_id: Option<&str>) -> Result<()> {
     let term = Term::stdout();
     let (_, bucket, key) = parse_path(path);
@@ -476,11 +574,18 @@ fn alias_config_path() -> Result<std::path::PathBuf> {
 }
 
 /// Set an alias
+///
+/// # Arguments
+///
+/// * `alias` - Name for the storage endpoint alias
+/// * `url` - S3-compatible storage endpoint URL
+/// * `access_key` - Access key for authentication (optional)
+/// * `secret_key` - Secret key for authentication (optional)
 pub async fn alias_set(
     alias: &str,
     url: &str,
-    access_key: Option<&str>,
-    secret_key: Option<&str>,
+    _access_key: Option<&str>,
+    _secret_key: Option<&str>,
 ) -> Result<()> {
     let term = Term::stdout();
 
@@ -503,6 +608,10 @@ pub async fn alias_set(
 }
 
 /// Remove an alias
+///
+/// # Arguments
+///
+/// * `alias` - Name of the alias to remove
 pub async fn alias_remove(alias: &str) -> Result<()> {
     let term = Term::stdout();
 

@@ -3,11 +3,11 @@
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::time::{Duration, Instant, SystemTime};
+use std::time::{Duration, SystemTime};
 
 use dashmap::DashMap;
 use parking_lot::RwLock;
-use tracing::{debug, info, warn};
+use tracing::{debug, info};
 
 use super::cow::{BlockRef, CowManager};
 use super::manager::{Snapshot, SnapshotId};
@@ -273,7 +273,7 @@ impl CloneManager {
         // Index by snapshot
         self.snapshot_clones
             .entry(snapshot.id)
-            .or_insert_with(HashSet::new)
+            .or_default()
             .insert(clone_id);
 
         // Index by bucket
@@ -285,7 +285,7 @@ impl CloneManager {
         self.deleted_objects.insert(clone_id, HashSet::new());
 
         // Add references to all source blocks
-        for (_key, version_ref) in &snapshot.object_versions {
+        for version_ref in snapshot.object_versions.values() {
             for block_id in &version_ref.blocks {
                 self.cow_manager.add_ref(*block_id)?;
             }

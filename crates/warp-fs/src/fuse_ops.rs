@@ -4,20 +4,17 @@
 
 use crate::WarpFsConfig;
 use crate::error::Error;
-use crate::inode::ROOT_INO;
-use crate::metadata::FileType;
 use crate::vfs::VirtualFilesystem;
 
 use fuser::{
     FileAttr, FileType as FuseFileType, Filesystem, ReplyAttr, ReplyCreate, ReplyData,
     ReplyDirectory, ReplyEmpty, ReplyEntry, ReplyOpen, ReplyWrite, Request, TimeOrNow,
 };
-use libc::{ENOENT, ENOSYS};
 use std::ffi::OsStr;
 use std::sync::Arc;
 use std::time::{Duration, SystemTime};
 use tokio::runtime::Runtime;
-use tracing::{debug, error, warn};
+use tracing::{debug, error};
 
 /// TTL for cached attributes
 const ATTR_TTL: Duration = Duration::from_secs(1);
@@ -236,7 +233,7 @@ impl Filesystem for WarpFuseFs {
             Ok((guard.metadata().clone(), dir))
         });
 
-        let (meta, dir) = match result {
+        let (_meta, dir) = match result {
             Ok(d) => d,
             Err(e) => {
                 reply.error(Self::error_to_errno(&e));

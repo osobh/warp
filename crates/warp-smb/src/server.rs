@@ -9,11 +9,11 @@ use dashmap::DashMap;
 use tokio::net::TcpListener;
 use tracing::{debug, info, warn};
 
-use warp_gateway_common::{DelegationManager, InMemoryLockManager, SessionManager};
+use warp_gateway_common::{InMemoryLockManager, SessionManager};
 use warp_store::Store;
 
 use crate::config::SmbConfig;
-use crate::error::{SmbError, SmbResult};
+use crate::error::SmbResult;
 use crate::oplocks::OplockManager;
 use crate::share::{ShareManager, SmbShare};
 

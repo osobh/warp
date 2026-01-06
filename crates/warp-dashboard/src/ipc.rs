@@ -6,8 +6,7 @@
 use crate::handlers::AppState;
 use crate::types::{DashboardState, EdgeView, TransferView};
 use warp_ipc::{
-    IpcError, IpcResult,
-    commands::{EventFilter, IpcCommand, IpcResponse, responses::*},
+    commands::{IpcCommand, IpcResponse, responses::*},
     events::IpcEvent,
     types::*,
 };
@@ -154,25 +153,25 @@ impl IpcHandler {
                 serde_json::to_value(IpcResponse::ok(transfers)).unwrap()
             }
 
-            IpcCommand::PauseTransfer { transfer_id } => {
+            IpcCommand::PauseTransfer { transfer_id: _ } => {
                 // TODO: Implement actual pause logic
                 serde_json::to_value(IpcResponse::<()>::ok(())).unwrap()
             }
 
-            IpcCommand::ResumeTransfer { transfer_id } => {
+            IpcCommand::ResumeTransfer { transfer_id: _ } => {
                 // TODO: Implement actual resume logic
                 serde_json::to_value(IpcResponse::<()>::ok(())).unwrap()
             }
 
-            IpcCommand::CancelTransfer { transfer_id } => {
+            IpcCommand::CancelTransfer { transfer_id: _ } => {
                 // TODO: Implement actual cancel logic
                 serde_json::to_value(IpcResponse::<()>::ok(())).unwrap()
             }
 
             IpcCommand::StartTransfer {
-                source,
-                destination,
-                remote_peer,
+                source: _,
+                destination: _,
+                remote_peer: _,
             } => {
                 // TODO: Implement actual transfer start
                 let result = StartTransferResult {
@@ -206,12 +205,12 @@ impl IpcHandler {
                 }
             }
 
-            IpcCommand::ConnectEdge { address } => {
+            IpcCommand::ConnectEdge { address: _ } => {
                 // TODO: Implement actual edge connection
                 serde_json::to_value(IpcResponse::<()>::ok(())).unwrap()
             }
 
-            IpcCommand::DisconnectEdge { edge_id } => {
+            IpcCommand::DisconnectEdge { edge_id: _ } => {
                 // TODO: Implement actual edge disconnection
                 serde_json::to_value(IpcResponse::<()>::ok(())).unwrap()
             }
@@ -309,7 +308,7 @@ impl IpcHandler {
             // Alert commands
             IpcCommand::GetAlerts {
                 min_level,
-                include_acknowledged,
+                include_acknowledged: _,
             } => {
                 let state = self.app_state.get_state().await;
                 let alerts: Vec<Alert> = state
@@ -347,7 +346,7 @@ impl IpcHandler {
                 serde_json::to_value(IpcResponse::ok(alerts)).unwrap()
             }
 
-            IpcCommand::AcknowledgeAlert { alert_id } => {
+            IpcCommand::AcknowledgeAlert { alert_id: _ } => {
                 // TODO: Implement alert acknowledgment
                 serde_json::to_value(IpcResponse::<()>::ok(())).unwrap()
             }

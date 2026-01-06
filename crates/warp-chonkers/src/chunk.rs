@@ -13,6 +13,7 @@ use std::fmt;
 /// The ID is a 32-byte BLAKE3 hash of the chunk content.
 /// Identical content always produces identical IDs.
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Default)]
 pub struct ChunkId(pub [u8; 32]);
 
 impl ChunkId {
@@ -57,11 +58,6 @@ impl fmt::Display for ChunkId {
     }
 }
 
-impl Default for ChunkId {
-    fn default() -> Self {
-        Self([0u8; 32])
-    }
-}
 
 /// Priority weight for chunk boundary decisions
 ///

@@ -1,12 +1,12 @@
 //! Foundational types for edge intelligence
 //!
 //! This module defines the core types used throughout the edge intelligence layer:
-//! - EdgeId: Unique edge identifiers derived from public keys
-//! - EdgeType: Device category (Server, Desktop, Mobile, IoT)
-//! - EdgeStatus: Connection status (Online, Offline, Degraded, Throttled)
-//! - EdgeCapabilities: Static edge properties (storage, bandwidth)
-//! - EdgeState: Dynamic runtime state (status, last seen, battery)
-//! - EdgeInfo: Complete edge record combining all information
+//! - `EdgeId`: Unique edge identifiers derived from public keys
+//! - `EdgeType`: Device category (Server, Desktop, Mobile, `IoT`)
+//! - `EdgeStatus`: Connection status (Online, Offline, Degraded, Throttled)
+//! - `EdgeCapabilities`: Static edge properties (storage, bandwidth)
+//! - `EdgeState`: Dynamic runtime state (status, last seen, battery)
+//! - `EdgeInfo`: Complete edge record combining all information
 
 use portal_net::VirtualIp;
 use serde::{Deserialize, Serialize};
@@ -14,25 +14,28 @@ use std::time::SystemTime;
 
 /// Unique edge identifier derived from public key
 ///
-/// EdgeId is a newtype wrapper around a 32-byte public key that serves
+/// `EdgeId` is a newtype wrapper around a 32-byte public key that serves
 /// as a unique identifier for edge devices in the network.
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct EdgeId([u8; 32]);
 
 impl EdgeId {
-    /// Creates a new EdgeId from a public key
-    pub fn new(public_key: [u8; 32]) -> Self {
-        EdgeId(public_key)
+    /// Creates a new `EdgeId` from a public key
+    #[must_use] 
+    pub const fn new(public_key: [u8; 32]) -> Self {
+        Self(public_key)
     }
 
     /// Returns a reference to the underlying byte array
-    pub fn as_bytes(&self) -> &[u8; 32] {
+    #[must_use] 
+    pub const fn as_bytes(&self) -> &[u8; 32] {
         &self.0
     }
 
-    /// Converts the EdgeId to a hexadecimal string
+    /// Converts the `EdgeId` to a hexadecimal string
+    #[must_use] 
     pub fn to_hex(&self) -> String {
-        self.0.iter().map(|b| format!("{:02x}", b)).collect()
+        self.0.iter().map(|b| format!("{b:02x}")).collect()
     }
 }
 
@@ -52,42 +55,41 @@ impl std::fmt::Display for EdgeId {
 ///
 /// Classifies edge devices by their expected characteristics and capabilities.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Default)]
 pub enum EdgeType {
     /// Always-on server with high bandwidth and storage
     Server,
     /// Desktop computer with intermittent availability and medium bandwidth
+    #[default]
     Desktop,
     /// Mobile device with battery constraints
     Mobile,
-    /// IoT device with storage and compute constraints
+    /// `IoT` device with storage and compute constraints
     IoT,
 }
 
 impl std::fmt::Display for EdgeType {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            EdgeType::Server => write!(f, "server"),
-            EdgeType::Desktop => write!(f, "desktop"),
-            EdgeType::Mobile => write!(f, "mobile"),
-            EdgeType::IoT => write!(f, "iot"),
+            Self::Server => write!(f, "server"),
+            Self::Desktop => write!(f, "desktop"),
+            Self::Mobile => write!(f, "mobile"),
+            Self::IoT => write!(f, "iot"),
         }
     }
 }
 
-impl Default for EdgeType {
-    fn default() -> Self {
-        EdgeType::Desktop
-    }
-}
 
 /// Current connection status of an edge
 ///
 /// Tracks the real-time connectivity and performance state of an edge device.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Default)]
 pub enum EdgeStatus {
     /// Edge is online and responsive
     Online,
     /// Edge is offline or unreachable
+    #[default]
     Offline,
     /// Edge is responding but performance is degraded
     Degraded,
@@ -98,19 +100,14 @@ pub enum EdgeStatus {
 impl std::fmt::Display for EdgeStatus {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            EdgeStatus::Online => write!(f, "online"),
-            EdgeStatus::Offline => write!(f, "offline"),
-            EdgeStatus::Degraded => write!(f, "degraded"),
-            EdgeStatus::Throttled => write!(f, "throttled"),
+            Self::Online => write!(f, "online"),
+            Self::Offline => write!(f, "offline"),
+            Self::Degraded => write!(f, "degraded"),
+            Self::Throttled => write!(f, "throttled"),
         }
     }
 }
 
-impl Default for EdgeStatus {
-    fn default() -> Self {
-        EdgeStatus::Offline
-    }
-}
 
 /// Static edge capabilities and configuration
 ///
@@ -136,8 +133,9 @@ pub struct EdgeCapabilities {
 
 impl EdgeCapabilities {
     /// Creates new edge capabilities with default values
-    pub fn new(max_storage: u64, edge_type: EdgeType) -> Self {
-        EdgeCapabilities {
+    #[must_use] 
+    pub const fn new(max_storage: u64, edge_type: EdgeType) -> Self {
+        Self {
             max_storage,
             used_storage: 0,
             max_upload_bandwidth: 0,
@@ -149,11 +147,13 @@ impl EdgeCapabilities {
     }
 
     /// Returns the available storage in bytes
-    pub fn available_storage(&self) -> u64 {
+    #[must_use] 
+    pub const fn available_storage(&self) -> u64 {
         self.max_storage.saturating_sub(self.used_storage)
     }
 
     /// Returns the storage utilization as a percentage (0.0 to 1.0)
+    #[must_use] 
     pub fn storage_utilization(&self) -> f64 {
         if self.max_storage == 0 {
             return 0.0;
@@ -162,14 +162,15 @@ impl EdgeCapabilities {
     }
 
     /// Checks if the edge has sufficient storage for a given size
-    pub fn has_storage(&self, required: u64) -> bool {
+    #[must_use] 
+    pub const fn has_storage(&self, required: u64) -> bool {
         self.available_storage() >= required
     }
 }
 
 impl Default for EdgeCapabilities {
     fn default() -> Self {
-        EdgeCapabilities::new(10_737_418_240, EdgeType::default()) // 10GB default
+        Self::new(10_737_418_240, EdgeType::default()) // 10GB default
     }
 }
 
@@ -195,8 +196,9 @@ pub struct EdgeState {
 
 impl EdgeState {
     /// Creates a new edge state with the given status
+    #[must_use] 
     pub fn new(status: EdgeStatus) -> Self {
-        EdgeState {
+        Self {
             status,
             last_seen: SystemTime::now(),
             chunk_count: 0,
@@ -207,16 +209,19 @@ impl EdgeState {
     }
 
     /// Checks if the edge is available for transfers (online or degraded)
-    pub fn is_available(&self) -> bool {
+    #[must_use] 
+    pub const fn is_available(&self) -> bool {
         matches!(self.status, EdgeStatus::Online | EdgeStatus::Degraded)
     }
 
     /// Checks if the edge has capacity for additional transfers
-    pub fn has_capacity(&self, max_concurrent: u16) -> bool {
+    #[must_use] 
+    pub const fn has_capacity(&self, max_concurrent: u16) -> bool {
         self.active_transfers < max_concurrent
     }
 
     /// Returns the duration since the edge was last seen
+    #[must_use] 
     pub fn time_since_seen(&self) -> std::time::Duration {
         SystemTime::now()
             .duration_since(self.last_seen)
@@ -231,15 +236,15 @@ impl EdgeState {
 
 impl Default for EdgeState {
     fn default() -> Self {
-        EdgeState::new(EdgeStatus::default())
+        Self::new(EdgeStatus::default())
     }
 }
 
 /// Complete edge record combining all information
 ///
-/// EdgeInfo aggregates static capabilities, dynamic state, and network
+/// `EdgeInfo` aggregates static capabilities, dynamic state, and network
 /// configuration for a single edge device.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct EdgeInfo {
     /// Unique edge identifier
     pub id: EdgeId,
@@ -254,14 +259,15 @@ pub struct EdgeInfo {
 }
 
 impl EdgeInfo {
-    /// Creates a new EdgeInfo record
+    /// Creates a new `EdgeInfo` record
+    #[must_use] 
     pub fn new(
         id: EdgeId,
         virtual_ip: VirtualIp,
         capabilities: EdgeCapabilities,
         state: EdgeState,
     ) -> Self {
-        EdgeInfo {
+        Self {
             id,
             virtual_ip,
             capabilities,
@@ -271,22 +277,25 @@ impl EdgeInfo {
     }
 
     /// Updates the edge state
-    pub fn update_state(&mut self, state: EdgeState) {
+    pub const fn update_state(&mut self, state: EdgeState) {
         self.state = state;
     }
 
     /// Checks if the edge record is stale (not seen recently)
+    #[must_use] 
     pub fn is_stale(&self, threshold: std::time::Duration) -> bool {
         self.state.time_since_seen() > threshold
     }
 
     /// Returns the storage utilization percentage (0.0 to 1.0)
+    #[must_use] 
     pub fn storage_utilization(&self) -> f64 {
         self.capabilities.storage_utilization()
     }
 
     /// Checks if the edge is available for data transfers
-    pub fn is_available(&self) -> bool {
+    #[must_use] 
+    pub const fn is_available(&self) -> bool {
         self.state.is_available()
     }
 }

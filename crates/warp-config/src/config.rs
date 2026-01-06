@@ -35,40 +35,44 @@ pub enum ConfigValue {
     /// Boolean value
     Boolean(bool),
     /// Array of values
-    Array(Vec<ConfigValue>),
+    Array(Vec<Self>),
     /// Table of key-value pairs
-    Table(HashMap<String, ConfigValue>),
+    Table(HashMap<String, Self>),
 }
 
 impl ConfigValue {
     /// Convert to string
+    #[must_use] 
     pub fn as_string(&self) -> Option<&str> {
         match self {
-            ConfigValue::String(s) => Some(s),
+            Self::String(s) => Some(s),
             _ => None,
         }
     }
 
     /// Convert to integer
-    pub fn as_integer(&self) -> Option<i64> {
+    #[must_use] 
+    pub const fn as_integer(&self) -> Option<i64> {
         match self {
-            ConfigValue::Integer(i) => Some(*i),
+            Self::Integer(i) => Some(*i),
             _ => None,
         }
     }
 
     /// Convert to float
-    pub fn as_float(&self) -> Option<f64> {
+    #[must_use] 
+    pub const fn as_float(&self) -> Option<f64> {
         match self {
-            ConfigValue::Float(f) => Some(*f),
+            Self::Float(f) => Some(*f),
             _ => None,
         }
     }
 
     /// Convert to boolean
-    pub fn as_boolean(&self) -> Option<bool> {
+    #[must_use] 
+    pub const fn as_boolean(&self) -> Option<bool> {
         match self {
-            ConfigValue::Boolean(b) => Some(*b),
+            Self::Boolean(b) => Some(*b),
             _ => None,
         }
     }
@@ -77,12 +81,14 @@ impl ConfigValue {
 /// Log level configuration
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
+#[derive(Default)]
 pub enum LogLevel {
     /// Trace level
     Trace,
     /// Debug level
     Debug,
     /// Info level
+    #[default]
     Info,
     /// Warn level
     Warn,
@@ -90,11 +96,6 @@ pub enum LogLevel {
     Error,
 }
 
-impl Default for LogLevel {
-    fn default() -> Self {
-        Self::Info
-    }
-}
 
 impl std::str::FromStr for LogLevel {
     type Err = ConfigError;
@@ -108,7 +109,7 @@ impl std::str::FromStr for LogLevel {
             "error" => Ok(Self::Error),
             _ => Err(ConfigError::InvalidValue {
                 field: "log_level".to_string(),
-                message: format!("Invalid log level: {}", s),
+                message: format!("Invalid log level: {s}"),
             }),
         }
     }
@@ -117,8 +118,10 @@ impl std::str::FromStr for LogLevel {
 /// Log format configuration
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
+#[derive(Default)]
 pub enum LogFormat {
     /// JSON format
+    #[default]
     Json,
     /// Pretty format
     Pretty,
@@ -126,11 +129,6 @@ pub enum LogFormat {
     Compact,
 }
 
-impl Default for LogFormat {
-    fn default() -> Self {
-        Self::Json
-    }
-}
 
 impl std::str::FromStr for LogFormat {
     type Err = ConfigError;
@@ -142,7 +140,7 @@ impl std::str::FromStr for LogFormat {
             "compact" => Ok(Self::Compact),
             _ => Err(ConfigError::InvalidValue {
                 field: "log_format".to_string(),
-                message: format!("Invalid log format: {}", s),
+                message: format!("Invalid log format: {s}"),
             }),
         }
     }
@@ -151,8 +149,10 @@ impl std::str::FromStr for LogFormat {
 /// Log output configuration
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
+#[derive(Default)]
 pub enum LogOutput {
     /// Output to stdout
+    #[default]
     Stdout,
     /// Output to stderr
     Stderr,
@@ -162,11 +162,6 @@ pub enum LogOutput {
     Both,
 }
 
-impl Default for LogOutput {
-    fn default() -> Self {
-        Self::Stdout
-    }
-}
 
 impl std::str::FromStr for LogOutput {
     type Err = ConfigError;
@@ -179,7 +174,7 @@ impl std::str::FromStr for LogOutput {
             "both" => Ok(Self::Both),
             _ => Err(ConfigError::InvalidValue {
                 field: "log_output".to_string(),
-                message: format!("Invalid log output: {}", s),
+                message: format!("Invalid log output: {s}"),
             }),
         }
     }
@@ -290,8 +285,9 @@ impl Default for LogConfig {
 }
 
 /// Top-level warp configuration
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
+#[derive(Default)]
 pub struct WarpConfig {
     /// Network configuration
     pub network: NetworkConfig,
@@ -303,16 +299,6 @@ pub struct WarpConfig {
     pub log: LogConfig,
 }
 
-impl Default for WarpConfig {
-    fn default() -> Self {
-        Self {
-            network: NetworkConfig::default(),
-            storage: StorageConfig::default(),
-            scheduler: SchedulerConfig::default(),
-            log: LogConfig::default(),
-        }
-    }
-}
 
 /// Configuration loader
 pub struct ConfigLoader {
@@ -322,6 +308,7 @@ pub struct ConfigLoader {
 
 impl ConfigLoader {
     /// Create a new configuration loader
+    #[must_use] 
     pub fn new() -> Self {
         Self {
             sources: vec![ConfigSource::Default],
@@ -337,6 +324,7 @@ impl ConfigLoader {
     }
 
     /// Add environment variable source with prefix
+    #[must_use] 
     pub fn with_env_prefix(mut self, prefix: &str) -> Self {
         self.env_prefix = Some(prefix.to_string());
         self.sources.push(ConfigSource::Env);
@@ -397,6 +385,7 @@ impl ConfigLoader {
     }
 
     /// Get default configuration
+    #[must_use] 
     pub fn default_config() -> WarpConfig {
         WarpConfig::default()
     }
@@ -409,81 +398,81 @@ impl ConfigLoader {
     /// Apply environment variable overrides
     fn apply_env_overrides(mut config: WarpConfig, prefix: &str) -> Result<WarpConfig> {
         // Network overrides
-        if let Ok(val) = std::env::var(format!("{}_NETWORK_BIND_ADDRESS", prefix)) {
+        if let Ok(val) = std::env::var(format!("{prefix}_NETWORK_BIND_ADDRESS")) {
             config.network.bind_address = val;
         }
-        if let Ok(val) = std::env::var(format!("{}_NETWORK_PORT", prefix)) {
+        if let Ok(val) = std::env::var(format!("{prefix}_NETWORK_PORT")) {
             config.network.port = val
                 .parse()
-                .map_err(|_| ConfigError::EnvVar(format!("Invalid port value: {}", val)))?;
+                .map_err(|_| ConfigError::EnvVar(format!("Invalid port value: {val}")))?;
         }
-        if let Ok(val) = std::env::var(format!("{}_NETWORK_QUIC_PORT", prefix)) {
+        if let Ok(val) = std::env::var(format!("{prefix}_NETWORK_QUIC_PORT")) {
             config.network.quic_port = val
                 .parse()
-                .map_err(|_| ConfigError::EnvVar(format!("Invalid quic_port value: {}", val)))?;
+                .map_err(|_| ConfigError::EnvVar(format!("Invalid quic_port value: {val}")))?;
         }
-        if let Ok(val) = std::env::var(format!("{}_NETWORK_MAX_CONNECTIONS", prefix)) {
+        if let Ok(val) = std::env::var(format!("{prefix}_NETWORK_MAX_CONNECTIONS")) {
             config.network.max_connections = val.parse().map_err(|_| {
-                ConfigError::EnvVar(format!("Invalid max_connections value: {}", val))
+                ConfigError::EnvVar(format!("Invalid max_connections value: {val}"))
             })?;
         }
-        if let Ok(val) = std::env::var(format!("{}_NETWORK_CONNECTION_TIMEOUT_MS", prefix)) {
+        if let Ok(val) = std::env::var(format!("{prefix}_NETWORK_CONNECTION_TIMEOUT_MS")) {
             config.network.connection_timeout_ms = val.parse().map_err(|_| {
-                ConfigError::EnvVar(format!("Invalid connection_timeout_ms value: {}", val))
+                ConfigError::EnvVar(format!("Invalid connection_timeout_ms value: {val}"))
             })?;
         }
 
         // Storage overrides
-        if let Ok(val) = std::env::var(format!("{}_STORAGE_DATA_DIR", prefix)) {
+        if let Ok(val) = std::env::var(format!("{prefix}_STORAGE_DATA_DIR")) {
             config.storage.data_dir = PathBuf::from(val);
         }
-        if let Ok(val) = std::env::var(format!("{}_STORAGE_CACHE_DIR", prefix)) {
+        if let Ok(val) = std::env::var(format!("{prefix}_STORAGE_CACHE_DIR")) {
             config.storage.cache_dir = PathBuf::from(val);
         }
-        if let Ok(val) = std::env::var(format!("{}_STORAGE_MAX_CACHE_SIZE_BYTES", prefix)) {
+        if let Ok(val) = std::env::var(format!("{prefix}_STORAGE_MAX_CACHE_SIZE_BYTES")) {
             config.storage.max_cache_size_bytes = val.parse().map_err(|_| {
-                ConfigError::EnvVar(format!("Invalid max_cache_size_bytes value: {}", val))
+                ConfigError::EnvVar(format!("Invalid max_cache_size_bytes value: {val}"))
             })?;
         }
-        if let Ok(val) = std::env::var(format!("{}_STORAGE_CHUNK_SIZE", prefix)) {
+        if let Ok(val) = std::env::var(format!("{prefix}_STORAGE_CHUNK_SIZE")) {
             config.storage.chunk_size = val
                 .parse()
-                .map_err(|_| ConfigError::EnvVar(format!("Invalid chunk_size value: {}", val)))?;
+                .map_err(|_| ConfigError::EnvVar(format!("Invalid chunk_size value: {val}")))?;
         }
 
         // Scheduler overrides
-        if let Ok(val) = std::env::var(format!("{}_SCHEDULER_TICK_INTERVAL_MS", prefix)) {
+        if let Ok(val) = std::env::var(format!("{prefix}_SCHEDULER_TICK_INTERVAL_MS")) {
             config.scheduler.tick_interval_ms = val.parse().map_err(|_| {
-                ConfigError::EnvVar(format!("Invalid tick_interval_ms value: {}", val))
+                ConfigError::EnvVar(format!("Invalid tick_interval_ms value: {val}"))
             })?;
         }
-        if let Ok(val) = std::env::var(format!("{}_SCHEDULER_MAX_CONCURRENT_TRANSFERS", prefix)) {
+        if let Ok(val) = std::env::var(format!("{prefix}_SCHEDULER_MAX_CONCURRENT_TRANSFERS")) {
             config.scheduler.max_concurrent_transfers = val.parse().map_err(|_| {
-                ConfigError::EnvVar(format!("Invalid max_concurrent_transfers value: {}", val))
+                ConfigError::EnvVar(format!("Invalid max_concurrent_transfers value: {val}"))
             })?;
         }
-        if let Ok(val) = std::env::var(format!("{}_SCHEDULER_FAILOVER_TIMEOUT_MS", prefix)) {
+        if let Ok(val) = std::env::var(format!("{prefix}_SCHEDULER_FAILOVER_TIMEOUT_MS")) {
             config.scheduler.failover_timeout_ms = val.parse().map_err(|_| {
-                ConfigError::EnvVar(format!("Invalid failover_timeout_ms value: {}", val))
+                ConfigError::EnvVar(format!("Invalid failover_timeout_ms value: {val}"))
             })?;
         }
-        if let Ok(val) = std::env::var(format!("{}_SCHEDULER_USE_GPU", prefix)) {
+        if let Ok(val) = std::env::var(format!("{prefix}_SCHEDULER_USE_GPU")) {
             config.scheduler.use_gpu = val
                 .parse()
-                .map_err(|_| ConfigError::EnvVar(format!("Invalid use_gpu value: {}", val)))?;
+                .map_err(|_| ConfigError::EnvVar(format!("Invalid use_gpu value: {val}")))?;
         }
 
         // Log overrides
-        if let Ok(val) = std::env::var(format!("{}_LOG_LEVEL", prefix)) {
+        if let Ok(val) = std::env::var(format!("{prefix}_LOG_LEVEL")) {
             config.log.level = val.parse()?;
         }
-        if let Ok(val) = std::env::var(format!("{}_LOG_FORMAT", prefix)) {
+        if let Ok(val) = std::env::var(format!("{prefix}_LOG_FORMAT")) {
             config.log.format = val.parse()?;
         }
-        if let Ok(val) = std::env::var(format!("{}_LOG_OUTPUT", prefix)) {
+        if let Ok(val) = std::env::var(format!("{prefix}_LOG_OUTPUT")) {
             config.log.output = val.parse()?;
         }
-        if let Ok(val) = std::env::var(format!("{}_LOG_FILE_PATH", prefix)) {
+        if let Ok(val) = std::env::var(format!("{prefix}_LOG_FILE_PATH")) {
             config.log.file_path = Some(PathBuf::from(val));
         }
 

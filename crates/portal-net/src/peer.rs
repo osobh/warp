@@ -1,7 +1,7 @@
 //! Peer management for Portal mesh network
 //!
 //! This module provides concurrent peer management with:
-//! - Thread-safe peer storage using DashMap
+//! - Thread-safe peer storage using `DashMap`
 //! - Bidirectional routing (public key <-> virtual IP)
 //! - Peer metadata tracking (stats, status, endpoints)
 //! - Support for peer roaming (endpoint updates)
@@ -14,9 +14,9 @@ use crate::{PortalNetError, Result};
 
 /// Manages peer configurations and routing for the Portal mesh network
 ///
-/// PeerManager provides thread-safe concurrent access to peer metadata
+/// `PeerManager` provides thread-safe concurrent access to peer metadata
 /// and maintains bidirectional routing between public keys and virtual IPs.
-/// It uses DashMap for lock-free concurrent access patterns.
+/// It uses `DashMap` for lock-free concurrent access patterns.
 ///
 /// # Thread Safety
 ///
@@ -32,8 +32,9 @@ pub struct PeerManager {
 
 impl PeerManager {
     /// Creates a new empty peer manager
+    #[must_use]
     pub fn new() -> Self {
-        PeerManager {
+        Self {
             peers: DashMap::new(),
             routing: DashMap::new(),
         }
@@ -69,8 +70,9 @@ impl PeerManager {
 
     /// Removes a peer from the manager
     ///
-    /// Returns the removed peer's metadata if it existed, or None otherwise.
+    /// Returns the removed peer's metadata if it existed, or `None` otherwise.
     /// This operation removes both the peer metadata and routing entry.
+    #[must_use]
     pub fn remove_peer(&self, public_key: &[u8; 32]) -> Option<PeerMetadata> {
         if let Some((_, metadata)) = self.peers.remove(public_key) {
             // Also remove routing entry
@@ -171,6 +173,7 @@ impl PeerManager {
     /// Retrieves a peer by its public key
     ///
     /// Returns a clone of the peer's metadata if found.
+    #[must_use]
     pub fn get_by_key(&self, public_key: &[u8; 32]) -> Option<PeerMetadata> {
         self.peers.get(public_key).map(|entry| entry.clone())
     }
@@ -178,6 +181,7 @@ impl PeerManager {
     /// Retrieves a peer by its virtual IP address
     ///
     /// Returns a clone of the peer's metadata if found.
+    #[must_use]
     pub fn get_by_ip(&self, ip: VirtualIp) -> Option<PeerMetadata> {
         self.routing
             .get(&ip)
@@ -187,6 +191,7 @@ impl PeerManager {
     /// Lists all peers in the manager
     ///
     /// Returns a vector of cloned peer metadata. The order is not guaranteed.
+    #[must_use]
     pub fn list_all(&self) -> Vec<PeerMetadata> {
         self.peers
             .iter()
@@ -195,6 +200,7 @@ impl PeerManager {
     }
 
     /// Counts peers with a specific status
+    #[must_use]
     pub fn count_by_status(&self, status: PeerStatus) -> usize {
         self.peers
             .iter()
@@ -212,9 +218,9 @@ impl PeerManager {
             entry.update_stats(tx, rx);
             Ok(())
         } else {
+            let key_hex = hex::encode(public_key);
             Err(PortalNetError::PeerNotFound(format!(
-                "peer with public key {} not found",
-                hex::encode(public_key)
+                "peer with public key {key_hex} not found"
             )))
         }
     }

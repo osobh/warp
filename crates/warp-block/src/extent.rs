@@ -5,7 +5,6 @@
 use std::collections::BTreeMap;
 use std::sync::atomic::{AtomicU64, Ordering};
 
-use dashmap::DashMap;
 use parking_lot::RwLock;
 
 /// Block extent - a contiguous range of blocks mapped to storage
@@ -194,7 +193,7 @@ impl ExtentMap {
         let extents = self.extents.read();
 
         // Find the extent that starts at or before this offset
-        if let Some((&start, extent)) = extents.range(..=offset).next_back() {
+        if let Some((&_start, extent)) = extents.range(..=offset).next_back() {
             if extent.contains(offset) {
                 return Some(extent.clone());
             }

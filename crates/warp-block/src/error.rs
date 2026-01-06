@@ -38,11 +38,19 @@ pub enum BlockError {
 
     /// Invalid offset
     #[error("Invalid offset: {offset} (volume size: {size})")]
-    InvalidOffset { offset: u64, size: u64 },
+    InvalidOffset {
+        /// The requested offset
+        offset: u64,
+        /// The actual volume size
+        size: u64,
+    },
 
     /// Invalid length
     #[error("Invalid length: {length}")]
-    InvalidLength { length: u32 },
+    InvalidLength {
+        /// The invalid length value
+        length: u32,
+    },
 
     /// Read-only volume
     #[error("Volume is read-only")]
@@ -50,7 +58,10 @@ pub enum BlockError {
 
     /// Volume busy
     #[error("Volume is busy (has {clients} connected clients)")]
-    VolumeBusy { clients: usize },
+    VolumeBusy {
+        /// Number of connected clients
+        clients: usize,
+    },
 
     /// Snapshot has children
     #[error("Snapshot has children (cannot delete)")]
@@ -58,7 +69,12 @@ pub enum BlockError {
 
     /// Invalid volume state
     #[error("Invalid volume state: expected {expected}, found {found}")]
-    InvalidState { expected: String, found: String },
+    InvalidState {
+        /// The expected state
+        expected: String,
+        /// The actual state found
+        found: String,
+    },
 
     /// Store error
     #[error("Store error: {0}")]

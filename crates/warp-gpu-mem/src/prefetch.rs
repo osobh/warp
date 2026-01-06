@@ -1,16 +1,12 @@
 //! ML-aware tensor prefetcher
 
-use std::collections::{HashMap, VecDeque};
-use std::sync::Arc;
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::collections::VecDeque;
 use std::time::{Duration, Instant};
 
 use dashmap::DashMap;
 use parking_lot::RwLock;
-use tokio::sync::mpsc;
 
 use crate::config::PrefetchStrategy;
-use crate::error::{GpuMemError, GpuMemResult};
 use crate::tensor::{TensorHandle, TensorId};
 
 /// Prefetch hint - suggestion for what to prefetch
@@ -36,7 +32,10 @@ pub enum AccessPattern {
     /// Random access
     Random,
     /// Strided access
-    Strided { stride: usize },
+    Strided {
+        /// Access stride in elements
+        stride: usize
+    },
     /// Unknown pattern
     Unknown,
 }
@@ -261,7 +260,7 @@ impl Prefetcher {
         match phase {
             TrainingPhase::Forward => {
                 // Prefetch next layers
-                for (i, &layer) in layer_order.iter().enumerate() {
+                for (_i, &layer) in layer_order.iter().enumerate() {
                     if layer > current_layer && hints.len() < self.lookahead {
                         hints.push(PrefetchHint {
                             tensor_id: TensorId::from_raw(layer as u64), // Placeholder

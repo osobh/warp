@@ -190,11 +190,10 @@ impl<T: Clone + PartialEq> MVRegister<T> {
                 .iter()
                 .any(|(_, ts)| ts > timestamp && ts.node_id != timestamp.node_id);
 
-            if !dominated {
-                if !self.values.iter().any(|(_, ts)| ts == timestamp) {
+            if !dominated
+                && !self.values.iter().any(|(_, ts)| ts == timestamp) {
                     self.values.push((value.clone(), *timestamp));
                 }
-            }
         }
 
         // Remove dominated values

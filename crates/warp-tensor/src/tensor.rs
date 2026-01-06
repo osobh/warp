@@ -19,11 +19,13 @@ impl TensorId {
     }
 
     /// Create from raw value
+    #[must_use] 
     pub fn from_raw(id: u64) -> Self {
         Self(id)
     }
 
     /// Get the raw value
+    #[must_use] 
     pub fn as_u64(self) -> u64 {
         self.0
     }
@@ -66,24 +68,18 @@ pub enum TensorDtype {
 
 impl TensorDtype {
     /// Get the size of one element in bytes
+    #[must_use]
     pub fn element_size(&self) -> usize {
         match self {
-            Self::Float32 => 4,
-            Self::Float64 => 8,
-            Self::Float16 => 2,
-            Self::BFloat16 => 2,
-            Self::Int32 => 4,
-            Self::Int64 => 8,
-            Self::Int16 => 2,
-            Self::Int8 => 1,
-            Self::UInt8 => 1,
-            Self::Bool => 1,
-            Self::Float8E4M3 => 1,
-            Self::Float8E5M2 => 1,
+            Self::Float32 | Self::Int32 => 4,
+            Self::Float64 | Self::Int64 => 8,
+            Self::Float16 | Self::BFloat16 | Self::Int16 => 2,
+            Self::Int8 | Self::UInt8 | Self::Bool | Self::Float8E4M3 | Self::Float8E5M2 => 1,
         }
     }
 
     /// Get the name of the dtype
+    #[must_use] 
     pub fn name(&self) -> &'static str {
         match self {
             Self::Float32 => "float32",
@@ -101,22 +97,26 @@ impl TensorDtype {
         }
     }
 
-    /// Parse dtype from string
-    pub fn from_str(s: &str) -> Option<Self> {
+}
+
+impl std::str::FromStr for TensorDtype {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s.to_lowercase().as_str() {
-            "float32" | "f32" => Some(Self::Float32),
-            "float64" | "f64" => Some(Self::Float64),
-            "float16" | "f16" => Some(Self::Float16),
-            "bfloat16" | "bf16" => Some(Self::BFloat16),
-            "int32" | "i32" => Some(Self::Int32),
-            "int64" | "i64" => Some(Self::Int64),
-            "int16" | "i16" => Some(Self::Int16),
-            "int8" | "i8" => Some(Self::Int8),
-            "uint8" | "u8" => Some(Self::UInt8),
-            "bool" => Some(Self::Bool),
-            "float8_e4m3" | "f8_e4m3" => Some(Self::Float8E4M3),
-            "float8_e5m2" | "f8_e5m2" => Some(Self::Float8E5M2),
-            _ => None,
+            "float32" | "f32" => Ok(Self::Float32),
+            "float64" | "f64" => Ok(Self::Float64),
+            "float16" | "f16" => Ok(Self::Float16),
+            "bfloat16" | "bf16" => Ok(Self::BFloat16),
+            "int32" | "i32" => Ok(Self::Int32),
+            "int64" | "i64" => Ok(Self::Int64),
+            "int16" | "i16" => Ok(Self::Int16),
+            "int8" | "i8" => Ok(Self::Int8),
+            "uint8" | "u8" => Ok(Self::UInt8),
+            "bool" => Ok(Self::Bool),
+            "float8_e4m3" | "f8_e4m3" => Ok(Self::Float8E4M3),
+            "float8_e5m2" | "f8_e5m2" => Ok(Self::Float8E5M2),
+            _ => Err(format!("Unknown tensor dtype: {s}")),
         }
     }
 }
@@ -192,6 +192,7 @@ impl TensorMeta {
     }
 
     /// Set layout
+    #[must_use] 
     pub fn with_layout(mut self, layout: TensorLayout) -> Self {
         self.layout = layout;
         self
@@ -312,6 +313,7 @@ pub struct LazyTensor {
 
 impl LazyTensor {
     /// Create new lazy tensor reference
+    #[must_use] 
     pub fn new(meta: TensorMeta) -> Self {
         Self {
             meta,
@@ -327,6 +329,7 @@ impl LazyTensor {
     }
 
     /// Get time since last access
+    #[must_use] 
     pub fn time_since_access(&self) -> Option<Duration> {
         self.last_access.map(|t| t.elapsed())
     }

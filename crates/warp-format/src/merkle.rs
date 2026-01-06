@@ -65,7 +65,7 @@ impl MerkleTree {
             // Move to parent level
             index /= 2;
             level_start += level_size;
-            level_size = (level_size + 1) / 2;
+            level_size = level_size.div_ceil(2);
         }
 
         proof
@@ -110,7 +110,7 @@ impl MerkleTree {
         let mut level_size = leaves.len();
 
         while level_size > 1 {
-            let next_level_size = (level_size + 1) / 2;
+            let next_level_size = level_size.div_ceil(2);
 
             for i in 0..next_level_size {
                 let left_idx = level_start + i * 2;
@@ -187,9 +187,9 @@ impl NodeCache {
     /// Insert a node into cache, evicting LRU if necessary
     fn insert(&mut self, key: (usize, usize), hash: [u8; 32]) {
         // Check if already present
-        if self.nodes.contains_key(&key) {
+        if let std::collections::hash_map::Entry::Occupied(mut e) = self.nodes.entry(key) {
             // Update and move to back
-            self.nodes.insert(key, hash);
+            e.insert(hash);
             if let Some(pos) = self.access_order.iter().position(|k| *k == key) {
                 self.access_order.remove(pos);
             }
@@ -405,7 +405,7 @@ impl SparseMerkleTree {
 
             // Move to parent
             index /= 2;
-            level_size = (level_size + 1) / 2;
+            level_size = level_size.div_ceil(2);
         }
 
         MerkleProof {
@@ -492,7 +492,7 @@ impl SparseMerkleTree {
     fn size_at_level(&self, level: usize) -> usize {
         let mut size = self.leaves.len();
         for _ in 0..level {
-            size = (size + 1) / 2;
+            size = size.div_ceil(2);
         }
         size
     }

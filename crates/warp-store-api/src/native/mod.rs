@@ -13,7 +13,7 @@ pub mod zk_ops;
 
 use axum::{
     Json, Router,
-    extract::{Path, Query, State},
+    extract::{Path, State},
     http::{StatusCode, header},
     response::{IntoResponse, Response},
     routing::{get, post},
@@ -23,7 +23,7 @@ use std::collections::HashMap;
 use std::time::Duration;
 
 use warp_store::backend::StorageBackend;
-use warp_store::{AccessScope, FieldData, FieldValue, ObjectKey, Permissions};
+use warp_store::{AccessScope, FieldValue, ObjectKey, Permissions};
 
 use crate::AppState;
 use crate::error::{ApiError, ApiResult};

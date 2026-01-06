@@ -26,7 +26,7 @@ const TXT_KEY_VIRTUAL_IP: &str = "virtual_ip";
 /// Local edge information for mDNS registration
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LocalEdgeInfo {
-    /// WireGuard public key (X25519)
+    /// `WireGuard` public key (X25519)
     pub public_key: [u8; 32],
     /// Virtual IP in Portal subnet
     pub virtual_ip: VirtualIp,
@@ -35,9 +35,10 @@ pub struct LocalEdgeInfo {
 }
 
 impl LocalEdgeInfo {
-    /// Creates a new LocalEdgeInfo instance
-    pub fn new(public_key: [u8; 32], virtual_ip: VirtualIp, endpoint: SocketAddr) -> Self {
-        LocalEdgeInfo {
+    /// Creates a new `LocalEdgeInfo` instance
+    #[must_use]
+    pub const fn new(public_key: [u8; 32], virtual_ip: VirtualIp, endpoint: SocketAddr) -> Self {
+        Self {
             public_key,
             virtual_ip,
             endpoint,
@@ -45,11 +46,16 @@ impl LocalEdgeInfo {
     }
 
     /// Returns the public key as hex
+    #[must_use]
     pub fn public_key_hex(&self) -> String {
         hex::encode(self.public_key)
     }
 
-    /// Validates the LocalEdgeInfo
+    /// Validates the `LocalEdgeInfo`
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the virtual IP is not in the Portal subnet
     pub fn validate(&self) -> Result<()> {
         if !self.virtual_ip.is_portal_subnet() {
             return Err(PortalNetError::InvalidVirtualIp(format!(
@@ -66,20 +72,26 @@ impl LocalEdgeInfo {
 pub enum DiscoveryEvent {
     /// A peer was discovered on the local network
     PeerDiscovered {
+        /// `WireGuard` public key of the discovered peer
         public_key: [u8; 32],
+        /// Virtual IP address assigned to the peer in the Portal subnet
         virtual_ip: VirtualIp,
+        /// Network endpoint (`IP:port`) where the peer can be reached
         endpoint: SocketAddr,
     },
     /// A peer was lost (no longer responding)
-    PeerLost { public_key: [u8; 32] },
+    PeerLost {
+        /// `WireGuard` public key of the lost peer
+        public_key: [u8; 32]
+    },
 }
 
 impl DiscoveryEvent {
     /// Returns the public key associated with this event
-    pub fn public_key(&self) -> &[u8; 32] {
+    #[must_use]
+    pub const fn public_key(&self) -> &[u8; 32] {
         match self {
-            DiscoveryEvent::PeerDiscovered { public_key, .. } => public_key,
-            DiscoveryEvent::PeerLost { public_key } => public_key,
+            Self::PeerDiscovered { public_key, .. } | Self::PeerLost { public_key } => public_key,
         }
     }
 }
@@ -102,9 +114,13 @@ pub struct MdnsDiscovery {
 
 impl MdnsDiscovery {
     /// Creates a new mDNS discovery service
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the mDNS daemon fails to create
     pub fn new(config: MdnsConfig) -> Result<Self> {
         let daemon = ServiceDaemon::new()
-            .map_err(|e| PortalNetError::Mdns(format!("failed to create mDNS daemon: {}", e)))?;
+            .map_err(|e| PortalNetError::Mdns(format!("failed to create mDNS daemon: {e}")))?;
 
         let state = DiscoveryState {
             daemon,
@@ -112,13 +128,17 @@ impl MdnsDiscovery {
             known_peers: HashMap::new(),
         };
 
-        Ok(MdnsDiscovery {
+        Ok(Self {
             config,
             state: Arc::new(RwLock::new(state)),
         })
     }
 
     /// Registers the local edge for mDNS discovery
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if registration fails or the virtual IP is invalid
     pub async fn register(&self, local_edge: &LocalEdgeInfo) -> Result<()> {
         local_edge.validate()?;
 
@@ -129,7 +149,7 @@ impl MdnsDiscovery {
             state
                 .daemon
                 .unregister(instance_name)
-                .map_err(|e| PortalNetError::Mdns(format!("failed to unregister: {}", e)))?;
+                .map_err(|e| PortalNetError::Mdns(format!("failed to unregister: {e}")))?;
             state.registered_service = None;
         }
 
@@ -161,18 +181,18 @@ impl MdnsDiscovery {
         let service_info = ServiceInfo::new(
             SERVICE_TYPE,
             &instance_name,
-            &format!("{}.local.", instance_name),
+            &format!("{instance_name}.local."),
             host_ip_str.as_str(),
             local_edge.endpoint.port(),
             Some(properties),
         )
-        .map_err(|e| PortalNetError::Mdns(format!("failed to create service info: {}", e)))?;
+        .map_err(|e| PortalNetError::Mdns(format!("failed to create service info: {e}")))?;
 
         // Register the service
         state
             .daemon
             .register(service_info)
-            .map_err(|e| PortalNetError::Mdns(format!("failed to register service: {}", e)))?;
+            .map_err(|e| PortalNetError::Mdns(format!("failed to register service: {e}")))?;
 
         state.registered_service = Some(instance_name);
 
@@ -180,6 +200,10 @@ impl MdnsDiscovery {
     }
 
     /// Starts browsing for peers and returns an event receiver
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if browsing fails to start
     pub async fn browse(&self) -> Result<mpsc::Receiver<DiscoveryEvent>> {
         let (tx, rx) = mpsc::channel(100);
         let state = self.state.clone();
@@ -190,7 +214,7 @@ impl MdnsDiscovery {
             state_guard
                 .daemon
                 .browse(SERVICE_TYPE)
-                .map_err(|e| PortalNetError::Mdns(format!("failed to start browsing: {}", e)))?
+                .map_err(|e| PortalNetError::Mdns(format!("failed to start browsing: {e}")))?
         };
 
         // Spawn background task to process mDNS events
@@ -218,6 +242,10 @@ impl MdnsDiscovery {
     }
 
     /// Stops discovery and unregisters the local service
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if unregistration or shutdown fails
     pub async fn stop(&self) -> Result<()> {
         let mut state = self.state.write().await;
 
@@ -225,13 +253,13 @@ impl MdnsDiscovery {
             state
                 .daemon
                 .unregister(&instance_name)
-                .map_err(|e| PortalNetError::Mdns(format!("failed to unregister: {}", e)))?;
+                .map_err(|e| PortalNetError::Mdns(format!("failed to unregister: {e}")))?;
         }
 
         state
             .daemon
             .shutdown()
-            .map_err(|e| PortalNetError::Mdns(format!("failed to shutdown daemon: {}", e)))?;
+            .map_err(|e| PortalNetError::Mdns(format!("failed to shutdown daemon: {e}")))?;
 
         Ok(())
     }
@@ -271,12 +299,11 @@ impl MdnsDiscovery {
         let endpoint = SocketAddr::new(*addresses.iter().next()?, port);
 
         // Update known peers
-        {
-            let mut state_guard = state.write().await;
-            state_guard
-                .known_peers
-                .insert(public_key, info.get_fullname().to_string());
-        }
+        let mut state_guard = state.write().await;
+        state_guard
+            .known_peers
+            .insert(public_key, info.get_fullname().to_string());
+        drop(state_guard);
 
         Some(DiscoveryEvent::PeerDiscovered {
             public_key,
@@ -306,7 +333,8 @@ impl MdnsDiscovery {
     }
 
     /// Returns the current configuration
-    pub fn config(&self) -> &MdnsConfig {
+    #[must_use]
+    pub const fn config(&self) -> &MdnsConfig {
         &self.config
     }
 

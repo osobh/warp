@@ -9,9 +9,7 @@
 
 use axum::{
     Json,
-    extract::{Path, State},
-    http::StatusCode,
-    response::IntoResponse,
+    extract::State,
 };
 use serde::{Deserialize, Serialize};
 use std::time::Instant;
@@ -404,6 +402,7 @@ pub async fn gpu_capabilities<B: StorageBackend>(
     }
 }
 
+/// Get GPU capabilities (CPU-only fallback when GPU feature is disabled)
 #[cfg(not(feature = "gpu"))]
 pub async fn gpu_capabilities<B: StorageBackend>(
     State(_state): State<AppState<B>>,

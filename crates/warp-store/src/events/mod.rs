@@ -17,6 +17,13 @@
 //! Events are published to the broadcast channel `hpc.storage.events` and can be
 //! subscribed to by any service in the HPC-AI ecosystem (Horizon, RustySpark, etc.)
 //!
+//! ## AWS Event Destinations
+//!
+//! When the `aws-events` feature is enabled, events can be published to:
+//! - SNS topics for fan-out messaging
+//! - SQS queues for reliable message processing
+//! - Lambda functions for serverless event handling
+//!
 //! ## Example
 //!
 //! ```rust,no_run
@@ -36,13 +43,15 @@
 //! });
 //! ```
 
-use std::collections::HashMap;
+// AWS event destinations submodule
+pub mod aws;
+
 use std::sync::Arc;
 
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use tokio::sync::broadcast;
-use tracing::{debug, info, warn};
+use tracing::{debug, info};
 
 #[cfg(feature = "hpc-channels")]
 use hpc_channels::{
@@ -438,6 +447,31 @@ pub struct RestoreEventData {
 
     /// Lifecycle restore storage class
     pub lifecycle_restore_storage_class: String,
+}
+
+/// S3 event message wrapper (matches AWS S3 notification format)
+///
+/// This wraps multiple S3Event records into a single message for delivery
+/// to destinations like SNS, SQS, and Lambda.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "PascalCase")]
+pub struct S3EventMessage {
+    /// Event records
+    pub records: Vec<S3Event>,
+}
+
+impl S3EventMessage {
+    /// Create a message from a single event
+    pub fn from_event(event: S3Event) -> Self {
+        Self {
+            records: vec![event],
+        }
+    }
+
+    /// Create a message from multiple events
+    pub fn from_events(events: Vec<S3Event>) -> Self {
+        Self { records: events }
+    }
 }
 
 // =============================================================================
@@ -897,6 +931,10 @@ pub struct EventEmitter {
     /// HTTP client for webhooks (when feature is enabled)
     #[cfg(feature = "webhooks")]
     http_client: reqwest::Client,
+
+    /// AWS event clients (when feature is enabled)
+    #[cfg(feature = "aws-events")]
+    aws_clients: Option<Arc<aws::AwsEventClients>>,
 }
 
 impl EventEmitter {
@@ -928,7 +966,33 @@ impl EventEmitter {
             hpc_sender,
             #[cfg(feature = "webhooks")]
             http_client,
+            #[cfg(feature = "aws-events")]
+            aws_clients: None,
         }
+    }
+
+    /// Create a new event emitter with AWS clients
+    #[cfg(feature = "aws-events")]
+    pub async fn with_aws(config: EventConfig, aws_config: aws::AwsEventConfig) -> Self {
+        let mut emitter = Self::new(config);
+
+        match aws::AwsEventClients::new(aws_config).await {
+            Ok(clients) => {
+                emitter.aws_clients = Some(Arc::new(clients));
+                info!("AWS event clients initialized");
+            }
+            Err(e) => {
+                warn!(error = %e, "Failed to initialize AWS event clients");
+            }
+        }
+
+        emitter
+    }
+
+    /// Set AWS clients after construction
+    #[cfg(feature = "aws-events")]
+    pub fn set_aws_clients(&mut self, clients: Arc<aws::AwsEventClients>) {
+        self.aws_clients = Some(clients);
     }
 
     /// Subscribe to all events (local broadcast channel)
@@ -1003,25 +1067,106 @@ impl EventEmitter {
     fn send_to_destination(&self, event: &S3Event, destination: EventDestination) {
         match destination {
             EventDestination::Topic(arn) => {
-                debug!(arn = arn.as_str(), "Would send to SNS topic");
-                // TODO: Implement SNS integration
+                self.send_to_sns(event.clone(), arn);
             }
             EventDestination::Queue(arn) => {
-                debug!(arn = arn.as_str(), "Would send to SQS queue");
-                // TODO: Implement SQS integration
+                self.send_to_sqs(event.clone(), arn);
             }
             EventDestination::Lambda(arn) => {
-                debug!(arn = arn.as_str(), "Would invoke Lambda function");
-                // TODO: Implement Lambda integration
+                self.invoke_lambda(event.clone(), arn);
             }
             EventDestination::HpcChannel(channel_id) => {
                 debug!(channel = channel_id.as_str(), "Would send to HPC channel");
-                // TODO: Send to specific HPC-Channels channel
+                // HPC-Channels specific channel routing could be added here
             }
             EventDestination::Webhook(config) => {
                 self.send_to_webhook(event.clone(), config);
             }
         }
+    }
+
+    /// Send event to SNS topic
+    #[cfg(feature = "aws-events")]
+    fn send_to_sns(&self, event: S3Event, topic_arn: String) {
+        if let Some(clients) = &self.aws_clients {
+            let clients = Arc::clone(clients);
+            tokio::spawn(async move {
+                if let Err(e) = clients.publish_to_sns(&topic_arn, &event).await {
+                    warn!(
+                        topic = topic_arn.as_str(),
+                        error = %e,
+                        "Failed to publish to SNS"
+                    );
+                }
+            });
+        } else {
+            debug!(topic = topic_arn.as_str(), "AWS clients not configured - SNS publish skipped");
+        }
+    }
+
+    #[cfg(not(feature = "aws-events"))]
+    fn send_to_sns(&self, _event: S3Event, topic_arn: String) {
+        debug!(topic = topic_arn.as_str(), "AWS events feature not enabled - SNS publish skipped");
+    }
+
+    /// Send event to SQS queue
+    #[cfg(feature = "aws-events")]
+    fn send_to_sqs(&self, event: S3Event, queue_arn: String) {
+        if let Some(clients) = &self.aws_clients {
+            let clients = Arc::clone(clients);
+            tokio::spawn(async move {
+                // Convert ARN to URL
+                match clients.get_queue_url_from_arn(&queue_arn).await {
+                    Ok(queue_url) => {
+                        if let Err(e) = clients.send_to_sqs(&queue_url, &event).await {
+                            warn!(
+                                queue = queue_arn.as_str(),
+                                error = %e,
+                                "Failed to send to SQS"
+                            );
+                        }
+                    }
+                    Err(e) => {
+                        warn!(
+                            queue = queue_arn.as_str(),
+                            error = %e,
+                            "Failed to convert SQS ARN to URL"
+                        );
+                    }
+                }
+            });
+        } else {
+            debug!(queue = queue_arn.as_str(), "AWS clients not configured - SQS send skipped");
+        }
+    }
+
+    #[cfg(not(feature = "aws-events"))]
+    fn send_to_sqs(&self, _event: S3Event, queue_arn: String) {
+        debug!(queue = queue_arn.as_str(), "AWS events feature not enabled - SQS send skipped");
+    }
+
+    /// Invoke Lambda function with event
+    #[cfg(feature = "aws-events")]
+    fn invoke_lambda(&self, event: S3Event, function_arn: String) {
+        if let Some(clients) = &self.aws_clients {
+            let clients = Arc::clone(clients);
+            tokio::spawn(async move {
+                if let Err(e) = clients.invoke_lambda(&function_arn, &event).await {
+                    warn!(
+                        function = function_arn.as_str(),
+                        error = %e,
+                        "Failed to invoke Lambda"
+                    );
+                }
+            });
+        } else {
+            debug!(function = function_arn.as_str(), "AWS clients not configured - Lambda invoke skipped");
+        }
+    }
+
+    #[cfg(not(feature = "aws-events"))]
+    fn invoke_lambda(&self, _event: S3Event, function_arn: String) {
+        debug!(function = function_arn.as_str(), "AWS events feature not enabled - Lambda invoke skipped");
     }
 
     /// Send event to a webhook endpoint

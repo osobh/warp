@@ -1,6 +1,6 @@
 //! High-level network orchestration for Portal mesh network
 //!
-//! This module provides the NetworkManager, which coordinates all network components:
+//! This module provides the `NetworkManager`, which coordinates all network components:
 //! - mDNS discovery for local peer finding
 //! - Hub connection for coordination and relay
 //! - Peer management and routing
@@ -41,9 +41,15 @@ pub enum NetworkState {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ConnectionRoute {
     /// Direct P2P connection available
-    Direct { endpoint: SocketAddr },
+    Direct {
+        /// The socket address of the peer endpoint
+        endpoint: SocketAddr
+    },
     /// Relayed through Hub
-    Relayed { via_hub: SocketAddr },
+    Relayed {
+        /// The socket address of the hub relay server
+        via_hub: SocketAddr
+    },
     /// Peer is unavailable
     Unavailable,
 }
@@ -52,7 +58,8 @@ pub enum ConnectionRoute {
 struct ManagerState {
     /// Our local virtual IP (once allocated)
     local_ip: Option<VirtualIp>,
-    /// Our public key
+    /// Our `WireGuard` public key used for peer identification
+    #[allow(dead_code)]
     local_public_key: [u8; 32],
     /// Current network state
     state: NetworkState,
@@ -76,7 +83,7 @@ struct ManagerState {
 
 /// High-level network orchestration
 ///
-/// NetworkManager coordinates all network components and provides a unified
+/// `NetworkManager` coordinates all network components and provides a unified
 /// interface for network operations. It handles:
 /// - Local edge registration with mDNS
 /// - Hub connection and virtual IP allocation
@@ -97,7 +104,11 @@ impl NetworkManager {
     /// # Arguments
     ///
     /// * `config` - Network configuration
-    /// * `local_public_key` - Our WireGuard public key
+    /// * `local_public_key` - Our `WireGuard` public key
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if network initialization fails
     pub async fn new(config: NetworkConfig, local_public_key: [u8; 32]) -> Result<Self> {
         let (event_tx, _) = broadcast::channel(1000);
         let peer_manager = Arc::new(PeerManager::new());
@@ -119,13 +130,17 @@ impl NetworkManager {
             hub_connection: None,
         };
 
-        Ok(NetworkManager {
+        Ok(Self {
             config,
             state: Arc::new(RwLock::new(state)),
         })
     }
 
     /// Starts network services (discovery and Hub connection)
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if network services fail to start
     pub async fn start(&self) -> Result<()> {
         let mut state = self.state.write().await;
 
@@ -142,7 +157,7 @@ impl NetworkManager {
         // Create QUIC endpoint for connections
         if state.endpoint.is_none() {
             let endpoint = WarpEndpoint::client().await.map_err(|e| {
-                PortalNetError::Transport(format!("Failed to create endpoint: {}", e))
+                PortalNetError::Transport(format!("Failed to create endpoint: {e}"))
             })?;
             state.endpoint = Some(Arc::new(endpoint));
         }
@@ -223,11 +238,16 @@ impl NetworkManager {
     }
 
     /// Requests connection to a peer and returns the best route
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if connection fails
     pub async fn connect_to(&self, target: &[u8; 32]) -> Result<ConnectionRoute> {
         let state = self.state.read().await;
 
-        match state.peer_manager.get_by_key(target) {
-            Some(peer) => {
+        state.peer_manager.get_by_key(target).map_or(
+            Ok(ConnectionRoute::Unavailable),
+            |peer| {
                 // Prefer direct P2P if endpoint is known
                 if let Some(endpoint) = peer.config.endpoint() {
                     Ok(ConnectionRoute::Direct { endpoint })
@@ -237,12 +257,15 @@ impl NetworkManager {
                         via_hub: state.hub_endpoint,
                     })
                 }
-            }
-            None => Ok(ConnectionRoute::Unavailable),
-        }
+            },
+        )
     }
 
     /// Sends data to a peer using best available path
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if sending fails
     pub async fn send(&self, to: &[u8; 32], data: &[u8]) -> Result<()> {
         let route = self.connect_to(to).await?;
 
@@ -257,7 +280,7 @@ impl NetworkManager {
                             .send_chunk(0, Bytes::copy_from_slice(data))
                             .await
                             .map_err(|e| {
-                                PortalNetError::Transport(format!("Failed to send: {}", e))
+                                PortalNetError::Transport(format!("Failed to send: {e}"))
                             });
                     }
                 }
@@ -270,18 +293,18 @@ impl NetworkManager {
 
                 if let Some(ep) = ep {
                     let conn = ep.connect(endpoint, "portal-peer").await.map_err(|e| {
-                        PortalNetError::Transport(format!("Failed to connect: {}", e))
+                        PortalNetError::Transport(format!("Failed to connect: {e}"))
                     })?;
 
                     // Perform handshake
                     conn.handshake().await.map_err(|e| {
-                        PortalNetError::Transport(format!("Handshake failed: {}", e))
+                        PortalNetError::Transport(format!("Handshake failed: {e}"))
                     })?;
 
                     // Send the data
                     conn.send_chunk(0, Bytes::copy_from_slice(data))
                         .await
-                        .map_err(|e| PortalNetError::Transport(format!("Failed to send: {}", e)))?;
+                        .map_err(|e| PortalNetError::Transport(format!("Failed to send: {e}")))?;
 
                     // Store connection for reuse
                     let mut state = self.state.write().await;
@@ -306,17 +329,19 @@ impl NetworkManager {
                     hub_conn
                         .send_chunk(0, Bytes::from(relay_data))
                         .await
-                        .map_err(|e| PortalNetError::Transport(format!("Failed to relay: {}", e)))
+                        .map_err(|e| PortalNetError::Transport(format!("Failed to relay: {e}")))
                 } else {
                     Err(PortalNetError::Transport(
                         "Not connected to Hub for relay".to_string(),
                     ))
                 }
             }
-            ConnectionRoute::Unavailable => Err(PortalNetError::PeerNotFound(format!(
-                "peer {} is unavailable",
-                hex::encode(to)
-            ))),
+            ConnectionRoute::Unavailable => {
+                let key_hex = hex::encode(to);
+                Err(PortalNetError::PeerNotFound(format!(
+                    "peer {key_hex} is unavailable"
+                )))
+            }
         }
     }
 
@@ -327,6 +352,10 @@ impl NetworkManager {
     }
 
     /// Adds a peer manually (e.g., from Hub peer list)
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if peer addition fails
     pub async fn add_peer(&self, config: PeerConfig) -> Result<()> {
         {
             let state = self.state.read().await;
@@ -346,6 +375,10 @@ impl NetworkManager {
     }
 
     /// Updates a peer's endpoint
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if update fails
     pub async fn update_peer_endpoint(&self, key: &[u8; 32], endpoint: SocketAddr) -> Result<()> {
         let state = self.state.read().await;
         state.peer_manager.update_endpoint(key, endpoint)?;
@@ -360,6 +393,10 @@ impl NetworkManager {
     }
 
     /// Updates a peer's connection status
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if update fails
     pub async fn update_peer_status(&self, key: &[u8; 32], status: PeerStatus) -> Result<()> {
         let state = self.state.read().await;
         state.peer_manager.update_status(key, status)?;
@@ -369,9 +406,9 @@ impl NetworkManager {
             public_key: *key,
             status,
         });
+        drop(state);
 
         // Update network state
-        drop(state);
         self.update_network_state().await;
 
         Ok(())
@@ -381,6 +418,10 @@ impl NetworkManager {
     ///
     /// This allows adding additional network paths to a peer for
     /// multi-NIC aggregation and failover.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if endpoint addition fails
     pub async fn add_peer_endpoint(
         &self,
         key: &[u8; 32],
@@ -402,6 +443,10 @@ impl NetworkManager {
     ///
     /// Removes a specific endpoint from a peer's endpoint list.
     /// Returns the removed endpoint if it existed.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if endpoint removal fails
     pub async fn remove_peer_endpoint(
         &self,
         key: &[u8; 32],
@@ -421,6 +466,10 @@ impl NetworkManager {
     }
 
     /// Get all endpoints for a peer
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if peer is not found
     pub async fn get_peer_endpoints(&self, key: &[u8; 32]) -> Result<Vec<PeerEndpoint>> {
         let state = self.state.read().await;
         state
@@ -517,10 +566,15 @@ impl NetworkManager {
 /// Network statistics
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct NetworkStats {
+    /// Current network state
     pub state: NetworkState,
+    /// Total number of known peers
     pub peer_count: usize,
+    /// Number of peers connected via direct P2P
     pub direct_p2p_count: usize,
+    /// Number of peers connected via hub relay
     pub relayed_count: usize,
+    /// Number of peers currently offline
     pub offline_count: usize,
 }
 

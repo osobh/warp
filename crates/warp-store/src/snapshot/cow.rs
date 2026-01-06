@@ -1,13 +1,11 @@
 //! Copy-on-Write block management for efficient snapshots
 
-use std::collections::HashMap;
-use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::time::{Duration, Instant, SystemTime};
+use std::time::{Duration, SystemTime};
 
 use dashmap::DashMap;
 use parking_lot::RwLock;
-use tracing::{debug, info, warn};
+use tracing::{debug, info};
 
 /// Unique identifier for a COW block
 pub type BlockId = u64;
@@ -178,6 +176,16 @@ pub struct CowConfig {
 }
 
 impl Default for CowConfig {
+    /// Creates a default COW configuration with sensible defaults.
+    ///
+    /// Defaults:
+    /// - Block size: 64KB
+    /// - Deduplication: enabled
+    /// - Inline data threshold: 4KB
+    /// - Compression: disabled
+    /// - Compression type: lz4
+    /// - Cleanup interval: 60 seconds
+    /// - Cleanup batch size: 1000 blocks
     fn default() -> Self {
         Self {
             block_size: 64 * 1024, // 64KB blocks
@@ -269,7 +277,7 @@ impl CowManager {
         // Create new block
         let block = if data.len() <= self.config.inline_data_threshold {
             // Store inline
-            let mut block = CowBlock::with_inline_data(data.to_vec(), checksum);
+            let block = CowBlock::with_inline_data(data.to_vec(), checksum);
             {
                 let mut stats = self.stats.write();
                 stats.inline_blocks += 1;

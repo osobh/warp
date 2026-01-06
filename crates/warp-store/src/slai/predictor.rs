@@ -1,8 +1,6 @@
 //! Workload prediction for SLAI-driven placement
 
-use std::collections::HashMap;
-use std::sync::atomic::{AtomicU64, Ordering};
-use std::time::{Duration, Instant, SystemTime};
+use std::time::{Duration, Instant};
 
 use dashmap::DashMap;
 use parking_lot::RwLock;
@@ -28,6 +26,7 @@ pub enum WorkloadType {
 }
 
 impl Default for WorkloadType {
+    /// Returns the default workload type (Unknown)
     fn default() -> Self {
         Self::Unknown
     }
@@ -221,7 +220,7 @@ impl WorkloadPredictor {
         }
     }
 
-    /// Classify workload from session context
+    /// Classifies workload type by analyzing session context and access patterns
     fn classify_workload(&self, ctx: &SessionContext) -> WorkloadType {
         let accesses = &ctx.recent_accesses;
         if accesses.is_empty() {
@@ -273,7 +272,7 @@ impl WorkloadPredictor {
         WorkloadType::Unknown
     }
 
-    /// Check if access pattern looks like sequential batches
+    /// Checks if access pattern looks like sequential batch files (e.g., batch_0, batch_1, batch_2)
     fn is_sequential_batch_pattern(&self, keys: &[&str]) -> bool {
         if keys.len() < 3 {
             return false;
@@ -347,7 +346,7 @@ impl WorkloadPredictor {
         result
     }
 
-    /// Predict next batch files
+    /// Predicts next batch files by incrementing batch numbers from recent accesses
     fn predict_next_batches(&self, ctx: &SessionContext) -> Vec<String> {
         let mut predicted = Vec::new();
 
@@ -365,10 +364,10 @@ impl WorkloadPredictor {
         predicted
     }
 
-    /// Increment batch number in a key
+    /// Increments the last numeric sequence in a key to predict the next batch file
     fn increment_batch_number(&self, key: &str) -> Option<String> {
         // Find the last number in the key and increment it
-        let mut chars: Vec<char> = key.chars().collect();
+        let chars: Vec<char> = key.chars().collect();
         let mut num_start = None;
         let mut num_end = None;
 
@@ -397,7 +396,7 @@ impl WorkloadPredictor {
         None
     }
 
-    /// Predict model files to prefetch
+    /// Predicts related model weight files based on recently accessed model files
     fn predict_model_files(&self, ctx: &SessionContext) -> Vec<String> {
         // Get related model files based on recent accesses
         let mut predicted = Vec::new();
@@ -437,7 +436,7 @@ impl WorkloadPredictor {
     }
 
     /// Validate a prediction (for learning)
-    pub fn validate_prediction(&self, session_id: &str, actual_object: &str, was_predicted: bool) {
+    pub fn validate_prediction(&self, _session_id: &str, _actual_object: &str, was_predicted: bool) {
         if was_predicted {
             self.stats.write().correct += 1;
         }
@@ -479,6 +478,7 @@ impl WorkloadPredictor {
 }
 
 impl Default for WorkloadPredictor {
+    /// Creates a new workload predictor with default settings
     fn default() -> Self {
         Self::new()
     }

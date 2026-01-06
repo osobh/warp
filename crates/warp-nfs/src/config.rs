@@ -8,8 +8,10 @@ use serde::{Deserialize, Serialize};
 
 /// Security flavor for NFS authentication
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Default)]
 pub enum SecurityFlavor {
     /// AUTH_SYS (traditional UNIX authentication)
+    #[default]
     Sys,
     /// RPCSEC_GSS with Kerberos (authentication only)
     Krb5,
@@ -19,28 +21,20 @@ pub enum SecurityFlavor {
     Krb5p,
 }
 
-impl Default for SecurityFlavor {
-    fn default() -> Self {
-        Self::Sys
-    }
-}
 
 /// UID/GID squashing mode
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Default)]
 pub enum SquashMode {
     /// No squashing
     None,
     /// Squash root (UID 0) to anonymous
+    #[default]
     RootSquash,
     /// Squash all UIDs to anonymous
     AllSquash,
 }
 
-impl Default for SquashMode {
-    fn default() -> Self {
-        Self::RootSquash
-    }
-}
 
 /// NFS export configuration
 #[derive(Debug, Clone, Serialize, Deserialize)]

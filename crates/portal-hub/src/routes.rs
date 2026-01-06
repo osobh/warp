@@ -123,6 +123,10 @@ pub struct UploadChunkRequest {
 ///
 /// This is the only unauthenticated endpoint. It registers a new edge device
 /// and returns an authentication token for subsequent requests.
+///
+/// # Errors
+///
+/// Returns an error if the public key is invalid or edge registration fails
 pub async fn register_edge(
     State(storage): State<Arc<HubStorage>>,
     Json(req): Json<RegisterEdgeRequest>,
@@ -149,6 +153,10 @@ pub async fn register_edge(
 }
 
 /// POST /api/v1/portals - Create a new portal
+///
+/// # Errors
+///
+/// Returns an error if the owner key is invalid or portal storage fails
 pub async fn create_portal(
     State(storage): State<Arc<HubStorage>>,
     _auth: AuthenticatedEdge,
@@ -176,6 +184,10 @@ pub async fn create_portal(
 }
 
 /// GET /api/v1/portals/:id - Get portal metadata
+///
+/// # Errors
+///
+/// Returns an error if the portal is not found or serialization fails
 pub async fn get_portal(
     State(storage): State<Arc<HubStorage>>,
     _auth: AuthenticatedEdge,
@@ -193,6 +205,10 @@ pub async fn get_portal(
 }
 
 /// PUT /api/v1/portals/:id - Update portal
+///
+/// # Errors
+///
+/// Returns an error if the portal is not found, authentication fails, or storage operation fails
 pub async fn update_portal(
     State(storage): State<Arc<HubStorage>>,
     auth: AuthenticatedEdge,
@@ -234,6 +250,10 @@ pub async fn update_portal(
 }
 
 /// POST /api/v1/portals/:id/manifest - Upload encrypted manifest
+///
+/// # Errors
+///
+/// Returns an error if the portal is not found or authentication fails
 pub async fn upload_manifest(
     State(storage): State<Arc<HubStorage>>,
     auth: AuthenticatedEdge,
@@ -249,12 +269,16 @@ pub async fn upload_manifest(
     }
 
     // Store encrypted manifest
-    storage.store_manifest(portal_id, body.to_vec());
+    storage.store_manifest(portal_id, &body);
 
     Ok(StatusCode::CREATED)
 }
 
 /// GET /api/v1/portals/:id/manifest - Download encrypted manifest
+///
+/// # Errors
+///
+/// Returns an error if the portal or manifest is not found
 pub async fn get_manifest(
     State(storage): State<Arc<HubStorage>>,
     _auth: AuthenticatedEdge,
@@ -270,6 +294,10 @@ pub async fn get_manifest(
 }
 
 /// POST /api/v1/chunks - Upload encrypted chunk
+///
+/// # Errors
+///
+/// Returns an error if the content ID is invalid
 pub async fn upload_chunk(
     State(storage): State<Arc<HubStorage>>,
     _auth: AuthenticatedEdge,
@@ -280,12 +308,16 @@ pub async fn upload_chunk(
     let content_id = parse_content_id(&content_id_hex)?;
 
     // Store chunk
-    storage.store_chunk(content_id, body.to_vec());
+    storage.store_chunk(content_id, &body);
 
     Ok(StatusCode::CREATED)
 }
 
 /// GET /api/v1/chunks/:cid - Download encrypted chunk
+///
+/// # Errors
+///
+/// Returns an error if the content ID is invalid or chunk is not found
 pub async fn get_chunk(
     State(storage): State<Arc<HubStorage>>,
     _auth: AuthenticatedEdge,
@@ -301,6 +333,10 @@ pub async fn get_chunk(
 }
 
 /// POST /api/v1/chunks/check - Check which chunks exist
+///
+/// # Errors
+///
+/// Returns an error if any content ID is invalid
 pub async fn check_chunks(
     State(storage): State<Arc<HubStorage>>,
     _auth: AuthenticatedEdge,
@@ -365,17 +401,16 @@ fn parse_content_id(hex: &str) -> Result<ContentId> {
 impl IntoResponse for Error {
     fn into_response(self) -> Response {
         let (status, message) = match self {
-            Error::PortalNotFound(_) => (StatusCode::NOT_FOUND, self.to_string()),
-            Error::ChunkNotFound(_) => (StatusCode::NOT_FOUND, self.to_string()),
-            Error::EdgeNotFound(_) => (StatusCode::NOT_FOUND, self.to_string()),
-            Error::ManifestNotFound(_) => (StatusCode::NOT_FOUND, self.to_string()),
-            Error::AuthFailed | Error::InvalidSignature => {
+            Self::PortalNotFound(_)
+            | Self::ChunkNotFound(_)
+            | Self::EdgeNotFound(_)
+            | Self::ManifestNotFound(_) => (StatusCode::NOT_FOUND, self.to_string()),
+            Self::AuthFailed | Self::InvalidSignature => {
                 (StatusCode::UNAUTHORIZED, self.to_string())
             }
-            Error::InvalidContentId => (StatusCode::BAD_REQUEST, self.to_string()),
-            Error::ChunkTooLarge(_, _) => (StatusCode::PAYLOAD_TOO_LARGE, self.to_string()),
-            Error::Serialization(_) => (StatusCode::BAD_REQUEST, self.to_string()),
-            Error::InvalidEdgeName(_) | Error::InvalidPortalName(_) => {
+            Self::InvalidContentId | Self::Serialization(_) => (StatusCode::BAD_REQUEST, self.to_string()),
+            Self::ChunkTooLarge(_, _) => (StatusCode::PAYLOAD_TOO_LARGE, self.to_string()),
+            Self::InvalidEdgeName(_) | Self::InvalidPortalName(_) => {
                 (StatusCode::BAD_REQUEST, self.to_string())
             }
             _ => (StatusCode::INTERNAL_SERVER_ERROR, self.to_string()),

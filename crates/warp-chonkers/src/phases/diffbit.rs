@@ -205,7 +205,7 @@ impl DiffbitPhase {
         }
 
         let mut splits = Vec::new();
-        let num_splits = (size + config.max_size - 1) / config.max_size;
+        let num_splits = size.div_ceil(config.max_size);
         let target_chunk_size = size / num_splits;
 
         let mut last_split = start;

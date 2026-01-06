@@ -5,21 +5,22 @@
 
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use warp_edge::EdgeId;
-use warp_sched::{Assignment, ChunkId, EdgeIdx};
+use warp_sched::EdgeIdx;
 
 /// Unique identifier for a transfer operation.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct TransferId(pub u64);
 
 impl TransferId {
-    /// Create a new TransferId.
-    pub fn new(id: u64) -> Self {
+    /// Create a new `TransferId`.
+    #[must_use]
+    pub const fn new(id: u64) -> Self {
         Self(id)
     }
 
     /// Get the inner u64 value.
-    pub fn as_u64(&self) -> u64 {
+    #[must_use]
+    pub const fn as_u64(self) -> u64 {
         self.0
     }
 }
@@ -45,23 +46,28 @@ pub enum TransferStatus {
     /// Transfer completed successfully.
     Completed,
     /// Transfer failed with a reason.
-    Failed { reason: String },
+    Failed {
+        /// The reason why the transfer failed.
+        reason: String,
+    },
     /// Transfer was cancelled by user.
     Cancelled,
 }
 
 impl TransferStatus {
     /// Check if the transfer is in a terminal state.
-    pub fn is_terminal(&self) -> bool {
+    #[must_use]
+    pub const fn is_terminal(&self) -> bool {
         matches!(
             self,
-            TransferStatus::Completed | TransferStatus::Failed { .. } | TransferStatus::Cancelled
+            Self::Completed | Self::Failed { .. } | Self::Cancelled
         )
     }
 
     /// Check if the transfer is active.
-    pub fn is_active(&self) -> bool {
-        matches!(self, TransferStatus::Active)
+    #[must_use]
+    pub const fn is_active(&self) -> bool {
+        matches!(self, Self::Active)
     }
 }
 
@@ -87,7 +93,8 @@ pub struct ChunkTransfer {
 }
 
 impl ChunkTransfer {
-    /// Create a new ChunkTransfer in pending state.
+    /// Create a new `ChunkTransfer` in pending state.
+    #[must_use]
     pub fn new(chunk_hash: [u8; 32], chunk_size: u32, source_edges: Vec<EdgeIdx>) -> Self {
         Self {
             chunk_hash,
@@ -102,11 +109,15 @@ impl ChunkTransfer {
     }
 
     /// Check if this chunk transfer is complete.
-    pub fn is_complete(&self) -> bool {
+    #[must_use]
+    #[allow(clippy::cast_lossless)]
+    pub const fn is_complete(&self) -> bool {
         self.bytes_transferred >= self.chunk_size as u64
     }
 
     /// Get progress as a percentage (0-100).
+    #[must_use]
+    #[allow(clippy::cast_precision_loss)]
     pub fn progress_percent(&self) -> f64 {
         if self.chunk_size == 0 {
             return 100.0;
@@ -158,8 +169,9 @@ pub struct EdgeTransfer {
 }
 
 impl EdgeTransfer {
-    /// Create a new EdgeTransfer.
-    pub fn new(edge_idx: EdgeIdx, timestamp_ms: u64) -> Self {
+    /// Create a new `EdgeTransfer`.
+    #[must_use]
+    pub const fn new(edge_idx: EdgeIdx, timestamp_ms: u64) -> Self {
         Self {
             edge_idx,
             chunks_assigned: 0,
@@ -196,6 +208,8 @@ impl EdgeTransfer {
     }
 
     /// Calculate completion rate (0.0 to 1.0).
+    #[must_use]
+    #[allow(clippy::cast_precision_loss)]
     pub fn completion_rate(&self) -> f64 {
         if self.chunks_assigned == 0 {
             return 0.0;
@@ -234,7 +248,9 @@ pub struct TransferState {
 }
 
 impl TransferState {
-    /// Create a new TransferState.
+    /// Create a new `TransferState`.
+    #[must_use]
+    #[allow(clippy::cast_lossless)]
     pub fn new(
         id: TransferId,
         direction: TransferDirection,
@@ -282,6 +298,8 @@ impl TransferState {
     }
 
     /// Get progress as a percentage (0-100).
+    #[must_use]
+    #[allow(clippy::cast_precision_loss)]
     pub fn progress_percent(&self) -> f64 {
         if self.total_bytes == 0 {
             return 100.0;
@@ -308,6 +326,7 @@ impl TransferState {
     }
 
     /// Calculate duration in milliseconds.
+    #[must_use]
     pub fn duration_ms(&self) -> Option<u64> {
         let start = self.started_at_ms?;
         let end = self.completed_at_ms.unwrap_or(self.created_at_ms);
@@ -344,7 +363,8 @@ pub struct TransferRequest {
 }
 
 impl TransferRequest {
-    /// Create a new TransferRequest with defaults.
+    /// Create a new `TransferRequest` with defaults.
+    #[must_use]
     pub fn new(chunks: Vec<[u8; 32]>, chunk_sizes: Vec<u32>, direction: TransferDirection) -> Self {
         Self {
             chunks,
@@ -357,6 +377,9 @@ impl TransferRequest {
     }
 
     /// Validate the request.
+    ///
+    /// # Errors
+    /// Returns an error if the request is invalid.
     pub fn validate(&self) -> Result<(), String> {
         if self.chunks.is_empty() {
             return Err("No chunks specified".to_string());
@@ -374,24 +397,29 @@ impl TransferRequest {
     }
 
     /// Set priority.
-    pub fn with_priority(mut self, priority: u8) -> Self {
+    #[must_use]
+    pub const fn with_priority(mut self, priority: u8) -> Self {
         self.priority = priority;
         self
     }
 
     /// Set max concurrent edges.
-    pub fn with_max_concurrent_edges(mut self, max: usize) -> Self {
+    #[must_use]
+    pub const fn with_max_concurrent_edges(mut self, max: usize) -> Self {
         self.max_concurrent_edges = max;
         self
     }
 
     /// Set max retries.
-    pub fn with_max_retries(mut self, max: u8) -> Self {
+    #[must_use]
+    pub const fn with_max_retries(mut self, max: u8) -> Self {
         self.max_retries = max;
         self
     }
 
     /// Calculate total bytes.
+    #[must_use]
+    #[allow(clippy::cast_lossless)]
     pub fn total_bytes(&self) -> u64 {
         self.chunk_sizes.iter().map(|&s| s as u64).sum()
     }
@@ -417,8 +445,9 @@ pub struct TransferResult {
 }
 
 impl TransferResult {
-    /// Create a new TransferResult from TransferState.
-    pub fn from_state(state: &TransferState, timestamp_ms: u64) -> Self {
+    /// Create a new `TransferResult` from `TransferState`.
+    #[must_use]
+    pub fn from_state(state: &TransferState, _timestamp_ms: u64) -> Self {
         let duration_ms = state.duration_ms().unwrap_or(1);
         let average_speed_bps = if duration_ms > 0 {
             (state.transferred_bytes * 8 * 1000) / duration_ms
@@ -445,6 +474,8 @@ impl TransferResult {
     }
 
     /// Calculate average speed in megabits per second.
+    #[must_use]
+    #[allow(clippy::cast_precision_loss)]
     pub fn average_speed_mbps(&self) -> f64 {
         self.average_speed_bps as f64 / 1_000_000.0
     }

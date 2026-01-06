@@ -107,7 +107,12 @@ pub enum RpcError {
     /// Program unavailable
     ProgUnavail,
     /// Version mismatch
-    VersionMismatch { low: u32, high: u32 },
+    VersionMismatch {
+        /// Lowest supported version
+        low: u32,
+        /// Highest supported version
+        high: u32
+    },
     /// Procedure unavailable
     ProcUnavail,
 }

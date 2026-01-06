@@ -45,6 +45,8 @@ impl TransferId {
     ///
     /// Uses a combination of timestamp and counter to ensure uniqueness
     /// even when generated in rapid succession.
+    #[must_use]
+    #[allow(clippy::cast_possible_truncation)]
     pub fn new() -> Self {
         use std::sync::atomic::{AtomicU64, Ordering};
         use std::time::{SystemTime, UNIX_EPOCH};
@@ -58,7 +60,7 @@ impl TransferId {
 
         // Combine timestamp with counter to ensure uniqueness
         let counter = COUNTER.fetch_add(1, Ordering::Relaxed);
-        TransferId(timestamp.wrapping_add(counter))
+        Self(timestamp.wrapping_add(counter))
     }
 }
 
@@ -118,6 +120,7 @@ impl StripingConfig {
     /// Create a config optimized for high throughput
     ///
     /// Larger stripes, more in-flight, for maximizing bandwidth.
+    #[must_use]
     pub fn high_throughput() -> Self {
         Self {
             min_size_for_striping: 5 * 1024 * 1024,
@@ -131,6 +134,7 @@ impl StripingConfig {
     /// Create a config optimized for low latency
     ///
     /// Smaller stripes for faster first-byte delivery.
+    #[must_use]
     pub fn low_latency() -> Self {
         Self {
             min_size_for_striping: 1 * 1024 * 1024,
@@ -142,6 +146,7 @@ impl StripingConfig {
     }
 
     /// Create a config with redundant requests for reliability
+    #[must_use]
     pub fn reliable() -> Self {
         Self {
             enable_redundant_requests: true,
@@ -150,11 +155,14 @@ impl StripingConfig {
     }
 
     /// Check if a transfer should use striping
-    pub fn should_stripe(&self, transfer_size: u64) -> bool {
+    #[must_use]
+    pub const fn should_stripe(&self, transfer_size: u64) -> bool {
         transfer_size >= self.min_size_for_striping
     }
 
     /// Calculate number of stripes for a transfer
+    #[must_use]
+    #[allow(clippy::cast_lossless, clippy::cast_possible_truncation)]
     pub fn stripe_count(&self, transfer_size: u64) -> u32 {
         let count = (transfer_size + self.stripe_size as u64 - 1) / self.stripe_size as u64;
         count as u32
@@ -201,7 +209,8 @@ pub struct Stripe {
 
 impl Stripe {
     /// Create a new pending stripe
-    pub fn new(
+    #[must_use]
+    pub const fn new(
         transfer_id: TransferId,
         stripe_index: u32,
         offset: u64,
@@ -222,6 +231,7 @@ impl Stripe {
     }
 
     /// Check if stripe has timed out
+    #[must_use]
     pub fn is_timed_out(&self, current_time_ms: u64, timeout_ms: u64) -> bool {
         if let Some(sent_at) = self.sent_at_ms {
             self.status == StripeStatus::InFlight && current_time_ms > sent_at + timeout_ms

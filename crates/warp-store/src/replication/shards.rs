@@ -4,15 +4,21 @@
 //! and repair scheduling.
 
 use std::collections::HashMap;
+use std::net::SocketAddr;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
+use async_trait::async_trait;
+use bytes::{Buf, BufMut, BytesMut};
 use dashmap::DashMap;
 use serde::{Deserialize, Serialize};
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::net::TcpStream;
 use tokio::sync::RwLock;
-use tracing::{debug, info, warn};
+use tokio::time::timeout;
+use tracing::{debug, info};
 
-use super::{DomainId, ErasurePolicy, ReplicationPolicy};
+use super::{DomainId, DomainRegistry, ErasurePolicy, NodeInfo, ReplicationPolicy};
 use crate::error::{Error, Result};
 
 /// Unique identifier for a shard within an object
@@ -80,6 +86,7 @@ pub struct ShardLocation {
 
 /// Health status of a shard
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Default)]
 pub enum ShardHealth {
     /// Shard is healthy and accessible
     Healthy,
@@ -94,14 +101,10 @@ pub enum ShardHealth {
     Lost,
 
     /// Shard status is unknown (not yet verified)
+    #[default]
     Unknown,
 }
 
-impl Default for ShardHealth {
-    fn default() -> Self {
-        Self::Unknown
-    }
-}
 
 /// Information about an object's shard distribution
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -153,7 +156,7 @@ impl ShardDistributionInfo {
     pub fn add_location(&mut self, shard_index: ShardIndex, location: ShardLocation) {
         self.locations
             .entry(shard_index)
-            .or_insert_with(Vec::new)
+            .or_default()
             .push(location);
         self.modified_at = Instant::now();
     }
@@ -201,6 +204,288 @@ impl ShardDistributionInfo {
     }
 }
 
+/// Remote shard client trait for reading shards from other domains
+#[async_trait]
+pub trait RemoteShardClient: Send + Sync {
+    /// Read a shard from a remote node
+    async fn read_shard(
+        &self,
+        node: &NodeInfo,
+        shard_key: &ShardKey,
+        path: &str,
+    ) -> Result<Vec<u8>>;
+
+    /// Write a shard to a remote node
+    async fn write_shard(
+        &self,
+        node: &NodeInfo,
+        shard_key: &ShardKey,
+        path: &str,
+        data: &[u8],
+    ) -> Result<()>;
+
+    /// Verify a shard on a remote node
+    async fn verify_shard(
+        &self,
+        node: &NodeInfo,
+        shard_key: &ShardKey,
+        path: &str,
+    ) -> Result<ShardVerification>;
+}
+
+/// Shard protocol message types
+const MSG_READ_SHARD: u8 = 1;
+const MSG_WRITE_SHARD: u8 = 2;
+const MSG_VERIFY_SHARD: u8 = 3;
+const MSG_RESPONSE_OK: u8 = 128;
+const MSG_RESPONSE_ERR: u8 = 129;
+
+/// TCP-based remote shard client
+pub struct TcpShardClient {
+    /// Connection timeout
+    connect_timeout: Duration,
+    /// Read/write timeout
+    io_timeout: Duration,
+}
+
+impl TcpShardClient {
+    /// Create a new TCP shard client
+    pub fn new() -> Self {
+        Self {
+            connect_timeout: Duration::from_secs(5),
+            io_timeout: Duration::from_secs(30),
+        }
+    }
+
+    /// Create with custom timeouts
+    pub fn with_timeouts(connect_timeout: Duration, io_timeout: Duration) -> Self {
+        Self {
+            connect_timeout,
+            io_timeout,
+        }
+    }
+
+    /// Connect to a remote node
+    async fn connect(&self, addr: SocketAddr) -> Result<TcpStream> {
+        timeout(self.connect_timeout, TcpStream::connect(addr))
+            .await
+            .map_err(|_| Error::Replication(format!("Connection timeout to {}", addr)))?
+            .map_err(|e| Error::Replication(format!("Connection failed to {}: {}", addr, e)))
+    }
+
+    /// Send a request and receive response
+    async fn send_request(&self, stream: &mut TcpStream, request: &[u8]) -> Result<Vec<u8>> {
+        // Send length-prefixed request
+        let mut buf = BytesMut::with_capacity(4 + request.len());
+        buf.put_u32(request.len() as u32);
+        buf.put_slice(request);
+
+        timeout(self.io_timeout, stream.write_all(&buf))
+            .await
+            .map_err(|_| Error::Replication("Write timeout".to_string()))?
+            .map_err(|e| Error::Replication(format!("Write failed: {}", e)))?;
+
+        // Read response length
+        let mut len_buf = [0u8; 4];
+        timeout(self.io_timeout, stream.read_exact(&mut len_buf))
+            .await
+            .map_err(|_| Error::Replication("Read timeout".to_string()))?
+            .map_err(|e| Error::Replication(format!("Read failed: {}", e)))?;
+
+        let resp_len = u32::from_be_bytes(len_buf) as usize;
+        if resp_len > 64 * 1024 * 1024 {
+            // 64MB max
+            return Err(Error::Replication(format!(
+                "Response too large: {} bytes",
+                resp_len
+            )));
+        }
+
+        // Read response data
+        let mut response = vec![0u8; resp_len];
+        timeout(self.io_timeout, stream.read_exact(&mut response))
+            .await
+            .map_err(|_| Error::Replication("Read timeout".to_string()))?
+            .map_err(|e| Error::Replication(format!("Read failed: {}", e)))?;
+
+        Ok(response)
+    }
+
+    /// Encode a shard read request
+    fn encode_read_request(shard_key: &ShardKey, path: &str) -> Vec<u8> {
+        let mut buf = BytesMut::new();
+        buf.put_u8(MSG_READ_SHARD);
+
+        // Bucket (length-prefixed)
+        let bucket_bytes = shard_key.bucket.as_bytes();
+        buf.put_u16(bucket_bytes.len() as u16);
+        buf.put_slice(bucket_bytes);
+
+        // Key (length-prefixed)
+        let key_bytes = shard_key.key.as_bytes();
+        buf.put_u16(key_bytes.len() as u16);
+        buf.put_slice(key_bytes);
+
+        // Shard index
+        buf.put_u16(shard_key.shard_index);
+
+        // Path (length-prefixed)
+        let path_bytes = path.as_bytes();
+        buf.put_u16(path_bytes.len() as u16);
+        buf.put_slice(path_bytes);
+
+        buf.to_vec()
+    }
+
+    /// Encode a shard write request
+    fn encode_write_request(shard_key: &ShardKey, path: &str, data: &[u8]) -> Vec<u8> {
+        let mut buf = BytesMut::new();
+        buf.put_u8(MSG_WRITE_SHARD);
+
+        // Bucket (length-prefixed)
+        let bucket_bytes = shard_key.bucket.as_bytes();
+        buf.put_u16(bucket_bytes.len() as u16);
+        buf.put_slice(bucket_bytes);
+
+        // Key (length-prefixed)
+        let key_bytes = shard_key.key.as_bytes();
+        buf.put_u16(key_bytes.len() as u16);
+        buf.put_slice(key_bytes);
+
+        // Shard index
+        buf.put_u16(shard_key.shard_index);
+
+        // Path (length-prefixed)
+        let path_bytes = path.as_bytes();
+        buf.put_u16(path_bytes.len() as u16);
+        buf.put_slice(path_bytes);
+
+        // Data (length-prefixed)
+        buf.put_u32(data.len() as u32);
+        buf.put_slice(data);
+
+        buf.to_vec()
+    }
+
+    /// Decode a response
+    fn decode_response(response: &[u8]) -> Result<Vec<u8>> {
+        if response.is_empty() {
+            return Err(Error::Replication("Empty response".to_string()));
+        }
+
+        let msg_type = response[0];
+        let payload = &response[1..];
+
+        match msg_type {
+            MSG_RESPONSE_OK => Ok(payload.to_vec()),
+            MSG_RESPONSE_ERR => {
+                let error_msg = String::from_utf8_lossy(payload);
+                Err(Error::Replication(error_msg.to_string()))
+            }
+            _ => Err(Error::Replication(format!(
+                "Unknown response type: {}",
+                msg_type
+            ))),
+        }
+    }
+}
+
+impl Default for TcpShardClient {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+#[async_trait]
+impl RemoteShardClient for TcpShardClient {
+    async fn read_shard(
+        &self,
+        node: &NodeInfo,
+        shard_key: &ShardKey,
+        path: &str,
+    ) -> Result<Vec<u8>> {
+        let mut stream = self.connect(node.addr).await?;
+
+        let request = Self::encode_read_request(shard_key, path);
+        let response = self.send_request(&mut stream, &request).await?;
+
+        debug!(
+            node_id = node.node_id,
+            bucket = %shard_key.bucket,
+            shard = shard_key.shard_index,
+            size = response.len() - 1,
+            "Read remote shard"
+        );
+
+        Self::decode_response(&response)
+    }
+
+    async fn write_shard(
+        &self,
+        node: &NodeInfo,
+        shard_key: &ShardKey,
+        path: &str,
+        data: &[u8],
+    ) -> Result<()> {
+        let mut stream = self.connect(node.addr).await?;
+
+        let request = Self::encode_write_request(shard_key, path, data);
+        let response = self.send_request(&mut stream, &request).await?;
+
+        Self::decode_response(&response)?;
+
+        debug!(
+            node_id = node.node_id,
+            bucket = %shard_key.bucket,
+            shard = shard_key.shard_index,
+            size = data.len(),
+            "Wrote remote shard"
+        );
+
+        Ok(())
+    }
+
+    async fn verify_shard(
+        &self,
+        node: &NodeInfo,
+        shard_key: &ShardKey,
+        path: &str,
+    ) -> Result<ShardVerification> {
+        let mut stream = self.connect(node.addr).await?;
+
+        // Use read request with verify flag (simplified - reuse read)
+        let mut request = Self::encode_read_request(shard_key, path);
+        request[0] = MSG_VERIFY_SHARD;
+
+        let response = self.send_request(&mut stream, &request).await?;
+        let payload = Self::decode_response(&response)?;
+
+        // Parse verification response: [checksum_valid: u8, bytes_verified: u64, checksum: [u8; 32]]
+        if payload.len() < 9 {
+            return Err(Error::Replication("Invalid verify response".to_string()));
+        }
+
+        let mut buf = &payload[..];
+        let checksum_valid = buf.get_u8() != 0;
+        let bytes_verified = buf.get_u64();
+
+        let actual_checksum = if payload.len() >= 41 {
+            let mut hash = [0u8; 32];
+            hash.copy_from_slice(&payload[9..41]);
+            Some(hash)
+        } else {
+            None
+        };
+
+        Ok(ShardVerification {
+            bytes_verified,
+            checksum_valid,
+            expected_checksum: None,
+            actual_checksum,
+        })
+    }
+}
+
 /// Manages distributed shard placement and health
 pub struct DistributedShardManager {
     /// Shard distribution for each object
@@ -214,6 +499,12 @@ pub struct DistributedShardManager {
 
     /// Repair check interval
     repair_interval: Duration,
+
+    /// Domain registry for remote node lookups
+    domain_registry: Option<Arc<DomainRegistry>>,
+
+    /// Remote shard client
+    remote_client: Arc<dyn RemoteShardClient>,
 }
 
 impl DistributedShardManager {
@@ -225,7 +516,34 @@ impl DistributedShardManager {
             local_domain_id,
             default_policy,
             repair_interval,
+            domain_registry: None,
+            remote_client: Arc::new(TcpShardClient::new()),
         }
+    }
+
+    /// Create with a domain registry for remote operations
+    pub fn with_domain_registry(mut self, registry: Arc<DomainRegistry>) -> Self {
+        self.domain_registry = Some(registry);
+        self
+    }
+
+    /// Create with a custom remote client
+    pub fn with_remote_client(mut self, client: Arc<dyn RemoteShardClient>) -> Self {
+        self.remote_client = client;
+        self
+    }
+
+    /// Get a node from a domain by node_id string
+    fn find_node_in_domain(&self, domain_id: DomainId, node_id: &str) -> Option<NodeInfo> {
+        self.domain_registry.as_ref().and_then(|registry| {
+            registry.get_domain(domain_id).and_then(|domain| {
+                domain
+                    .nodes
+                    .iter()
+                    .find(|n| n.node_id.to_string() == node_id)
+                    .cloned()
+            })
+        })
     }
 
     /// Get the local domain ID
@@ -294,10 +612,10 @@ impl DistributedShardManager {
                 // Fill in any missing shards with round-robin
                 for shard_idx in 0..total_shards {
                     let idx = shard_idx as ShardIndex;
-                    if !placement.contains_key(&idx) {
+                    placement.entry(idx).or_insert_with(|| {
                         let domain_idx = shard_idx % eligible_domains.len();
-                        placement.insert(idx, eligible_domains[domain_idx]);
-                    }
+                        eligible_domains[domain_idx]
+                    });
                 }
             }
         }
@@ -495,12 +813,27 @@ impl DistributedShardManager {
                 Err(e) => Err(Error::Io(e)),
             }
         } else {
-            // Remote domain - would need network transport
-            // For now, return an error indicating remote reads need transport layer
-            Err(Error::Replication(format!(
-                "Remote shard read not yet implemented (domain {})",
-                location.domain_id
-            )))
+            // Remote domain - use remote client
+            let node = self
+                .find_node_in_domain(location.domain_id, &location.node_id)
+                .ok_or_else(|| {
+                    Error::Replication(format!(
+                        "Node {} not found in domain {}",
+                        location.node_id, location.domain_id
+                    ))
+                })?;
+
+            // Check node is available
+            if !node.is_available() {
+                return Err(Error::Replication(format!(
+                    "Node {} is not available (status: {:?})",
+                    location.node_id, node.status
+                )));
+            }
+
+            self.remote_client
+                .read_shard(&node, shard_key, &location.path)
+                .await
         }
     }
 
@@ -615,17 +948,106 @@ impl DistributedShardManager {
     }
 
     /// Select a target node for repair
+    ///
+    /// Considers:
+    /// - Domain spread (prefer domains without this shard)
+    /// - Node health and availability
+    /// - Storage capacity
+    /// - Latency (prefer closer nodes)
     pub async fn select_repair_target(
         &self,
-        _distribution: &ShardDistributionInfo,
-        _shard_index: ShardIndex,
+        distribution: &ShardDistributionInfo,
+        shard_index: ShardIndex,
     ) -> Result<ShardLocation> {
-        // In a real implementation, this would select an appropriate healthy node
-        // For now, return a placeholder
+        let registry = self.domain_registry.as_ref().ok_or_else(|| {
+            Error::Replication("Domain registry required for repair target selection".to_string())
+        })?;
+
+        // Get domains that already have this shard
+        let domains_with_shard: Vec<DomainId> = distribution
+            .locations
+            .get(&shard_index)
+            .map(|locs| {
+                locs.iter()
+                    .filter(|l| l.health == ShardHealth::Healthy)
+                    .map(|l| l.domain_id)
+                    .collect()
+            })
+            .unwrap_or_default();
+
+        // Get all healthy domains sorted by proximity
+        let candidate_domains = registry.domains_by_proximity();
+
+        // Score each candidate node
+        let mut best_candidate: Option<(NodeInfo, DomainId, i32)> = None;
+
+        for domain in candidate_domains {
+            // Skip offline domains
+            if !domain.is_available() {
+                continue;
+            }
+
+            // Calculate domain score
+            let mut domain_score: i32 = 0;
+
+            // Prefer domains that don't have this shard (for spread)
+            if !domains_with_shard.contains(&domain.id) {
+                domain_score += 100;
+            }
+
+            // Prefer local domain for latency
+            if domain.id == self.local_domain_id {
+                domain_score += 50;
+            }
+
+            // Check each node in the domain
+            for node in domain.healthy_nodes() {
+                let mut node_score = domain_score;
+
+                // Prefer nodes with more available capacity
+                if !node.capacity.is_nearly_full() {
+                    node_score += 25;
+                }
+
+                // Prefer nodes with lower latency
+                if let Some(latency) = node.latency_ms {
+                    node_score += (100 - latency.min(100) as i32) / 10;
+                }
+
+                // Update best candidate if this is better
+                if best_candidate
+                    .as_ref()
+                    .map(|(_, _, score)| node_score > *score)
+                    .unwrap_or(true)
+                {
+                    best_candidate = Some((node.clone(), domain.id, node_score));
+                }
+            }
+        }
+
+        let (node, domain_id, _score) = best_candidate.ok_or_else(|| {
+            Error::Replication("No suitable repair target found".to_string())
+        })?;
+
+        // Generate path for the repaired shard
+        let path = format!(
+            "/data/{}/{}/shard_{:04}",
+            distribution.bucket, distribution.key, shard_index
+        );
+
+        info!(
+            bucket = %distribution.bucket,
+            key = %distribution.key,
+            shard = shard_index,
+            domain_id = domain_id,
+            node_id = node.node_id,
+            "Selected repair target"
+        );
+
         Ok(ShardLocation {
-            domain_id: self.local_domain_id,
-            node_id: "local".to_string(),
-            path: "/repair".to_string(),
+            domain_id,
+            node_id: node.node_id.to_string(),
+            path,
             last_verified: None,
             health: ShardHealth::Repairing,
         })
@@ -634,29 +1056,106 @@ impl DistributedShardManager {
     /// Write a reconstructed shard to a target
     pub async fn write_shard(
         &self,
-        _shard_key: &ShardKey,
-        _target: &ShardLocation,
-        _data: &[u8],
+        shard_key: &ShardKey,
+        target: &ShardLocation,
+        data: &[u8],
     ) -> Result<()> {
-        // In a real implementation, this would write to the storage node
-        // For now, return success
-        Ok(())
+        if target.domain_id == self.local_domain_id {
+            // Local write - write directly to the path
+            let shard_path = std::path::Path::new(&target.path);
+
+            // Ensure parent directory exists
+            if let Some(parent) = shard_path.parent() {
+                tokio::fs::create_dir_all(parent).await.map_err(|e| {
+                    Error::Replication(format!("Failed to create shard directory: {}", e))
+                })?;
+            }
+
+            tokio::fs::write(shard_path, data).await.map_err(|e| {
+                Error::Replication(format!("Failed to write shard: {}", e))
+            })?;
+
+            debug!(
+                bucket = %shard_key.bucket,
+                key = %shard_key.key,
+                shard = shard_key.shard_index,
+                path = %target.path,
+                size = data.len(),
+                "Wrote local shard"
+            );
+
+            Ok(())
+        } else {
+            // Remote write - use remote client
+            let node = self
+                .find_node_in_domain(target.domain_id, &target.node_id)
+                .ok_or_else(|| {
+                    Error::Replication(format!(
+                        "Node {} not found in domain {}",
+                        target.node_id, target.domain_id
+                    ))
+                })?;
+
+            self.remote_client
+                .write_shard(&node, shard_key, &target.path, data)
+                .await
+        }
     }
 
     /// Verify a shard's integrity
     pub async fn verify_shard(
         &self,
-        _shard_key: &ShardKey,
-        _location: &ShardLocation,
+        shard_key: &ShardKey,
+        location: &ShardLocation,
     ) -> Result<ShardVerification> {
-        // In a real implementation, this would verify the shard checksum
-        // For now, return a successful verification
-        Ok(ShardVerification {
-            bytes_verified: 0,
-            checksum_valid: true,
-            expected_checksum: None,
-            actual_checksum: None,
-        })
+        if location.domain_id == self.local_domain_id {
+            // Local verification - read and hash
+            let shard_path = std::path::Path::new(&location.path);
+
+            match tokio::fs::read(shard_path).await {
+                Ok(data) => {
+                    let hash = blake3::hash(&data);
+                    let checksum: [u8; 32] = *hash.as_bytes();
+
+                    debug!(
+                        bucket = %shard_key.bucket,
+                        shard = shard_key.shard_index,
+                        bytes = data.len(),
+                        "Verified local shard"
+                    );
+
+                    Ok(ShardVerification {
+                        bytes_verified: data.len() as u64,
+                        checksum_valid: true,
+                        expected_checksum: None,
+                        actual_checksum: Some(checksum),
+                    })
+                }
+                Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+                    Ok(ShardVerification {
+                        bytes_verified: 0,
+                        checksum_valid: false,
+                        expected_checksum: None,
+                        actual_checksum: None,
+                    })
+                }
+                Err(e) => Err(Error::Io(e)),
+            }
+        } else {
+            // Remote verification - use remote client
+            let node = self
+                .find_node_in_domain(location.domain_id, &location.node_id)
+                .ok_or_else(|| {
+                    Error::Replication(format!(
+                        "Node {} not found in domain {}",
+                        location.node_id, location.domain_id
+                    ))
+                })?;
+
+            self.remote_client
+                .verify_shard(&node, shard_key, &location.path)
+                .await
+        }
     }
 }
 

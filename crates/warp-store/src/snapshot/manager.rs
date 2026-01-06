@@ -1,13 +1,12 @@
 //! Snapshot management and lifecycle
 
 use std::collections::{HashMap, HashSet};
-use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Duration, Instant, SystemTime};
 
 use dashmap::DashMap;
 use parking_lot::RwLock;
-use tracing::{debug, info, warn};
+use tracing::{info, warn};
 
 use super::{RestoreOptions, SnapshotDiff, SnapshotGranularity};
 
@@ -149,29 +148,47 @@ impl Snapshot {
     }
 }
 
-/// Reference to an object version within a snapshot
+/// Reference to an object version within a snapshot.
+///
+/// This structure captures the metadata and content references for a specific
+/// version of an object as it existed at snapshot time. It uses Copy-on-Write (COW)
+/// block references to enable efficient storage deduplication across snapshots.
 #[derive(Debug, Clone)]
 pub struct ObjectVersionRef {
-    /// Object key
+    /// Object key identifying the object within the bucket
     pub key: String,
-    /// Version ID
+
+    /// Unique version identifier for this specific version of the object
     pub version_id: String,
-    /// Size in bytes
+
+    /// Total size of the object in bytes
     pub size: u64,
-    /// Checksum
+
+    /// SHA-256 checksum of the object content for integrity verification
     pub checksum: [u8; 32],
-    /// Content blocks (COW references)
+
+    /// Content block references using Copy-on-Write (COW) semantics.
+    /// Each u64 is a block ID that can be shared across multiple snapshots.
     pub blocks: Vec<u64>,
 }
 
-/// Retention policy for snapshots
+/// Retention policy for snapshots.
+///
+/// Defines the lifecycle rules for a snapshot, including minimum and maximum
+/// retention periods and whether the snapshot should be locked during the
+/// retention period to prevent accidental deletion.
 #[derive(Debug, Clone)]
 pub struct RetentionPolicy {
-    /// Minimum retention duration
+    /// Minimum duration that the snapshot must be retained.
+    /// The snapshot cannot be deleted before this period elapses.
     pub min_retention: Duration,
-    /// Maximum retention duration (auto-delete after)
+
+    /// Optional maximum retention duration after which the snapshot
+    /// will be automatically deleted. If `None`, the snapshot is kept indefinitely.
     pub max_retention: Option<Duration>,
-    /// Whether to lock the snapshot during retention
+
+    /// Whether to automatically lock the snapshot during the retention period.
+    /// When `true`, prevents manual deletion until the minimum retention period expires.
     pub lock_during_retention: bool,
 }
 
@@ -195,31 +212,39 @@ impl RetentionPolicy {
     }
 }
 
-/// Snapshot schedule for automatic snapshots
+/// Snapshot schedule for automatic snapshots.
+///
+/// Defines a recurring schedule for creating snapshots automatically.
+/// The schedule includes the frequency, target bucket, retention policy,
+/// and automatic pruning of old snapshots.
 #[derive(Debug, Clone)]
 pub struct SnapshotSchedule {
-    /// Schedule name
+    /// Unique name for this schedule
     pub name: String,
 
-    /// Bucket to snapshot
+    /// Target bucket to snapshot on this schedule
     pub bucket: String,
 
-    /// Optional prefix
+    /// Optional prefix filter to create partial snapshots of only
+    /// objects with keys matching this prefix
     pub prefix: Option<String>,
 
-    /// Interval between snapshots
+    /// Time interval between automatic snapshot creations
     pub interval: Duration,
 
-    /// Maximum snapshots to keep
+    /// Maximum number of snapshots to retain for this schedule.
+    /// Older snapshots are automatically pruned when this limit is exceeded.
     pub keep_count: usize,
 
-    /// Retention policy
+    /// Optional retention policy to apply to snapshots created by this schedule
     pub retention: Option<RetentionPolicy>,
 
-    /// Whether schedule is enabled
+    /// Whether this schedule is currently active.
+    /// Disabled schedules are skipped during execution.
     pub enabled: bool,
 
-    /// Last execution time
+    /// Timestamp of the last time this schedule was executed.
+    /// Used to determine when the next snapshot is due.
     pub last_run: Option<Instant>,
 }
 
@@ -256,19 +281,24 @@ impl SnapshotSchedule {
     }
 }
 
-/// Policy for automatic snapshots
+/// Policy for automatic snapshots.
+///
+/// A high-level policy that groups multiple snapshot schedules together
+/// with common configuration options like incremental snapshots and compression.
 #[derive(Debug, Clone)]
 pub struct SnapshotPolicy {
-    /// Policy name
+    /// Unique name for this policy
     pub name: String,
 
-    /// Schedules
+    /// Collection of schedules that are part of this policy
     pub schedules: Vec<SnapshotSchedule>,
 
-    /// Enable incremental snapshots
+    /// Whether to create incremental snapshots that reference parent snapshots.
+    /// When `true`, snapshots only store differences from the most recent parent snapshot.
     pub incremental: bool,
 
-    /// Enable compression
+    /// Whether to enable compression for snapshot data.
+    /// When `true`, snapshot content is compressed to save storage space.
     pub compress: bool,
 }
 
@@ -283,25 +313,34 @@ impl Default for SnapshotPolicy {
     }
 }
 
-/// Configuration for snapshot manager
+/// Configuration for snapshot manager.
+///
+/// Controls the operational parameters of the snapshot manager including
+/// concurrency limits, timeouts, deduplication, and automatic cleanup behavior.
 #[derive(Debug, Clone)]
 pub struct SnapshotConfig {
-    /// Maximum pending snapshot operations
+    /// Maximum number of snapshot creation operations that can be pending simultaneously.
+    /// Additional snapshot requests will be rejected when this limit is reached.
     pub max_pending_snapshots: usize,
 
-    /// Timeout for snapshot creation
+    /// Maximum time allowed for a snapshot creation operation to complete.
+    /// Operations exceeding this timeout will be marked as failed.
     pub snapshot_timeout: Duration,
 
-    /// Enable deduplication across snapshots
+    /// Whether to enable content deduplication across snapshots.
+    /// When `true`, snapshots share common data blocks to reduce storage usage.
     pub dedup_enabled: bool,
 
-    /// Maximum concurrent restores
+    /// Maximum number of snapshot restore operations that can run concurrently.
+    /// Limits resource usage during restore operations.
     pub max_concurrent_restores: usize,
 
-    /// Auto-cleanup expired snapshots
+    /// Whether to automatically cleanup snapshots that have exceeded their
+    /// maximum retention period.
     pub auto_cleanup: bool,
 
-    /// Cleanup interval
+    /// How frequently to run the automatic cleanup process.
+    /// Only applies when `auto_cleanup` is `true`.
     pub cleanup_interval: Duration,
 }
 
@@ -318,41 +357,67 @@ impl Default for SnapshotConfig {
     }
 }
 
-/// Statistics for snapshot operations
+/// Statistics for snapshot operations.
+///
+/// Tracks cumulative metrics and current state of snapshot operations
+/// for monitoring and observability purposes.
 #[derive(Debug, Clone, Default)]
 pub struct SnapshotStats {
-    /// Total snapshots created
+    /// Total number of snapshots successfully created since manager initialization
     pub snapshots_created: u64,
-    /// Total snapshots deleted
+
+    /// Total number of snapshots deleted since manager initialization
     pub snapshots_deleted: u64,
-    /// Total restores performed
+
+    /// Total number of restore operations performed since manager initialization
     pub restores_performed: u64,
-    /// Total bytes in all snapshots
+
+    /// Total size in bytes of all currently stored snapshots.
+    /// This represents the raw storage consumed by all snapshots.
     pub total_snapshot_bytes: u64,
-    /// Bytes saved by deduplication
+
+    /// Total bytes saved through deduplication across all snapshots.
+    /// This shows the storage efficiency gained from sharing common data blocks.
     pub bytes_saved_by_dedup: u64,
-    /// Current active snapshots
+
+    /// Current number of active snapshots (excluding those being created or deleted)
     pub active_snapshots: u64,
 }
 
-/// Manages snapshots and their lifecycle
+/// Manages snapshots and their lifecycle.
+///
+/// The `SnapshotManager` is responsible for creating, managing, and restoring
+/// point-in-time snapshots of bucket contents. It supports:
+/// - Full and incremental snapshots
+/// - Snapshot scheduling and automatic pruning
+/// - Content deduplication across snapshots
+/// - Retention policies and snapshot locking
+/// - Restore operations to original or alternate buckets
+///
+/// The manager uses concurrent data structures to support thread-safe operations
+/// from multiple concurrent requests.
 pub struct SnapshotManager {
-    /// Configuration
+    /// Manager configuration controlling operational parameters
     config: SnapshotConfig,
 
-    /// All snapshots by ID
+    /// Primary index of all snapshots keyed by their unique ID.
+    /// Provides O(1) lookup by snapshot ID.
     snapshots: DashMap<SnapshotId, Snapshot>,
 
-    /// Snapshots by bucket
+    /// Secondary index mapping bucket names to sets of snapshot IDs.
+    /// Enables efficient listing of all snapshots for a given bucket.
     bucket_snapshots: DashMap<String, HashSet<SnapshotId>>,
 
-    /// Active schedules
+    /// Collection of active snapshot schedules for automatic snapshot creation.
+    /// Protected by RwLock to allow concurrent reads with exclusive writes.
     schedules: RwLock<HashMap<String, SnapshotSchedule>>,
 
-    /// Statistics
+    /// Cumulative statistics tracking snapshot operations.
+    /// Protected by RwLock for concurrent access.
     stats: RwLock<SnapshotStats>,
 
-    /// Pending operations
+    /// Counter of currently pending snapshot creation operations.
+    /// Used to enforce the `max_pending_snapshots` limit.
     pending_ops: AtomicU64,
 }
 
@@ -403,7 +468,7 @@ impl SnapshotManager {
         self.snapshots.insert(snapshot_id, snapshot.clone());
         self.bucket_snapshots
             .entry(bucket.to_string())
-            .or_insert_with(HashSet::new)
+            .or_default()
             .insert(snapshot_id);
 
         // In a real implementation, we would:
@@ -516,8 +581,8 @@ impl SnapshotManager {
         }
 
         let start = Instant::now();
-        let mut objects_restored = 0u64;
-        let mut bytes_restored = 0u64;
+        let objects_restored = 0u64;
+        let bytes_restored = 0u64;
 
         // In a real implementation, we would:
         // 1. Iterate through snapshot's object versions
@@ -688,7 +753,7 @@ impl SnapshotManager {
                 .await;
 
             // Mark as executed
-            if let Some(mut s) = self.schedules.write().get_mut(&schedule.name) {
+            if let Some(s) = self.schedules.write().get_mut(&schedule.name) {
                 s.mark_executed();
             }
 
@@ -791,18 +856,25 @@ impl SnapshotManager {
     }
 }
 
-/// Result of a restore operation
+/// Result of a restore operation.
+///
+/// Contains metrics and metadata about a completed snapshot restore operation,
+/// including the number of objects restored, data transferred, and time taken.
 #[derive(Debug, Clone)]
 pub struct RestoreResult {
-    /// Source snapshot ID
+    /// ID of the source snapshot that was restored
     pub snapshot_id: SnapshotId,
-    /// Target bucket
+
+    /// Name of the bucket where objects were restored
     pub target_bucket: String,
-    /// Objects restored
+
+    /// Total number of objects successfully restored from the snapshot
     pub objects_restored: u64,
-    /// Bytes restored
+
+    /// Total number of bytes transferred during the restore operation
     pub bytes_restored: u64,
-    /// Time taken
+
+    /// Total elapsed time for the restore operation
     pub duration: Duration,
 }
 

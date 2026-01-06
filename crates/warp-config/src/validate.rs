@@ -1,40 +1,51 @@
 //! Configuration validation for warp-portal
 
-use crate::config::*;
+use crate::config::{WarpConfig, NetworkConfig, StorageConfig, SchedulerConfig, LogConfig, LogOutput};
 use std::fmt;
 
 /// Result of configuration validation
 #[derive(Debug, Clone)]
 pub struct ValidationResult {
+    /// List of validation errors that prevent the configuration from being used
     pub errors: Vec<ValidationError>,
+    /// List of non-blocking warnings about potential configuration issues
     pub warnings: Vec<ValidationWarning>,
 }
 
 impl ValidationResult {
-    pub fn new() -> Self {
+    /// Creates a new empty validation result
+    #[must_use] 
+    pub const fn new() -> Self {
         Self {
             errors: Vec::new(),
             warnings: Vec::new(),
         }
     }
 
+    /// Returns true if there are no validation errors
+    #[must_use] 
     pub fn is_valid(&self) -> bool {
         self.errors.is_empty()
     }
 
+    /// Returns true if there are any warnings present
+    #[must_use] 
     pub fn has_warnings(&self) -> bool {
         !self.warnings.is_empty()
     }
 
+    /// Adds a validation error to the result
     pub fn add_error(&mut self, error: ValidationError) {
         self.errors.push(error);
     }
 
+    /// Adds a validation warning to the result
     pub fn add_warning(&mut self, warning: ValidationWarning) {
         self.warnings.push(warning);
     }
 
-    pub fn merge(&mut self, other: ValidationResult) {
+    /// Merges another validation result into this one
+    pub fn merge(&mut self, other: Self) {
         self.errors.extend(other.errors);
         self.warnings.extend(other.warnings);
     }
@@ -49,12 +60,16 @@ impl Default for ValidationResult {
 /// Validation error details
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ValidationError {
+    /// The configuration field that failed validation
     pub field: String,
+    /// Human-readable error message
     pub message: String,
+    /// Error classification code
     pub code: ErrorCode,
 }
 
 impl ValidationError {
+    /// Creates a new validation error
     pub fn new(field: impl Into<String>, message: impl Into<String>, code: ErrorCode) -> Self {
         Self {
             field: field.into(),
@@ -73,12 +88,16 @@ impl fmt::Display for ValidationError {
 /// Validation warning details
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ValidationWarning {
+    /// The configuration field that triggered the warning
     pub field: String,
+    /// Human-readable warning message
     pub message: String,
+    /// Optional suggestion for resolving the warning
     pub suggestion: Option<String>,
 }
 
 impl ValidationWarning {
+    /// Creates a new validation warning without a suggestion
     pub fn new(field: impl Into<String>, message: impl Into<String>) -> Self {
         Self {
             field: field.into(),
@@ -87,6 +106,7 @@ impl ValidationWarning {
         }
     }
 
+    /// Creates a new validation warning with a suggestion for resolution
     pub fn with_suggestion(
         field: impl Into<String>,
         message: impl Into<String>,
@@ -104,7 +124,7 @@ impl fmt::Display for ValidationWarning {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "[WARNING] {}: {}", self.field, self.message)?;
         if let Some(ref s) = self.suggestion {
-            write!(f, " (Suggestion: {})", s)?;
+            write!(f, " (Suggestion: {s})")?;
         }
         Ok(())
     }
@@ -113,31 +133,45 @@ impl fmt::Display for ValidationWarning {
 /// Error code classifications
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ErrorCode {
+    /// A required field is missing or empty
     Required,
+    /// A value is outside the acceptable range
     OutOfRange,
+    /// A value has an invalid format
     InvalidFormat,
+    /// A specified path does not exist
     PathNotFound,
+    /// Insufficient permissions to access a resource
     PermissionDenied,
+    /// Configuration values are in conflict with each other
     Conflict,
+    /// A deprecated configuration option is being used
     Deprecated,
 }
 
 /// Main configuration validator
 #[derive(Debug)]
 pub struct Validator {
+    /// Whether to enable strict validation with additional warnings
     strict_mode: bool,
 }
 
 impl Validator {
-    pub fn new() -> Self {
+    /// Creates a new validator with default settings
+    #[must_use] 
+    pub const fn new() -> Self {
         Self { strict_mode: false }
     }
 
-    pub fn with_strict_mode(mut self, enabled: bool) -> Self {
+    /// Enables or disables strict validation mode
+    #[must_use] 
+    pub const fn with_strict_mode(mut self, enabled: bool) -> Self {
         self.strict_mode = enabled;
         self
     }
 
+    /// Validates a complete `WarpConfig` and returns the result
+    #[must_use] 
     pub fn validate(&self, config: &WarpConfig) -> ValidationResult {
         let mut result = ValidationResult::new();
         result.merge(self.validate_network(&config.network));
@@ -152,6 +186,8 @@ impl Validator {
         result
     }
 
+    /// Validates network configuration settings
+    #[must_use] 
     pub fn validate_network(&self, config: &NetworkConfig) -> ValidationResult {
         let mut result = ValidationResult::new();
 
@@ -183,6 +219,8 @@ impl Validator {
         result
     }
 
+    /// Validates storage configuration settings
+    #[must_use] 
     pub fn validate_storage(&self, config: &StorageConfig) -> ValidationResult {
         let mut result = ValidationResult::new();
 
@@ -221,6 +259,8 @@ impl Validator {
         result
     }
 
+    /// Validates scheduler configuration settings
+    #[must_use] 
     pub fn validate_scheduler(&self, config: &SchedulerConfig) -> ValidationResult {
         let mut result = ValidationResult::new();
 
@@ -257,6 +297,8 @@ impl Validator {
         result
     }
 
+    /// Validates logging configuration settings
+    #[must_use] 
     pub fn validate_log(&self, config: &LogConfig) -> ValidationResult {
         let mut result = ValidationResult::new();
 
@@ -295,7 +337,9 @@ impl Default for Validator {
 
 /// Trait for custom validation rules
 pub trait ValidationRule {
+    /// Validates the configuration and returns a list of errors
     fn validate(&self, config: &WarpConfig) -> Vec<ValidationError>;
+    /// Returns the name of this validation rule
     fn name(&self) -> &str;
 }
 
@@ -303,13 +347,15 @@ pub trait ValidationRule {
 pub struct PortRangeRule;
 
 impl PortRangeRule {
+    /// Validates that ports are not privileged and do not conflict
+    #[must_use] 
     pub fn validate_ports(&self, quic_port: u16, http_port: u16) -> Vec<ValidationError> {
         let mut errors = Vec::new();
 
         if quic_port <= 1024 {
             errors.push(ValidationError::new(
                 "network.quic_port",
-                format!("Port {} is privileged. Must be > 1024", quic_port),
+                format!("Port {quic_port} is privileged. Must be > 1024"),
                 ErrorCode::OutOfRange,
             ));
         }
@@ -317,7 +363,7 @@ impl PortRangeRule {
         if http_port <= 1024 {
             errors.push(ValidationError::new(
                 "network.port",
-                format!("Port {} is privileged. Must be > 1024", http_port),
+                format!("Port {http_port} is privileged. Must be > 1024"),
                 ErrorCode::OutOfRange,
             ));
         }
@@ -325,7 +371,7 @@ impl PortRangeRule {
         if quic_port == http_port {
             errors.push(ValidationError::new(
                 "network",
-                format!("QUIC port and HTTP port cannot be the same: {}", quic_port),
+                format!("QUIC port and HTTP port cannot be the same: {quic_port}"),
                 ErrorCode::Conflict,
             ));
         }
@@ -338,7 +384,7 @@ impl ValidationRule for PortRangeRule {
         self.validate_ports(config.network.quic_port, config.network.port)
     }
 
-    fn name(&self) -> &str {
+    fn name(&self) -> &'static str {
         "PortRangeRule"
     }
 }
@@ -347,18 +393,36 @@ impl ValidationRule for PortRangeRule {
 pub struct PathExistsRule;
 
 impl PathExistsRule {
+    /// Validates that storage paths exist and are accessible
+    #[must_use] 
     pub fn validate_paths(&self, config: &StorageConfig) -> ValidationResult {
         let mut result = ValidationResult::new();
 
-        if !config.data_dir.exists() {
-            if let Some(parent) = config.data_dir.parent() {
-                if !parent.exists() {
+        if config.data_dir.exists() {
+            match std::fs::metadata(&config.data_dir) {
+                Ok(metadata) => {
+                    if metadata.permissions().readonly() {
+                        result.add_error(ValidationError::new(
+                            "storage.data_dir",
+                            format!("Data directory is readonly: {}", config.data_dir.display()),
+                            ErrorCode::PermissionDenied,
+                        ));
+                    }
+                }
+                Err(_) => {
                     result.add_error(ValidationError::new(
                         "storage.data_dir",
-                        format!("Data directory parent does not exist: {}", parent.display()),
-                        ErrorCode::PathNotFound,
+                        format!(
+                            "Cannot access data directory: {}",
+                            config.data_dir.display()
+                        ),
+                        ErrorCode::PermissionDenied,
                     ));
-                } else {
+                }
+            }
+        } else {
+            if let Some(parent) = config.data_dir.parent() {
+                if parent.exists() {
                     match std::fs::metadata(parent) {
                         Ok(metadata) => {
                             if metadata.permissions().readonly() {
@@ -389,27 +453,11 @@ impl PathExistsRule {
                             ));
                         }
                     }
-                }
-            }
-        } else {
-            match std::fs::metadata(&config.data_dir) {
-                Ok(metadata) => {
-                    if metadata.permissions().readonly() {
-                        result.add_error(ValidationError::new(
-                            "storage.data_dir",
-                            format!("Data directory is readonly: {}", config.data_dir.display()),
-                            ErrorCode::PermissionDenied,
-                        ));
-                    }
-                }
-                Err(_) => {
+                } else {
                     result.add_error(ValidationError::new(
                         "storage.data_dir",
-                        format!(
-                            "Cannot access data directory: {}",
-                            config.data_dir.display()
-                        ),
-                        ErrorCode::PermissionDenied,
+                        format!("Data directory parent does not exist: {}", parent.display()),
+                        ErrorCode::PathNotFound,
                     ));
                 }
             }
@@ -417,16 +465,7 @@ impl PathExistsRule {
 
         if !config.cache_dir.exists() {
             if let Some(parent) = config.cache_dir.parent() {
-                if !parent.exists() {
-                    result.add_error(ValidationError::new(
-                        "storage.cache_dir",
-                        format!(
-                            "Cache directory parent does not exist: {}",
-                            parent.display()
-                        ),
-                        ErrorCode::PathNotFound,
-                    ));
-                } else {
+                if parent.exists() {
                     result.add_warning(ValidationWarning::with_suggestion(
                         "storage.cache_dir",
                         format!(
@@ -434,6 +473,15 @@ impl PathExistsRule {
                             config.cache_dir.display()
                         ),
                         "Directory will be created on first use",
+                    ));
+                } else {
+                    result.add_error(ValidationError::new(
+                        "storage.cache_dir",
+                        format!(
+                            "Cache directory parent does not exist: {}",
+                            parent.display()
+                        ),
+                        ErrorCode::PathNotFound,
                     ));
                 }
             }
@@ -447,7 +495,7 @@ impl ValidationRule for PathExistsRule {
         self.validate_paths(&config.storage).errors
     }
 
-    fn name(&self) -> &str {
+    fn name(&self) -> &'static str {
         "PathExistsRule"
     }
 }
@@ -456,11 +504,13 @@ impl ValidationRule for PathExistsRule {
 pub struct ResourceLimitRule;
 
 impl ResourceLimitRule {
+    /// Validates that max connections is within acceptable limits
+    #[must_use] 
     pub fn validate_max_connections(&self, max_connections: usize) -> Option<ValidationError> {
         if max_connections > 10000 {
             Some(ValidationError::new(
                 "network.max_connections",
-                format!("Max connections {} exceeds limit of 10000", max_connections),
+                format!("Max connections {max_connections} exceeds limit of 10000"),
                 ErrorCode::OutOfRange,
             ))
         } else if max_connections == 0 {
@@ -474,6 +524,8 @@ impl ResourceLimitRule {
         }
     }
 
+    /// Validates cache size and warns if it exceeds recommended limits
+    #[must_use] 
     pub fn validate_cache_size(&self, cache_size: u64) -> Option<ValidationWarning> {
         let gb_100 = 100u64 * 1024 * 1024 * 1024;
         if cache_size > gb_100 {
@@ -487,13 +539,14 @@ impl ResourceLimitRule {
         }
     }
 
+    /// Validates that max concurrent transfers is within acceptable limits
+    #[must_use] 
     pub fn validate_concurrent_transfers(&self, max_transfers: usize) -> Option<ValidationError> {
         if max_transfers > 1000 {
             Some(ValidationError::new(
                 "scheduler.max_concurrent_transfers",
                 format!(
-                    "Max concurrent transfers {} exceeds limit of 1000",
-                    max_transfers
+                    "Max concurrent transfers {max_transfers} exceeds limit of 1000"
                 ),
                 ErrorCode::OutOfRange,
             ))
@@ -523,7 +576,7 @@ impl ValidationRule for ResourceLimitRule {
         errors
     }
 
-    fn name(&self) -> &str {
+    fn name(&self) -> &'static str {
         "ResourceLimitRule"
     }
 }
@@ -532,6 +585,7 @@ impl ValidationRule for ResourceLimitRule {
 pub struct ConsistencyRule;
 
 impl ConsistencyRule {
+    /// Checks for configuration inconsistencies across different sections
     fn check_consistency(&self, config: &WarpConfig) -> Vec<ValidationError> {
         let mut errors = Vec::new();
 
@@ -559,26 +613,33 @@ impl ValidationRule for ConsistencyRule {
         self.check_consistency(config)
     }
 
-    fn name(&self) -> &str {
+    fn name(&self) -> &'static str {
         "ConsistencyRule"
     }
 }
 
 /// Custom validator with pluggable rules
 pub struct CustomValidator {
+    /// Collection of validation rules to apply
     rules: Vec<Box<dyn ValidationRule>>,
 }
 
 impl CustomValidator {
+    /// Creates a new custom validator with no rules
+    #[must_use] 
     pub fn new() -> Self {
         Self { rules: Vec::new() }
     }
 
+    /// Adds a validation rule to this validator
+    #[must_use] 
     pub fn add_rule(mut self, rule: Box<dyn ValidationRule>) -> Self {
         self.rules.push(rule);
         self
     }
 
+    /// Validates the configuration using all registered rules
+    #[must_use] 
     pub fn validate(&self, config: &WarpConfig) -> ValidationResult {
         let mut result = ValidationResult::new();
         for rule in &self.rules {

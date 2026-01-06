@@ -1,6 +1,5 @@
 //! Tensor handle and metadata
 
-use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Duration, Instant};
 
@@ -37,8 +36,10 @@ impl std::fmt::Display for TensorId {
 
 /// Tensor data type
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Default)]
 pub enum TensorDtype {
     /// 32-bit float
+    #[default]
     Float32,
     /// 64-bit float
     Float64,
@@ -85,26 +86,18 @@ impl TensorDtype {
     }
 }
 
-impl Default for TensorDtype {
-    fn default() -> Self {
-        Self::Float32
-    }
-}
 
 /// Tensor memory layout
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Default)]
 pub enum TensorLayout {
     /// Row-major (C-style)
+    #[default]
     RowMajor,
     /// Column-major (Fortran-style)
     ColumnMajor,
 }
 
-impl Default for TensorLayout {
-    fn default() -> Self {
-        Self::RowMajor
-    }
-}
 
 /// Tensor location
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
