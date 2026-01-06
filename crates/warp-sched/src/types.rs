@@ -542,6 +542,217 @@ impl SchedulerMetrics {
     }
 }
 
+// ============================================================================
+// Dynamic Throughput Measurement Types (Phase 7)
+// ============================================================================
+
+/// RTT trend detection for congestion signaling
+///
+/// Tracks whether round-trip time is stable, increasing (congestion), or decreasing.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+pub enum RttTrend {
+    /// RTT variance < 10% - stable network conditions
+    #[default]
+    Stable,
+    /// RTT growing - potential congestion signal
+    Increasing,
+    /// RTT improving - congestion clearing
+    Decreasing,
+}
+
+impl RttTrend {
+    /// Calculate trend from RTT samples
+    ///
+    /// Compares recent samples against older samples to detect trend.
+    /// Returns Stable if insufficient samples or variance is low.
+    pub fn from_samples(samples: &[u32], threshold: f32) -> Self {
+        if samples.len() < 4 {
+            return Self::Stable;
+        }
+
+        let mid = samples.len() / 2;
+        let (older, recent) = samples.split_at(mid);
+
+        let older_avg = older.iter().map(|&x| x as f64).sum::<f64>() / older.len() as f64;
+        let recent_avg = recent.iter().map(|&x| x as f64).sum::<f64>() / recent.len() as f64;
+
+        if older_avg == 0.0 {
+            return Self::Stable;
+        }
+
+        let change_ratio = (recent_avg - older_avg) / older_avg;
+
+        if change_ratio > threshold as f64 {
+            Self::Increasing
+        } else if change_ratio < -(threshold as f64) {
+            Self::Decreasing
+        } else {
+            Self::Stable
+        }
+    }
+}
+
+/// Per-path throughput metrics with sliding window measurement
+///
+/// Tracks actual throughput vs nominal capacity to detect saturation.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PathThroughput {
+    /// Bytes transferred in current measurement window
+    pub bytes_in_window: u64,
+    /// Window start timestamp (milliseconds since epoch)
+    pub window_start_ms: u64,
+    /// Calculated throughput (bytes per second)
+    pub throughput_bps: u64,
+    /// Nominal/configured capacity (bytes per second)
+    pub capacity_bps: u64,
+    /// Saturation ratio (throughput / capacity), 0.0 to 1.0+
+    pub saturation_ratio: f32,
+}
+
+impl PathThroughput {
+    /// Create new throughput tracker with given capacity
+    pub fn new(capacity_bps: u64) -> Self {
+        Self {
+            bytes_in_window: 0,
+            window_start_ms: current_time_ms(),
+            throughput_bps: 0,
+            capacity_bps,
+            saturation_ratio: 0.0,
+        }
+    }
+
+    /// Record bytes transferred
+    pub fn record_bytes(&mut self, bytes: u64) {
+        self.bytes_in_window += bytes;
+    }
+
+    /// Update throughput calculation if window has elapsed
+    ///
+    /// Returns true if window was reset (throughput recalculated)
+    pub fn maybe_update(&mut self, window_ms: u64) -> bool {
+        let now = current_time_ms();
+        let elapsed = now.saturating_sub(self.window_start_ms);
+
+        if elapsed >= window_ms {
+            // Calculate throughput: bytes/second
+            if elapsed > 0 {
+                self.throughput_bps = (self.bytes_in_window * 1000) / elapsed;
+            }
+
+            // Calculate saturation ratio
+            if self.capacity_bps > 0 {
+                self.saturation_ratio = self.throughput_bps as f32 / self.capacity_bps as f32;
+            }
+
+            // Reset window
+            self.bytes_in_window = 0;
+            self.window_start_ms = now;
+            true
+        } else {
+            false
+        }
+    }
+
+    /// Check if path is saturated (above threshold)
+    pub fn is_saturated(&self, threshold: f32) -> bool {
+        self.saturation_ratio > threshold
+    }
+}
+
+impl Default for PathThroughput {
+    fn default() -> Self {
+        Self::new(0)
+    }
+}
+
+/// Enhanced edge metrics for dynamic adaptation
+///
+/// Combines throughput measurement, RTT tracking, and queue depth
+/// for intelligent load shifting decisions.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DynamicEdgeMetrics {
+    /// Edge index this metrics belongs to
+    pub edge_idx: EdgeIdx,
+    /// Current throughput metrics
+    pub throughput: PathThroughput,
+    /// Rolling buffer of RTT samples (microseconds)
+    pub rtt_samples: Vec<u32>,
+    /// Maximum RTT samples to keep
+    pub max_rtt_samples: usize,
+    /// Detected RTT trend
+    pub rtt_trend: RttTrend,
+    /// RTT change threshold for trend detection (e.g., 0.20 = 20%)
+    pub rtt_threshold: f32,
+    /// Bytes currently queued for this edge
+    pub queue_depth_bytes: u64,
+    /// Last update timestamp
+    pub last_updated_ms: u64,
+}
+
+impl DynamicEdgeMetrics {
+    /// Create new metrics for an edge
+    pub fn new(edge_idx: EdgeIdx, capacity_bps: u64) -> Self {
+        Self {
+            edge_idx,
+            throughput: PathThroughput::new(capacity_bps),
+            rtt_samples: Vec::with_capacity(10),
+            max_rtt_samples: 10,
+            rtt_trend: RttTrend::Stable,
+            rtt_threshold: 0.20, // 20% change threshold
+            queue_depth_bytes: 0,
+            last_updated_ms: current_time_ms(),
+        }
+    }
+
+    /// Record a new RTT sample and update trend
+    pub fn record_rtt(&mut self, rtt_us: u32) {
+        // Add sample, maintaining max size
+        if self.rtt_samples.len() >= self.max_rtt_samples {
+            self.rtt_samples.remove(0);
+        }
+        self.rtt_samples.push(rtt_us);
+
+        // Update trend
+        self.rtt_trend = RttTrend::from_samples(&self.rtt_samples, self.rtt_threshold);
+        self.last_updated_ms = current_time_ms();
+    }
+
+    /// Record bytes transferred and update throughput
+    pub fn record_transfer(&mut self, bytes: u64, window_ms: u64) {
+        self.throughput.record_bytes(bytes);
+        self.throughput.maybe_update(window_ms);
+        self.last_updated_ms = current_time_ms();
+    }
+
+    /// Update queue depth
+    pub fn update_queue_depth(&mut self, bytes: u64) {
+        self.queue_depth_bytes = bytes;
+        self.last_updated_ms = current_time_ms();
+    }
+
+    /// Get current average RTT in microseconds
+    pub fn avg_rtt_us(&self) -> u32 {
+        if self.rtt_samples.is_empty() {
+            return 0;
+        }
+        let sum: u64 = self.rtt_samples.iter().map(|&x| x as u64).sum();
+        (sum / self.rtt_samples.len() as u64) as u32
+    }
+
+    /// Check if edge shows signs of congestion
+    pub fn is_congested(&self, saturation_threshold: f32) -> bool {
+        self.throughput.is_saturated(saturation_threshold) || self.rtt_trend == RttTrend::Increasing
+    }
+}
+
+/// Helper function to get current time in milliseconds
+fn current_time_ms() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or(std::time::Duration::ZERO)
+        .as_millis() as u64
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -901,5 +1112,137 @@ mod tests {
         let edge = EdgeStateGpu::new(EdgeIdx::new(0), 0, 1000, 1.0, 10);
         let time = edge.estimate_transfer_time_ms(1024);
         assert_eq!(time, u32::MAX);
+    }
+
+    // ========================================================================
+    // Tests for Dynamic Throughput Measurement Types (Phase 7)
+    // ========================================================================
+
+    #[test]
+    fn test_rtt_trend_stable_with_few_samples() {
+        // Less than 4 samples should always return Stable
+        let samples = vec![1000, 1000, 1000];
+        assert_eq!(RttTrend::from_samples(&samples, 0.20), RttTrend::Stable);
+
+        let empty: Vec<u32> = vec![];
+        assert_eq!(RttTrend::from_samples(&empty, 0.20), RttTrend::Stable);
+    }
+
+    #[test]
+    fn test_rtt_trend_increasing() {
+        // RTT increasing by >20%: older avg = 1000, recent avg = 1500 (50% increase)
+        let samples = vec![1000, 1000, 1500, 1500];
+        assert_eq!(RttTrend::from_samples(&samples, 0.20), RttTrend::Increasing);
+    }
+
+    #[test]
+    fn test_rtt_trend_decreasing() {
+        // RTT decreasing by >20%: older avg = 1500, recent avg = 1000 (33% decrease)
+        let samples = vec![1500, 1500, 1000, 1000];
+        assert_eq!(RttTrend::from_samples(&samples, 0.20), RttTrend::Decreasing);
+    }
+
+    #[test]
+    fn test_rtt_trend_stable_within_threshold() {
+        // RTT change within threshold: older avg = 1000, recent avg = 1100 (10% increase)
+        let samples = vec![1000, 1000, 1100, 1100];
+        assert_eq!(RttTrend::from_samples(&samples, 0.20), RttTrend::Stable);
+    }
+
+    #[test]
+    fn test_path_throughput_new() {
+        let throughput = PathThroughput::new(1_000_000_000); // 1 GB/s
+        assert_eq!(throughput.capacity_bps, 1_000_000_000);
+        assert_eq!(throughput.bytes_in_window, 0);
+        assert_eq!(throughput.throughput_bps, 0);
+        assert_eq!(throughput.saturation_ratio, 0.0);
+    }
+
+    #[test]
+    fn test_path_throughput_record_bytes() {
+        let mut throughput = PathThroughput::new(1_000_000_000);
+        throughput.record_bytes(1_000_000);
+        assert_eq!(throughput.bytes_in_window, 1_000_000);
+        throughput.record_bytes(500_000);
+        assert_eq!(throughput.bytes_in_window, 1_500_000);
+    }
+
+    #[test]
+    fn test_path_throughput_saturation() {
+        let mut throughput = PathThroughput::new(1_000_000); // 1 MB/s capacity
+        throughput.throughput_bps = 900_000; // 900 KB/s actual
+        throughput.saturation_ratio = 0.9;
+        assert!(throughput.is_saturated(0.85));
+        assert!(!throughput.is_saturated(0.95));
+    }
+
+    #[test]
+    fn test_dynamic_edge_metrics_new() {
+        let metrics = DynamicEdgeMetrics::new(EdgeIdx::new(5), 1_000_000_000);
+        assert_eq!(metrics.edge_idx.get(), 5);
+        assert_eq!(metrics.throughput.capacity_bps, 1_000_000_000);
+        assert!(metrics.rtt_samples.is_empty());
+        assert_eq!(metrics.rtt_trend, RttTrend::Stable);
+        assert_eq!(metrics.queue_depth_bytes, 0);
+    }
+
+    #[test]
+    fn test_dynamic_edge_metrics_record_rtt() {
+        let mut metrics = DynamicEdgeMetrics::new(EdgeIdx::new(0), 1_000_000_000);
+
+        // Add samples that show increasing RTT
+        metrics.record_rtt(1000);
+        metrics.record_rtt(1000);
+        metrics.record_rtt(1500);
+        metrics.record_rtt(1500);
+
+        assert_eq!(metrics.rtt_samples.len(), 4);
+        assert_eq!(metrics.rtt_trend, RttTrend::Increasing);
+        assert_eq!(metrics.avg_rtt_us(), 1250);
+    }
+
+    #[test]
+    fn test_dynamic_edge_metrics_max_samples() {
+        let mut metrics = DynamicEdgeMetrics::new(EdgeIdx::new(0), 1_000_000_000);
+        metrics.max_rtt_samples = 5;
+
+        // Add more than max samples
+        for i in 0..10 {
+            metrics.record_rtt(i * 100);
+        }
+
+        // Should only keep last 5 samples
+        assert_eq!(metrics.rtt_samples.len(), 5);
+        assert_eq!(metrics.rtt_samples, vec![500, 600, 700, 800, 900]);
+    }
+
+    #[test]
+    fn test_dynamic_edge_metrics_congestion() {
+        let mut metrics = DynamicEdgeMetrics::new(EdgeIdx::new(0), 1_000_000);
+
+        // Not congested initially
+        assert!(!metrics.is_congested(0.85));
+
+        // Congested due to saturation
+        metrics.throughput.saturation_ratio = 0.90;
+        assert!(metrics.is_congested(0.85));
+
+        // Reset saturation, congested due to RTT trend
+        metrics.throughput.saturation_ratio = 0.50;
+        metrics.record_rtt(1000);
+        metrics.record_rtt(1000);
+        metrics.record_rtt(2000);
+        metrics.record_rtt(2000);
+        assert_eq!(metrics.rtt_trend, RttTrend::Increasing);
+        assert!(metrics.is_congested(0.85));
+    }
+
+    #[test]
+    fn test_dynamic_edge_metrics_queue_depth() {
+        let mut metrics = DynamicEdgeMetrics::new(EdgeIdx::new(0), 1_000_000_000);
+        assert_eq!(metrics.queue_depth_bytes, 0);
+
+        metrics.update_queue_depth(1_000_000);
+        assert_eq!(metrics.queue_depth_bytes, 1_000_000);
     }
 }

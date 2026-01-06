@@ -54,6 +54,8 @@ pub mod fixed_chunker;
 pub mod mmap;
 pub mod pool;
 pub mod simd;
+#[cfg(all(target_os = "linux", feature = "io-uring"))]
+pub mod uring;
 pub mod walker;
 
 // SeqCDC (new, high-performance)
@@ -69,6 +71,13 @@ pub use async_chunker::{chunk_file_async, chunk_file_stream};
 pub use async_walker::{walk_directory_async, walk_directory_stream};
 pub use fixed_chunker::FixedChunker;
 pub use walker::{FileEntry, walk_directory};
+
+// io_uring support (Linux only, feature-gated)
+#[cfg(all(target_os = "linux", feature = "io-uring"))]
+pub use uring::{
+    IoUringAsyncReader, IoUringBackend, IoUringChunker, IoUringConfig, IoUringStats,
+    RegisteredBuffer, RegisteredBufferPool, chunk_file_uring, is_available as uring_available,
+};
 
 /// I/O error types
 #[derive(Debug, thiserror::Error)]

@@ -31,12 +31,20 @@ mod snapshot;
 mod state_machine;
 mod types;
 
+#[cfg(feature = "crdt")]
+mod crdt_store;
+
 pub use log_store::MemLogStore;
 pub use network::{RaftNetworkFactory, RaftRouter};
 pub use persistent_log::{SledLogStats, SledLogStore};
 pub use snapshot::{SnapshotConfig, SnapshotError, SnapshotInfo, SnapshotManager, SnapshotStats};
 pub use state_machine::MetadataStateMachine;
 pub use types::*;
+
+#[cfg(feature = "crdt")]
+pub use crdt_store::{
+    CrdtDelta, CrdtReplicationConfig, CrdtStore, CrdtStoreStatsSnapshot, ObjectDataRef,
+};
 
 use std::collections::BTreeSet;
 use std::path::PathBuf;

@@ -6,6 +6,11 @@ rust-version.workspace = true
 license.workspace = true
 description = "I/O utilities for warp (chunking, file walking, buffers)"
 
+[features]
+default = []
+# Enable native io_uring support on Linux for 2-5x IOPS improvement
+io-uring = ["dep:io-uring", "dep:nix"]
+
 [dependencies]
 bytes.workspace = true
 memmap2.workspace = true
@@ -14,6 +19,11 @@ thiserror.workspace = true
 tracing.workspace = true
 tokio = { workspace = true, features = ["fs", "io-util", "sync", "rt", "rt-multi-thread", "time"] }
 rayon.workspace = true
+
+# Linux-only io_uring support (optional)
+[target.'cfg(target_os = "linux")'.dependencies]
+io-uring = { version = "0.6", optional = true }
+nix = { version = "0.29", default-features = false, features = ["uio"], optional = true }
 
 [dev-dependencies]
 tempfile.workspace = true

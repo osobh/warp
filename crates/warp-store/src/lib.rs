@@ -38,6 +38,7 @@
 #![warn(missing_docs)]
 
 pub mod arbiter;
+pub mod autotier;
 pub mod backend;
 pub mod bucket;
 pub mod collective;
@@ -66,6 +67,7 @@ pub use arbiter::{
     RecoveryState, SplitBrainDetector, Vote, VoteResult, VoteTracker, WitnessConfig,
     WitnessHeartbeat, WitnessNode, WitnessState,
 };
+pub use autotier::{AutoTierConfig, AutoTierEngine, AutoTierStats, TierDecision, TierReason};
 pub use backend::{HpcStorageBackend, StorageBackend};
 pub use bucket::{Bucket, BucketConfig, BucketPolicy};
 pub use collective::{CollectiveAdapter, CollectiveContext, Rank, StorageCollectiveOps};

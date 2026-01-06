@@ -38,6 +38,7 @@ members = [
     "crates/warp-block",
     "crates/warp-gpu-mem",
     "crates/warp-tensor",
+    "crates/warp-crdt",
 ]
 
 [workspace.package]
@@ -91,6 +92,7 @@ warp-smb = { path = "crates/warp-smb" }
 warp-block = { path = "crates/warp-block" }
 warp-gpu-mem = { path = "crates/warp-gpu-mem" }
 warp-tensor = { path = "crates/warp-tensor" }
+warp-crdt = { path = "crates/warp-crdt" }
 
 # Async runtime
 tokio = { version = "1.48", features = ["full"] }

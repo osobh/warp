@@ -13,6 +13,7 @@
 //! - **Load Balancer**: Prevent edge bottlenecks
 //! - **Dispatch Queue**: CPU-readable scheduling output
 
+pub mod backpressure;
 pub mod balance;
 pub mod brain_link;
 pub mod constraints;
@@ -21,10 +22,12 @@ pub mod dispatch;
 pub mod failover;
 pub mod paths;
 pub mod reoptimize;
+pub mod saturation;
 pub mod scheduler;
 pub mod state;
 pub mod types;
 
+pub use backpressure::{BackpressureConfig, BackpressureState, BackpressureSummary};
 pub use balance::{
     CpuLoadBalancer, LoadBalanceConfig, LoadBalancer, LoadMetrics, RebalanceOp, RebalancePlan,
 };
@@ -44,11 +47,12 @@ pub use reoptimize::{
     IncrementalConfig, IncrementalScheduler, Reassignment, ReassignmentReason, ReoptMetrics,
     ReoptPlan, ReoptScope, ReoptState, ReoptStrategy,
 };
+pub use saturation::{SaturationDetector, SaturationSummary};
 pub use scheduler::{ChunkScheduler, CpuChunkScheduler, SchedulerConfig};
 pub use state::{CpuStateBuffers, GpuStateBuffers, StateSnapshot};
 pub use types::{
-    Assignment, AssignmentBatch, ChunkId, ChunkState, ChunkStatus, EdgeIdx, EdgeStateGpu,
-    ScheduleRequest, SchedulerMetrics,
+    Assignment, AssignmentBatch, ChunkId, ChunkState, ChunkStatus, DynamicEdgeMetrics, EdgeIdx,
+    EdgeStateGpu, PathThroughput, RttTrend, ScheduleRequest, SchedulerMetrics,
 };
 
 use thiserror::Error;

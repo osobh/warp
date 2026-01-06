@@ -68,6 +68,21 @@ impl WarpConnection {
         self.connection.local_ip()
     }
 
+    /// Get current round-trip time estimate in microseconds
+    ///
+    /// Returns the smoothed RTT estimate from QUIC congestion control.
+    /// This is useful for dynamic path adaptation and congestion detection.
+    pub fn rtt_us(&self) -> std::result::Result<u32, Error> {
+        let rtt = self.connection.rtt();
+        let rtt_us = rtt.as_micros();
+        if rtt_us > u32::MAX as u128 {
+            // RTT > 71 minutes is unreasonable, clamp to max
+            Ok(u32::MAX)
+        } else {
+            Ok(rtt_us as u32)
+        }
+    }
+
     /// Get current protocol state
     pub async fn state(&self) -> ProtocolState {
         *self.state.lock().await

@@ -18,6 +18,15 @@
 //! let data = transport.get("bucket", "key", Some(peer_location)).await?;
 //! ```
 
+#[cfg(feature = "rmpi")]
+pub mod rdma;
+
+#[cfg(feature = "rmpi")]
+pub use rdma::{
+    RdmaConnectionState, RdmaEndpoint, RdmaEndpointStatsSnapshot, RdmaTransport,
+    RdmaTransportConfig, peer_to_endpoint, select_transport,
+};
+
 use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::path::PathBuf;
@@ -25,6 +34,7 @@ use std::time::Duration;
 
 use bytes::Bytes;
 use dashmap::DashMap;
+use serde::{Deserialize, Serialize};
 use tracing::{debug, trace};
 
 use crate::ObjectKey;
@@ -223,7 +233,7 @@ pub struct TierStats {
 }
 
 /// Storage message types for transport
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum StorageMessage {
     /// Get object request
     Get {
@@ -234,6 +244,7 @@ pub enum StorageMessage {
     /// Get response with data
     GetResponse {
         request_id: u64,
+        #[serde(with = "optional_bytes")]
         data: Option<Bytes>,
         error: Option<String>,
     },
@@ -241,6 +252,7 @@ pub enum StorageMessage {
     Put {
         bucket: String,
         key: String,
+        #[serde(with = "bytes_serde")]
         data: Bytes,
         request_id: u64,
     },
@@ -267,8 +279,54 @@ pub enum StorageMessage {
         request_id: u64,
         chunk_index: u32,
         total_chunks: u32,
+        #[serde(with = "bytes_serde")]
         data: Bytes,
     },
+}
+
+/// Helper module for serializing Bytes
+mod bytes_serde {
+    use bytes::Bytes;
+    use serde::{Deserialize, Deserializer, Serializer};
+
+    pub fn serialize<S>(value: &Bytes, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        serializer.serialize_bytes(value)
+    }
+
+    pub fn deserialize<'de, D>(deserializer: D) -> Result<Bytes, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let vec: Vec<u8> = serde_bytes::deserialize(deserializer)?;
+        Ok(Bytes::from(vec))
+    }
+}
+
+/// Helper module for serializing Option<Bytes>
+mod optional_bytes {
+    use bytes::Bytes;
+    use serde::{Deserialize, Deserializer, Serializer};
+
+    pub fn serialize<S>(value: &Option<Bytes>, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        match value {
+            Some(bytes) => serializer.serialize_some(&bytes.to_vec()),
+            None => serializer.serialize_none(),
+        }
+    }
+
+    pub fn deserialize<'de, D>(deserializer: D) -> Result<Option<Bytes>, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let opt: Option<Vec<u8>> = Option::deserialize(deserializer)?;
+        Ok(opt.map(Bytes::from))
+    }
 }
 
 /// Route entry for object location

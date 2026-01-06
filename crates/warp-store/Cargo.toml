@@ -15,6 +15,8 @@ parcode = []
 erasure = ["warp-ec"]
 gpu = ["warp-gpu"]
 raft = ["openraft", "sled"]
+# CRDTs for conflict-free eventual consistency and geo-replication
+crdt = ["warp-crdt"]
 # WireGuard tunnel management (currently simulated - boringtun has x25519-dalek version conflict)
 wireguard = []
 # RMPI collective operations for distributed storage
@@ -25,7 +27,7 @@ hpc-channels = ["dep:hpc-channels"]
 chonkers = ["warp-chonkers"]
 # Blind deduplication using OPRF (content-private dedup)
 blind-dedup = ["warp-oprf/ristretto255", "sled"]
-full = ["local", "portal", "parcode", "erasure", "gpu", "raft", "wireguard", "rmpi", "hpc-channels", "chonkers", "blind-dedup"]
+full = ["local", "portal", "parcode", "erasure", "gpu", "raft", "crdt", "wireguard", "rmpi", "hpc-channels", "chonkers", "blind-dedup"]
 
 [dependencies]
 # Core warp crates
@@ -38,6 +40,7 @@ warp-gpu = { workspace = true, optional = true }
 warp-ec = { workspace = true, optional = true }
 warp-chonkers = { workspace = true, optional = true }
 warp-oprf = { workspace = true, optional = true }
+warp-crdt = { workspace = true, optional = true }
 portal-hub = { workspace = true, optional = true }
 portal-core = { workspace = true, optional = true }
 openraft = { workspace = true, optional = true }

@@ -55,6 +55,10 @@ Link with other HPC-AI projects for additional capabilities:
 - **GPU Acceleration** - nvCOMP integration for parallel compression
 - **Raft Consensus** - Strong consistency for distributed metadata
 - **Multi-Tier Transport** - Auto-select optimal transport via hpc-channels
+- **io_uring Backend** - Native Linux kernel I/O for 2-5x IOPS improvement
+- **CRDT Consistency** - Conflict-free geo-replication with HLC, LWWRegister, ORSet
+- **RDMA Transport** - Sub-10µs latency for datacenter transfers
+- **SLAI Auto-Tiering** - ML-workload-aware automatic storage class transitions
 
 ---
 
@@ -587,9 +591,9 @@ WARP is part of the HPC-AI ecosystem. Here's the integration status with all pro
 |---|---------|--------|-------------|---------|
 | 01 | **hpc-channels** | Integrated | Transport tier selection | Auto-select optimal transport (Tier 0-3) |
 | 02 | **parcode** | Feature-gated | Lazy-loading backend | O(1) field access without full deser |
-| 03 | **rmpi** | Planned | CollectiveRead/Write | Type-safe distributed I/O |
-| 04 | **slai** | Planned | Brain-Link scheduling | GPU-aware data placement |
-| 05 | **warp** | Core | Data primitives | Chunking, EC, compression |
+| 03 | **rmpi** | Integrated | RDMA transport + collective ops | Sub-10µs latency, memory registration |
+| 04 | **slai** | Integrated | Auto-tiering + placement | ML-workload-aware storage class transitions |
+| 05 | **warp** | Core | Data primitives | Chunking, EC, compression, CRDTs |
 | 06 | **stratoswarm** | Planned | Mesh coordination | P2P replication |
 | 07 | - | Reserved | - | - |
 | 08 | **rustytorch** | Planned | Model storage | Checkpoint management |
@@ -604,14 +608,14 @@ WARP is part of the HPC-AI ecosystem. Here's the integration status with all pro
 
 ## Crate Catalog
 
-WARP consists of 33 crates organized by function:
+WARP consists of 34 crates organized by function:
 
 ### Core
 
 | Crate | Description |
 |-------|-------------|
 | `warp-core` | Orchestration and transfer engine |
-| `warp-io` | SeqCDC chunking (31 GB/s), SIMD I/O, file operations |
+| `warp-io` | SeqCDC chunking (31 GB/s), SIMD I/O, io_uring backend (Linux) |
 | `warp-format` | Native `.warp` archive format with sparse Merkle verification |
 | `warp-config` | Configuration management and validation |
 
@@ -625,6 +629,7 @@ WARP consists of 33 crates organized by function:
 | `warp-ec` | Reed-Solomon erasure coding (RS(4,2) to RS(16,4)) |
 | `warp-oprf` | OPRF privacy-preserving protocols for blind dedup |
 | `warp-kms` | Key management service integration |
+| `warp-crdt` | Conflict-free replicated data types (HLC, LWWRegister, ORSet, GCounter) |
 
 ### Networking
 
@@ -638,7 +643,7 @@ WARP consists of 33 crates organized by function:
 
 | Crate | Description |
 |-------|-------------|
-| `warp-store` | S3-compatible object storage with HPC extensions |
+| `warp-store` | S3-compatible object storage with HPC extensions, RDMA transport, CRDT consistency, auto-tiering |
 | `warp-store-api` | REST API server (S3 + Native HPC endpoints) |
 | `warp-chonkers` | Versioned content-defined deduplication |
 
@@ -695,6 +700,8 @@ warp-store = { version = "0.1", features = ["full"] }
 | `erasure` | Reed-Solomon erasure coding |
 | `gpu` | GPU acceleration via nvCOMP |
 | `raft` | Distributed consensus for metadata |
+| `io-uring` | Native Linux io_uring for 2-5x IOPS improvement |
+| `crdt` | CRDT-based eventual consistency for geo-replication |
 | `full` | All features enabled |
 
 ---
@@ -846,6 +853,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 - [x] DPU offload framework (BlueField, Pensando, Intel IPU)
 - [x] Portal mesh P2P storage
 - [x] Triple-buffer streaming pipeline
+- [x] io_uring native Linux I/O backend (2-5x IOPS improvement)
+- [x] CRDT consistency layer (HLC, LWWRegister, ORSet, GCounter, PNCounter)
+- [x] RDMA transport tier integration (sub-10µs latency)
+- [x] SLAI auto-tiering engine (ML-workload-aware storage class transitions)
 
 ### In Progress
 

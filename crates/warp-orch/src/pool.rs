@@ -19,7 +19,7 @@ use thiserror::Error;
 use tokio::sync::Semaphore;
 use tokio::time::{Duration, timeout};
 use warp_net::{LocalInterface, MultiPathEndpoint, WarpConnection};
-use warp_sched::EdgeIdx;
+use warp_sched::{DynamicEdgeMetrics, EdgeIdx, RttTrend};
 
 /// Pool-specific errors
 #[derive(Debug, Error)]
@@ -806,18 +806,32 @@ impl PooledPathConnection {
     }
 
     /// Send chunk data using real QUIC transport (zero-copy)
+    ///
+    /// This method also records throughput metrics for dynamic adaptation.
     pub async fn send_chunk(&self, chunk_id: u32, data: Bytes) -> Result<()> {
-        // Update stats
+        let data_len = data.len() as u64;
+
+        // Update connection stats
         if let Some(mut conn) = self.pool.connections.get_mut(&self.conn_id) {
-            conn.bytes_sent += data.len() as u64;
+            conn.bytes_sent += data_len;
         }
+
+        // Record throughput for dynamic metrics (Phase 7)
+        self.pool.record_transfer(self.edge_idx, data_len);
 
         // Fast path: real transport
         if let Some(transport) = self.pool.transports.get(&self.conn_id) {
-            return transport
+            let result = transport
                 .send_chunk(chunk_id, data)
                 .await
                 .map_err(|e| PoolError::Transport(format!("Failed to send chunk: {}", e)));
+
+            // Sample RTT after send (if transport provides RTT stats)
+            if let Ok(rtt_us) = transport.rtt_us() {
+                self.pool.record_rtt(self.edge_idx, rtt_us);
+            }
+
+            return result;
         }
 
         // Mock fallback for tests
@@ -832,23 +846,49 @@ impl PooledPathConnection {
     }
 
     /// Receive a chunk from the peer
+    ///
+    /// This method also records throughput metrics for dynamic adaptation.
     pub async fn recv_chunk(&self) -> Result<(u32, Bytes)> {
         if let Some(transport) = self.pool.transports.get(&self.conn_id) {
-            return transport
+            let result = transport
                 .recv_chunk()
                 .await
-                .map_err(|e| PoolError::Transport(format!("Failed to recv chunk: {}", e)));
+                .map_err(|e| PoolError::Transport(format!("Failed to recv chunk: {}", e)))?;
+
+            // Record bytes received for throughput metrics
+            let bytes_received = result.1.len() as u64;
+            if let Some(mut conn) = self.pool.connections.get_mut(&self.conn_id) {
+                conn.bytes_received += bytes_received;
+            }
+            self.pool.record_transfer(self.edge_idx, bytes_received);
+
+            // Sample RTT after receive
+            if let Ok(rtt_us) = transport.rtt_us() {
+                self.pool.record_rtt(self.edge_idx, rtt_us);
+            }
+
+            return Ok(result);
         }
 
         // Mock fallback
-        if let Some(conn) = self.pool.connections.get(&self.conn_id) {
+        if let Some(mut conn) = self.pool.connections.get_mut(&self.conn_id) {
             if conn.state != ConnectionState::InUse {
                 return Err(PoolError::InvalidConfig("connection not in use".to_string()));
             }
-            Ok((0, Bytes::from(vec![0u8; 1024])))
+            let mock_data = Bytes::from(vec![0u8; 1024]);
+            conn.bytes_received += mock_data.len() as u64;
+            Ok((0, mock_data))
         } else {
             Err(PoolError::ConnectionNotFound(self.conn_id))
         }
+    }
+
+    /// Check if this connection's edge is currently congested
+    ///
+    /// Uses dynamic throughput and RTT metrics to detect congestion.
+    #[inline]
+    pub fn is_congested(&self) -> bool {
+        self.pool.is_edge_congested(self.edge_idx)
     }
 }
 
@@ -1014,6 +1054,30 @@ impl MultiPathMetrics {
     }
 }
 
+/// Configuration for dynamic metrics tracking
+#[derive(Debug, Clone)]
+pub struct DynamicMetricsConfig {
+    /// Window size for throughput calculation (milliseconds)
+    pub throughput_window_ms: u64,
+    /// RTT change threshold for trend detection (e.g., 0.20 = 20%)
+    pub rtt_threshold: f32,
+    /// Maximum RTT samples to keep per edge
+    pub max_rtt_samples: usize,
+    /// Saturation threshold (0.0-1.0)
+    pub saturation_threshold: f32,
+}
+
+impl Default for DynamicMetricsConfig {
+    fn default() -> Self {
+        Self {
+            throughput_window_ms: 1000,   // 1 second window
+            rtt_threshold: 0.20,          // 20% change for trend detection
+            max_rtt_samples: 10,          // Keep last 10 RTT samples
+            saturation_threshold: 0.85,   // 85% saturation = congested
+        }
+    }
+}
+
 /// Inner implementation for multi-path connection pool
 struct MultiPathConnectionPoolInner {
     config: MultiPathPoolConfig,
@@ -1032,6 +1096,12 @@ struct MultiPathConnectionPoolInner {
     /// Idle connections per path for O(1) lookup
     idle_connections: DashMap<PathId, Vec<u64>>,
 
+    /// Dynamic metrics per edge for throughput/RTT tracking (Phase 7)
+    edge_metrics: DashMap<EdgeIdx, DynamicEdgeMetrics>,
+
+    /// Configuration for dynamic metrics
+    metrics_config: DynamicMetricsConfig,
+
     next_conn_id: AtomicU64,
     total_semaphore: Arc<Semaphore>,
     path_semaphores: DashMap<PathId, Arc<Semaphore>>,
@@ -1049,6 +1119,10 @@ impl std::fmt::Debug for MultiPathConnectionPoolInner {
 
 impl MultiPathConnectionPoolInner {
     fn new(config: MultiPathPoolConfig) -> Self {
+        Self::with_metrics_config(config, DynamicMetricsConfig::default())
+    }
+
+    fn with_metrics_config(config: MultiPathPoolConfig, metrics_config: DynamicMetricsConfig) -> Self {
         Self {
             total_semaphore: Arc::new(Semaphore::new(config.base.max_total_connections)),
             config,
@@ -1058,9 +1132,45 @@ impl MultiPathConnectionPoolInner {
             path_connections: DashMap::new(),
             in_flight_paths: DashSet::new(),
             idle_connections: DashMap::new(),
+            edge_metrics: DashMap::new(),
+            metrics_config,
             next_conn_id: AtomicU64::new(1),
             path_semaphores: DashMap::new(),
         }
+    }
+
+    /// Get or create dynamic metrics for an edge
+    fn get_or_create_edge_metrics(&self, edge_idx: EdgeIdx, capacity_bps: u64) -> dashmap::mapref::one::RefMut<'_, EdgeIdx, DynamicEdgeMetrics> {
+        self.edge_metrics
+            .entry(edge_idx)
+            .or_insert_with(|| {
+                let mut metrics = DynamicEdgeMetrics::new(edge_idx, capacity_bps);
+                metrics.max_rtt_samples = self.metrics_config.max_rtt_samples;
+                metrics.rtt_threshold = self.metrics_config.rtt_threshold;
+                metrics
+            })
+    }
+
+    /// Record bytes transferred for an edge (called on send/receive)
+    fn record_transfer(&self, edge_idx: EdgeIdx, bytes: u64) {
+        if let Some(mut metrics) = self.edge_metrics.get_mut(&edge_idx) {
+            metrics.record_transfer(bytes, self.metrics_config.throughput_window_ms);
+        }
+    }
+
+    /// Record RTT sample for an edge (called when RTT is measured)
+    fn record_rtt(&self, edge_idx: EdgeIdx, rtt_us: u32) {
+        if let Some(mut metrics) = self.edge_metrics.get_mut(&edge_idx) {
+            metrics.record_rtt(rtt_us);
+        }
+    }
+
+    /// Check if an edge is congested
+    fn is_edge_congested(&self, edge_idx: EdgeIdx) -> bool {
+        self.edge_metrics
+            .get(&edge_idx)
+            .map(|m| m.is_congested(self.metrics_config.saturation_threshold))
+            .unwrap_or(false)
     }
 
     #[inline]
@@ -1379,18 +1489,91 @@ impl MultiPathConnectionPool {
         // Collect in-flight paths
         let in_flight_paths: Vec<PathId> = self.inner.in_flight_paths.iter().map(|p| *p).collect();
 
+        // Collect latency from dynamic metrics (Phase 7)
+        let mut latency_per_path: HashMap<PathId, u64> = HashMap::new();
+        for conn_ref in self.inner.connections.iter() {
+            let conn = conn_ref.value();
+            if let Some(metrics) = self.inner.edge_metrics.get(&conn.edge_idx) {
+                latency_per_path.insert(conn.path_id, metrics.avg_rtt_us() as u64);
+            }
+        }
+
+        // Collect health from dynamic metrics (Phase 7)
+        let mut health_per_path: HashMap<PathId, f32> = HashMap::new();
+        for conn_ref in self.inner.connections.iter() {
+            let conn = conn_ref.value();
+            if let Some(metrics) = self.inner.edge_metrics.get(&conn.edge_idx) {
+                // Health = 1.0 - saturation_ratio, clamped to 0.0-1.0
+                let health = (1.0 - metrics.throughput.saturation_ratio).clamp(0.0, 1.0);
+                health_per_path.insert(conn.path_id, health);
+            }
+        }
+
         MultiPathMetrics {
             total_connections: stats.total_connections,
             connections_per_path: stats.connections_per_path.clone(),
             bytes_per_interface,
-            latency_per_path: HashMap::new(), // Would need RTT tracking
+            latency_per_path,
             diversity_score: MultiPathMetrics::compute_diversity(&stats.connections_per_path),
             active_local_interfaces: stats.active_local_interfaces,
             active_remote_endpoints: stats.connections_per_path.len(),
             timestamp_ms: current_time_ms(),
             in_flight_paths,
-            health_per_path: HashMap::new(), // Would need health tracking
+            health_per_path,
         }
+    }
+
+    // =========================================================================
+    // Dynamic Metrics API (Phase 7)
+    // =========================================================================
+
+    /// Get dynamic metrics for a specific edge
+    ///
+    /// Returns throughput, RTT, and congestion information for the edge.
+    pub fn edge_metrics(&self, edge_idx: EdgeIdx) -> Option<DynamicEdgeMetrics> {
+        self.inner.edge_metrics.get(&edge_idx).map(|m| m.clone())
+    }
+
+    /// Get all dynamic edge metrics
+    ///
+    /// Returns a map of all tracked edge metrics for scheduler integration.
+    pub fn all_edge_metrics(&self) -> HashMap<EdgeIdx, DynamicEdgeMetrics> {
+        self.inner
+            .edge_metrics
+            .iter()
+            .map(|entry| (*entry.key(), entry.value().clone()))
+            .collect()
+    }
+
+    /// Initialize metrics tracking for an edge with estimated capacity
+    ///
+    /// Should be called when an edge is discovered or configured.
+    pub fn init_edge_metrics(&self, edge_idx: EdgeIdx, capacity_bps: u64) {
+        self.inner.get_or_create_edge_metrics(edge_idx, capacity_bps);
+    }
+
+    /// Check if an edge is currently congested
+    ///
+    /// Returns true if throughput exceeds saturation threshold or RTT is increasing.
+    pub fn is_edge_congested(&self, edge_idx: EdgeIdx) -> bool {
+        self.inner.is_edge_congested(edge_idx)
+    }
+
+    /// Get all congested edges
+    ///
+    /// Returns a list of edges that are currently showing signs of congestion.
+    pub fn congested_edges(&self) -> Vec<EdgeIdx> {
+        self.inner
+            .edge_metrics
+            .iter()
+            .filter(|entry| entry.value().is_congested(self.inner.metrics_config.saturation_threshold))
+            .map(|entry| *entry.key())
+            .collect()
+    }
+
+    /// Get the dynamic metrics configuration
+    pub fn metrics_config(&self) -> &DynamicMetricsConfig {
+        &self.inner.metrics_config
     }
 }
 

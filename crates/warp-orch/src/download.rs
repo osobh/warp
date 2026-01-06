@@ -9,6 +9,7 @@
 
 use crate::pool::{ConnectionPool, PooledConnection};
 use crate::progress::ProgressTracker;
+use crate::striping::StripingConfig;
 use crate::types::{
     TransferDirection, TransferId, TransferRequest, TransferResult, TransferState, TransferStatus,
 };
@@ -20,11 +21,21 @@ use warp_sched::{ChunkId, EdgeIdx};
 /// Configuration for swarm downloads
 #[derive(Debug, Clone)]
 pub struct DownloadConfig {
+    /// Maximum number of chunks to download concurrently
     pub max_concurrent_chunks: usize,
+    /// Maximum number of sources to try per chunk
     pub max_sources_per_chunk: usize,
+    /// Timeout for individual chunk downloads (ms)
     pub chunk_timeout_ms: u64,
+    /// Maximum retry attempts per chunk
     pub max_retries: u8,
+    /// Prefer local sources when available
     pub prefer_local: bool,
+    /// Striping configuration for large chunk downloads
+    ///
+    /// When enabled, chunks larger than the striping threshold will be
+    /// split across multiple network paths for higher throughput.
+    pub striping: Option<StripingConfig>,
 }
 
 impl Default for DownloadConfig {
@@ -35,6 +46,7 @@ impl Default for DownloadConfig {
             chunk_timeout_ms: 30000,
             max_retries: 3,
             prefer_local: false,
+            striping: None,
         }
     }
 }
@@ -86,6 +98,23 @@ impl DownloadConfig {
     pub fn with_prefer_local(mut self, prefer: bool) -> Self {
         self.prefer_local = prefer;
         self
+    }
+
+    /// Enable striping for large chunk downloads
+    ///
+    /// Striping splits large chunks across multiple network paths
+    /// to achieve bandwidth aggregation beyond single-path limits.
+    pub fn with_striping(mut self, config: StripingConfig) -> Self {
+        self.striping = Some(config);
+        self
+    }
+
+    /// Check if striping should be used for a given chunk size
+    pub fn should_stripe(&self, chunk_size: u64) -> bool {
+        self.striping
+            .as_ref()
+            .map(|s| s.should_stripe(chunk_size))
+            .unwrap_or(false)
     }
 }
 

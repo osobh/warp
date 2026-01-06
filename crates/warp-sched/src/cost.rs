@@ -3,10 +3,19 @@
 //! Computes transfer costs for all (chunk, edge) pairs based on bandwidth,
 //! RTT, health, and load balancing metrics. Supports both CPU and GPU
 //! computation paths with configurable cost function weights.
+//!
+//! # Dynamic Metrics Integration
+//!
+//! The cost function can incorporate real-time throughput and RTT measurements
+//! via `DynamicEdgeMetrics`. When dynamic metrics are available:
+//! - Saturated paths (high throughput/capacity ratio) receive cost penalties
+//! - Paths with increasing RTT (congestion signal) receive cost penalties
+//! - This enables adaptive load balancing away from congested paths
 
-use crate::{ChunkId, CpuStateBuffers, EdgeIdx};
+use crate::{ChunkId, CpuStateBuffers, DynamicEdgeMetrics, EdgeIdx, RttTrend};
 use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 
 /// Cost function configuration with tunable weights
 ///
@@ -27,8 +36,19 @@ pub struct CostConfig {
     /// When set > 0, paths using different network interfaces will be
     /// preferred to maximize aggregate throughput across multiple NICs.
     pub diversity_weight: f32,
+    /// Weight for saturation penalty term (0.0-1.0)
+    ///
+    /// When set > 0, paths approaching their capacity (high saturation ratio)
+    /// or showing signs of congestion (increasing RTT) will be penalized.
+    /// Requires dynamic metrics to be provided via `compute_with_metrics`.
+    pub saturation_weight: f32,
     /// Maximum acceptable RTT in microseconds for normalization
     pub max_acceptable_rtt_us: u32,
+    /// Saturation threshold above which penalty is applied (0.0-1.0)
+    ///
+    /// When `throughput_bps / capacity_bps` exceeds this threshold,
+    /// the saturation penalty increases exponentially. Default: 0.85
+    pub saturation_threshold: f32,
 }
 
 impl Default for CostConfig {
@@ -38,8 +58,10 @@ impl Default for CostConfig {
             rtt_weight: 0.3,
             health_weight: 0.2,
             load_weight: 0.2,
-            diversity_weight: 0.0, // Disabled by default for backwards compat
+            diversity_weight: 0.0,  // Disabled by default for backwards compat
+            saturation_weight: 0.0, // Disabled by default for backwards compat
             max_acceptable_rtt_us: 100_000, // 100ms
+            saturation_threshold: 0.85,
         }
     }
 }
@@ -58,7 +80,9 @@ impl CostConfig {
             health_weight,
             load_weight,
             diversity_weight: 0.0,
+            saturation_weight: 0.0,
             max_acceptable_rtt_us: 100_000,
+            saturation_threshold: 0.85,
         }
     }
 
@@ -70,7 +94,9 @@ impl CostConfig {
             health_weight: 0.1,
             load_weight: 0.1,
             diversity_weight: 0.0,
+            saturation_weight: 0.0,
             max_acceptable_rtt_us: 100_000,
+            saturation_threshold: 0.85,
         }
     }
 
@@ -82,21 +108,43 @@ impl CostConfig {
             health_weight: 0.2,
             load_weight: 0.1,
             diversity_weight: 0.0,
+            saturation_weight: 0.0,
             max_acceptable_rtt_us: 100_000,
+            saturation_threshold: 0.85,
         }
     }
 
     /// Create a config optimized for multi-path aggregation
     ///
     /// Prioritizes using diverse network paths to maximize aggregate throughput.
+    /// Enables both diversity and saturation weights for adaptive load balancing.
     pub fn multi_path() -> Self {
         Self {
-            bandwidth_weight: 0.25,
-            rtt_weight: 0.25,
+            bandwidth_weight: 0.20,
+            rtt_weight: 0.20,
             health_weight: 0.15,
             load_weight: 0.15,
-            diversity_weight: 0.2, // Higher diversity weight for multi-NIC
+            diversity_weight: 0.15, // Path diversity for multi-NIC
+            saturation_weight: 0.15, // Dynamic congestion avoidance
             max_acceptable_rtt_us: 100_000,
+            saturation_threshold: 0.85,
+        }
+    }
+
+    /// Create a config optimized for adaptive congestion control
+    ///
+    /// Heavily weights saturation metrics for aggressive load shifting
+    /// away from congested paths.
+    pub fn congestion_aware() -> Self {
+        Self {
+            bandwidth_weight: 0.20,
+            rtt_weight: 0.20,
+            health_weight: 0.10,
+            load_weight: 0.10,
+            diversity_weight: 0.15,
+            saturation_weight: 0.25, // High saturation weight
+            max_acceptable_rtt_us: 100_000,
+            saturation_threshold: 0.80, // More aggressive threshold
         }
     }
 
@@ -109,6 +157,18 @@ impl CostConfig {
     /// Set diversity weight for multi-path scheduling
     pub fn with_diversity_weight(mut self, weight: f32) -> Self {
         self.diversity_weight = weight.clamp(0.0, 1.0);
+        self
+    }
+
+    /// Set saturation weight for congestion-aware scheduling
+    pub fn with_saturation_weight(mut self, weight: f32) -> Self {
+        self.saturation_weight = weight.clamp(0.0, 1.0);
+        self
+    }
+
+    /// Set saturation threshold for congestion detection
+    pub fn with_saturation_threshold(mut self, threshold: f32) -> Self {
+        self.saturation_threshold = threshold.clamp(0.0, 1.0);
         self
     }
 }
@@ -254,6 +314,145 @@ impl CpuCostMatrix {
             return 1.0;
         }
         active_transfers as f32 / max_transfers as f32
+    }
+
+    /// Static saturation cost computation for use in parallel contexts
+    ///
+    /// Computes a penalty based on path saturation and RTT trend.
+    /// - When saturation_ratio exceeds threshold, penalty increases exponentially
+    /// - When RTT is increasing (congestion signal), adds additional penalty
+    ///
+    /// Returns value in range [0.0, 1.0]
+    #[inline]
+    fn compute_saturation_cost_static(
+        metrics: Option<&DynamicEdgeMetrics>,
+        saturation_threshold: f32,
+    ) -> f32 {
+        let Some(metrics) = metrics else {
+            return 0.0; // No penalty if metrics not available
+        };
+
+        let mut penalty = 0.0;
+
+        // Saturation ratio penalty (exponential above threshold)
+        let saturation_ratio = metrics.throughput.saturation_ratio;
+        if saturation_ratio > saturation_threshold {
+            // Exponential penalty: (ratio - threshold) * scale factor
+            // At 100% saturation with 0.85 threshold: (1.0 - 0.85) * 5.0 = 0.75
+            let excess = saturation_ratio - saturation_threshold;
+            let scale = 5.0; // Amplification factor
+            penalty += (excess * scale).min(1.0);
+        }
+
+        // RTT trend penalty
+        match metrics.rtt_trend {
+            RttTrend::Increasing => {
+                // Congestion signal - add penalty
+                penalty += 0.3;
+            }
+            RttTrend::Decreasing => {
+                // Path improving - small bonus (reduce penalty)
+                penalty -= 0.1;
+            }
+            RttTrend::Stable => {
+                // No change
+            }
+        }
+
+        penalty.clamp(0.0, 1.0)
+    }
+
+    /// Compute costs with dynamic edge metrics for congestion-aware scheduling
+    ///
+    /// Similar to `compute`, but incorporates real-time throughput and RTT
+    /// measurements to detect and avoid saturated paths.
+    ///
+    /// # Arguments
+    /// * `state` - Static state buffers with chunk/edge information
+    /// * `dynamic_metrics` - Map of edge index to dynamic metrics (throughput, RTT trend)
+    pub fn compute_with_metrics(
+        &mut self,
+        state: &CpuStateBuffers,
+        dynamic_metrics: &HashMap<EdgeIdx, DynamicEdgeMetrics>,
+    ) {
+        // Get actual counts from state
+        let actual_chunks = state.chunk_count();
+        let actual_edges = state.edge_count();
+
+        // Reset costs in parallel
+        self.costs.par_iter_mut().for_each(|c| *c = f32::INFINITY);
+        self.valid_mask.par_iter_mut().for_each(|v| *v = false);
+
+        // Capture config values for use in parallel closure
+        let bandwidth_weight = self.config.bandwidth_weight;
+        let rtt_weight = self.config.rtt_weight;
+        let health_weight = self.config.health_weight;
+        let load_weight = self.config.load_weight;
+        let saturation_weight = self.config.saturation_weight;
+        let saturation_threshold = self.config.saturation_threshold;
+        let max_rtt_us = self.config.max_acceptable_rtt_us;
+        let num_edges = self.num_edges;
+
+        // Compute costs in parallel per chunk
+        let results: Vec<Vec<(usize, f32)>> = (0..actual_chunks)
+            .into_par_iter()
+            .filter_map(|chunk_idx| {
+                let chunk = state.get_chunk(chunk_idx as u32)?;
+                let chunk_size = chunk.size;
+                let replicas = state.get_replicas(chunk_idx as u32);
+
+                let mut chunk_costs = Vec::new();
+
+                for edge_idx in 0..actual_edges {
+                    let edge_idx_typed = EdgeIdx(edge_idx as u32);
+
+                    // Use slice::contains instead of HashSet (small replica sets, ~3 items)
+                    if !replicas.contains(&edge_idx_typed) {
+                        continue;
+                    }
+
+                    let edge = match state.get_edge(edge_idx_typed) {
+                        Some(e) if e.can_accept_transfer() => e,
+                        _ => continue,
+                    };
+
+                    // Compute individual cost components using static methods
+                    let bandwidth_cost = Self::compute_bandwidth_cost_static(
+                        chunk_size,
+                        edge.available_bandwidth_bps,
+                    );
+                    let rtt_cost = Self::compute_rtt_cost_static(edge.rtt_us, max_rtt_us);
+                    let health_cost = Self::compute_health_cost_static(edge.health_score_f32());
+                    let load_cost =
+                        Self::compute_load_cost_static(edge.active_transfers, edge.max_transfers);
+
+                    // Compute saturation cost from dynamic metrics
+                    let edge_metrics = dynamic_metrics.get(&edge_idx_typed);
+                    let saturation_cost =
+                        Self::compute_saturation_cost_static(edge_metrics, saturation_threshold);
+
+                    // Weighted sum of all components
+                    let total_cost = bandwidth_weight * bandwidth_cost
+                        + rtt_weight * rtt_cost
+                        + health_weight * health_cost
+                        + load_weight * load_cost
+                        + saturation_weight * saturation_cost;
+
+                    let index = chunk_idx * num_edges + edge_idx;
+                    chunk_costs.push((index, total_cost));
+                }
+
+                Some(chunk_costs)
+            })
+            .collect();
+
+        // Apply results (single-threaded to avoid race conditions)
+        for chunk_costs in results {
+            for (index, cost) in chunk_costs {
+                self.costs[index] = cost;
+                self.valid_mask[index] = true;
+            }
+        }
     }
 
     /// Compute bandwidth cost component
@@ -431,6 +630,17 @@ impl CostMatrix {
         self.inner.compute(state);
     }
 
+    /// Compute costs with dynamic metrics (delegates to CPU)
+    ///
+    /// Uses real-time throughput and RTT measurements for congestion-aware scheduling.
+    pub fn compute_with_metrics(
+        &mut self,
+        state: &CpuStateBuffers,
+        dynamic_metrics: &HashMap<EdgeIdx, DynamicEdgeMetrics>,
+    ) {
+        self.inner.compute_with_metrics(state, dynamic_metrics);
+    }
+
     /// Get cost for specific pair
     pub fn get_cost(&self, chunk_id: ChunkId, edge_idx: EdgeIdx) -> Option<f32> {
         self.inner.get_cost(chunk_id, edge_idx)
@@ -539,14 +749,17 @@ mod tests {
     #[test]
     fn test_cost_config_multi_path() {
         let config = CostConfig::multi_path();
-        assert_eq!(config.diversity_weight, 0.2);
+        assert_eq!(config.diversity_weight, 0.15);
+        assert_eq!(config.saturation_weight, 0.15);
         assert!(config.diversity_weight > 0.0);
+        assert!(config.saturation_weight > 0.0);
         // Weights should still sum to approximately 1.0
         let sum = config.bandwidth_weight
             + config.rtt_weight
             + config.health_weight
             + config.load_weight
-            + config.diversity_weight;
+            + config.diversity_weight
+            + config.saturation_weight;
         assert!((sum - 1.0).abs() < 0.01);
     }
 
@@ -983,5 +1196,196 @@ mod tests {
         assert!(matrix.is_valid(ChunkId(0), EdgeIdx(0)));
         assert!(matrix.invalidate(0, 0));
         assert!(!matrix.is_valid(ChunkId(0), EdgeIdx(0)));
+    }
+
+    // ============ Saturation / Dynamic Metrics Tests ============
+
+    #[test]
+    fn test_cost_config_saturation_weight() {
+        let config = CostConfig::default();
+        assert_eq!(config.saturation_weight, 0.0);
+        assert_eq!(config.saturation_threshold, 0.85);
+
+        let with_saturation = config.with_saturation_weight(0.25);
+        assert_eq!(with_saturation.saturation_weight, 0.25);
+
+        // Test clamping
+        let clamped = CostConfig::default().with_saturation_weight(1.5);
+        assert_eq!(clamped.saturation_weight, 1.0);
+    }
+
+    #[test]
+    fn test_cost_config_saturation_threshold() {
+        let config = CostConfig::default().with_saturation_threshold(0.75);
+        assert_eq!(config.saturation_threshold, 0.75);
+
+        // Test clamping
+        let clamped = CostConfig::default().with_saturation_threshold(1.5);
+        assert_eq!(clamped.saturation_threshold, 1.0);
+    }
+
+    #[test]
+    fn test_cost_config_congestion_aware() {
+        let config = CostConfig::congestion_aware();
+        assert_eq!(config.saturation_weight, 0.25);
+        assert_eq!(config.saturation_threshold, 0.80);
+        // Weights should still sum to approximately 1.0
+        let sum = config.bandwidth_weight
+            + config.rtt_weight
+            + config.health_weight
+            + config.load_weight
+            + config.diversity_weight
+            + config.saturation_weight;
+        assert!((sum - 1.0).abs() < 0.01);
+    }
+
+    #[test]
+    fn test_saturation_cost_no_metrics() {
+        // No metrics = no penalty
+        let cost = CpuCostMatrix::compute_saturation_cost_static(None, 0.85);
+        assert_eq!(cost, 0.0);
+    }
+
+    #[test]
+    fn test_saturation_cost_below_threshold() {
+        use crate::PathThroughput;
+
+        let metrics = DynamicEdgeMetrics::new(EdgeIdx(0), 1_000_000_000);
+        // Default saturation_ratio is 0.0, well below threshold
+        let cost = CpuCostMatrix::compute_saturation_cost_static(Some(&metrics), 0.85);
+        assert_eq!(cost, 0.0);
+    }
+
+    #[test]
+    fn test_saturation_cost_above_threshold() {
+        use crate::PathThroughput;
+
+        let mut metrics = DynamicEdgeMetrics::new(EdgeIdx(0), 1_000_000_000);
+        // Set saturation above threshold (90%)
+        metrics.throughput.saturation_ratio = 0.90;
+
+        let cost = CpuCostMatrix::compute_saturation_cost_static(Some(&metrics), 0.85);
+        // (0.90 - 0.85) * 5.0 = 0.25
+        assert!((cost - 0.25).abs() < 0.01);
+    }
+
+    #[test]
+    fn test_saturation_cost_fully_saturated() {
+        let mut metrics = DynamicEdgeMetrics::new(EdgeIdx(0), 1_000_000_000);
+        // Set saturation at 100%
+        metrics.throughput.saturation_ratio = 1.0;
+
+        let cost = CpuCostMatrix::compute_saturation_cost_static(Some(&metrics), 0.85);
+        // (1.0 - 0.85) * 5.0 = 0.75
+        assert!((cost - 0.75).abs() < 0.01);
+    }
+
+    #[test]
+    fn test_saturation_cost_rtt_increasing() {
+        let mut metrics = DynamicEdgeMetrics::new(EdgeIdx(0), 1_000_000_000);
+        metrics.rtt_trend = RttTrend::Increasing;
+
+        let cost = CpuCostMatrix::compute_saturation_cost_static(Some(&metrics), 0.85);
+        // RTT increasing penalty: 0.3
+        assert!((cost - 0.3).abs() < 0.01);
+    }
+
+    #[test]
+    fn test_saturation_cost_rtt_decreasing() {
+        let mut metrics = DynamicEdgeMetrics::new(EdgeIdx(0), 1_000_000_000);
+        metrics.rtt_trend = RttTrend::Decreasing;
+
+        let cost = CpuCostMatrix::compute_saturation_cost_static(Some(&metrics), 0.85);
+        // RTT decreasing gives bonus (negative penalty clamped to 0)
+        assert_eq!(cost, 0.0);
+    }
+
+    #[test]
+    fn test_saturation_cost_combined_penalties() {
+        let mut metrics = DynamicEdgeMetrics::new(EdgeIdx(0), 1_000_000_000);
+        // High saturation + increasing RTT
+        metrics.throughput.saturation_ratio = 0.95;
+        metrics.rtt_trend = RttTrend::Increasing;
+
+        let cost = CpuCostMatrix::compute_saturation_cost_static(Some(&metrics), 0.85);
+        // (0.95 - 0.85) * 5.0 + 0.3 = 0.50 + 0.30 = 0.80
+        assert!((cost - 0.80).abs() < 0.01);
+    }
+
+    #[test]
+    fn test_saturation_cost_clamped_to_one() {
+        let mut metrics = DynamicEdgeMetrics::new(EdgeIdx(0), 1_000_000_000);
+        // Very high saturation would give > 1.0 but should be clamped
+        metrics.throughput.saturation_ratio = 1.5; // artificially high
+        metrics.rtt_trend = RttTrend::Increasing;
+
+        let cost = CpuCostMatrix::compute_saturation_cost_static(Some(&metrics), 0.85);
+        assert!(cost <= 1.0);
+    }
+
+    #[test]
+    fn test_compute_with_metrics_no_metrics() {
+        let config = CostConfig::multi_path(); // Has saturation_weight > 0
+        let mut matrix = CpuCostMatrix::new(2, 2, config);
+        let mut state = make_test_state(2, 2);
+
+        state.add_replica(0, EdgeIdx(0));
+        state.add_replica(0, EdgeIdx(1));
+
+        // Empty metrics map
+        let metrics: HashMap<EdgeIdx, DynamicEdgeMetrics> = HashMap::new();
+        matrix.compute_with_metrics(&state, &metrics);
+
+        // Should still compute valid costs
+        assert!(matrix.is_valid(ChunkId(0), EdgeIdx(0)));
+        assert!(matrix.is_valid(ChunkId(0), EdgeIdx(1)));
+    }
+
+    #[test]
+    fn test_compute_with_metrics_saturated_edge() {
+        let config = CostConfig::multi_path();
+        let mut matrix = CpuCostMatrix::new(1, 2, config);
+        let mut state = make_test_state(1, 2);
+
+        state.add_replica(0, EdgeIdx(0));
+        state.add_replica(0, EdgeIdx(1));
+
+        // Edge 0 is saturated, Edge 1 is not
+        let mut metrics = HashMap::new();
+        let mut saturated = DynamicEdgeMetrics::new(EdgeIdx(0), 1_000_000_000);
+        saturated.throughput.saturation_ratio = 0.95;
+        saturated.rtt_trend = RttTrend::Increasing;
+        metrics.insert(EdgeIdx(0), saturated);
+
+        let healthy = DynamicEdgeMetrics::new(EdgeIdx(1), 1_000_000_000);
+        metrics.insert(EdgeIdx(1), healthy);
+
+        matrix.compute_with_metrics(&state, &metrics);
+
+        let cost0 = matrix.get_cost(ChunkId(0), EdgeIdx(0)).unwrap();
+        let cost1 = matrix.get_cost(ChunkId(0), EdgeIdx(1)).unwrap();
+
+        // Saturated edge should have higher cost
+        assert!(cost0 > cost1);
+    }
+
+    #[test]
+    fn test_gpu_compute_with_metrics() {
+        let config = CostConfig::multi_path();
+        let mut matrix = CostMatrix::new(1, 2, config);
+        let mut state = make_test_state(1, 2);
+
+        state.add_replica(0, EdgeIdx(0));
+        state.add_replica(0, EdgeIdx(1));
+
+        let mut metrics = HashMap::new();
+        let mut saturated = DynamicEdgeMetrics::new(EdgeIdx(0), 1_000_000_000);
+        saturated.throughput.saturation_ratio = 0.95;
+        metrics.insert(EdgeIdx(0), saturated);
+
+        matrix.compute_with_metrics(&state, &metrics);
+
+        assert!(matrix.is_valid(ChunkId(0), EdgeIdx(0)));
+        assert!(matrix.is_valid(ChunkId(0), EdgeIdx(1)));
     }
 }

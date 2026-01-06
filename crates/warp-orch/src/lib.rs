@@ -23,6 +23,7 @@ pub mod predict;
 pub mod preposition;
 pub mod progress;
 pub mod reconcile;
+pub mod striping;
 pub mod triggers;
 pub mod types;
 pub mod upload;
@@ -45,6 +46,9 @@ pub use progress::{ProgressTracker, ProgressUpdate, TransferProgress};
 pub use reconcile::{
     DriftConfig, DriftDetector, DriftMetrics, ReoptConfig, ReoptDecision, ReoptEvaluator,
     ReoptTrigger,
+};
+pub use striping::{
+    Stripe, StripedTransfer, StripedTransferMetrics, StripeStatus, StripingConfig,
 };
 pub use triggers::{TriggerConfig, TriggerGenerator};
 pub use types::{

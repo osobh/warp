@@ -9,6 +9,7 @@
 
 use crate::pool::{ConnectionPool, PooledConnection};
 use crate::progress::ProgressTracker;
+use crate::striping::StripingConfig;
 use crate::types::{
     TransferDirection, TransferId, TransferRequest, TransferResult, TransferState, TransferStatus,
 };
@@ -20,11 +21,21 @@ use warp_sched::{ChunkId, EdgeIdx};
 /// Configuration for distributed uploads
 #[derive(Debug, Clone)]
 pub struct UploadConfig {
+    /// Maximum number of chunks to upload concurrently
     pub max_concurrent_chunks: usize,
+    /// Number of replicas per chunk
     pub replication_factor: usize,
+    /// Timeout for individual chunk uploads (ms)
     pub chunk_timeout_ms: u64,
+    /// Maximum retry attempts per chunk
     pub max_retries: u8,
+    /// Verify upload completed successfully
     pub verify_upload: bool,
+    /// Striping configuration for large chunk uploads
+    ///
+    /// When enabled, chunks larger than the striping threshold will be
+    /// split across multiple network paths for higher throughput.
+    pub striping: Option<StripingConfig>,
 }
 
 impl Default for UploadConfig {
@@ -35,6 +46,7 @@ impl Default for UploadConfig {
             chunk_timeout_ms: 30000,
             max_retries: 3,
             verify_upload: true,
+            striping: None,
         }
     }
 }
@@ -81,6 +93,23 @@ impl UploadConfig {
     pub fn with_verify_upload(mut self, verify: bool) -> Self {
         self.verify_upload = verify;
         self
+    }
+
+    /// Enable striping for large chunk uploads
+    ///
+    /// Striping splits large chunks across multiple network paths
+    /// to achieve bandwidth aggregation beyond single-path limits.
+    pub fn with_striping(mut self, config: StripingConfig) -> Self {
+        self.striping = Some(config);
+        self
+    }
+
+    /// Check if striping should be used for a given chunk size
+    pub fn should_stripe(&self, chunk_size: u64) -> bool {
+        self.striping
+            .as_ref()
+            .map(|s| s.should_stripe(chunk_size))
+            .unwrap_or(false)
     }
 }
 
