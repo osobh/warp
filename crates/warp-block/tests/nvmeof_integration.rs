@@ -536,3 +536,141 @@ async fn test_e2e_command_exchange() {
         .unwrap()
         .unwrap();
 }
+
+// ============================================================================
+// QUIC Transport End-to-End Tests
+// ============================================================================
+
+#[cfg(feature = "nvmeof-quic")]
+mod quic_tests {
+    use super::*;
+    use std::time::Duration;
+    use tokio::time::timeout;
+    use warp_block::nvmeof::transport::quic::{NvmeOfQuicConfig, QuicTransport};
+    use warp_block::nvmeof::transport::NvmeOfTransport;
+
+    #[tokio::test]
+    async fn test_quic_transport_bind() {
+        let config = NvmeOfQuicConfig::default();
+        let mut transport = QuicTransport::new(config);
+
+        let addr: SocketAddr = "127.0.0.1:0".parse().unwrap();
+        transport.bind(addr).await.unwrap();
+
+        let bound_addr = transport.local_addr().await.unwrap();
+        assert_eq!(bound_addr.ip(), addr.ip());
+        assert_ne!(bound_addr.port(), 0); // Should have assigned a port
+
+        transport.close().await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn test_quic_handshake() {
+        let server_config = NvmeOfQuicConfig::default();
+        let mut server_transport = QuicTransport::new(server_config.clone());
+
+        let bind_addr: SocketAddr = "127.0.0.1:0".parse().unwrap();
+        server_transport.bind(bind_addr).await.unwrap();
+        let server_addr = server_transport.local_addr().await.unwrap();
+
+        // Spawn server accept task
+        let server_handle = tokio::spawn(async move {
+            let conn = server_transport.accept().await.unwrap();
+            conn.initialize_as_target().await.unwrap();
+            tokio::time::sleep(Duration::from_millis(100)).await;
+            conn.close().await.unwrap();
+            server_transport.close().await.unwrap();
+        });
+
+        // Client connects
+        let client_config = NvmeOfQuicConfig::default();
+        let client_transport = QuicTransport::new(client_config);
+        let client_conn = client_transport
+            .connect(&TransportAddress::tcp(server_addr))
+            .await
+            .unwrap();
+
+        // Perform handshake
+        client_conn.initialize_as_initiator().await.unwrap();
+        assert!(client_conn.is_connected());
+
+        client_conn.close().await.unwrap();
+
+        timeout(Duration::from_secs(5), server_handle)
+            .await
+            .unwrap()
+            .unwrap();
+    }
+
+    #[tokio::test]
+    async fn test_quic_command_exchange() {
+        let server_config = NvmeOfQuicConfig::default();
+        let mut server_transport = QuicTransport::new(server_config.clone());
+
+        let bind_addr: SocketAddr = "127.0.0.1:0".parse().unwrap();
+        server_transport.bind(bind_addr).await.unwrap();
+        let server_addr = server_transport.local_addr().await.unwrap();
+
+        // Spawn server task
+        let server_handle = tokio::spawn(async move {
+            let conn = server_transport.accept().await.unwrap();
+            conn.initialize_as_target().await.unwrap();
+
+            // Receive command
+            let capsule = conn.recv_command().await.unwrap();
+            let cid = capsule.command.cid();
+
+            // Send success response
+            let completion = NvmeCompletion::success(cid, 0, 0);
+            let response = ResponseCapsule::new(completion);
+            conn.send_response(&response).await.unwrap();
+
+            // Wait briefly to ensure response is delivered before closing
+            tokio::time::sleep(Duration::from_millis(50)).await;
+
+            conn.close().await.unwrap();
+            server_transport.close().await.unwrap();
+        });
+
+        // Client connects and sends command
+        let client_config = NvmeOfQuicConfig::default();
+        let client_transport = QuicTransport::new(client_config);
+        let client_conn = client_transport
+            .connect(&TransportAddress::tcp(server_addr))
+            .await
+            .unwrap();
+
+        client_conn.initialize_as_initiator().await.unwrap();
+
+        // Build and send test command
+        let mut cmd = NvmeCommand::new();
+        cmd.set_cid(123);
+        cmd.set_opcode(0x02); // Read
+        let capsule = CommandCapsule::new(cmd);
+
+        client_conn.send_command(&capsule).await.unwrap();
+
+        // Receive response
+        let response = client_conn.recv_response().await.unwrap();
+        assert_eq!(response.completion.cid, 123);
+        assert!(response.completion.is_success());
+
+        client_conn.close().await.unwrap();
+
+        timeout(Duration::from_secs(5), server_handle)
+            .await
+            .unwrap()
+            .unwrap();
+    }
+
+    #[tokio::test]
+    async fn test_quic_multi_stream_capability() {
+        let config = NvmeOfQuicConfig::default();
+        let transport = QuicTransport::new(config);
+
+        let caps = transport.capabilities();
+        assert!(caps.multi_stream); // QUIC supports multiple streams
+        assert!(!caps.header_digest); // QUIC uses TLS for integrity
+        assert!(!caps.data_digest);
+    }
+}

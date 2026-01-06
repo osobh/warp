@@ -263,9 +263,11 @@ impl NvmeOfTransport for QuicTransport {
         let server_config = self.create_server_config()?;
         let endpoint = Endpoint::server(server_config, addr)?;
 
-        debug!("NVMe-oF QUIC transport bound to {}", addr);
+        // Get the actual bound address (important when port 0 is used)
+        let actual_addr = endpoint.local_addr()?;
+        debug!("NVMe-oF QUIC transport bound to {}", actual_addr);
 
-        *self.local_addr.lock().await = Some(addr);
+        *self.local_addr.lock().await = Some(actual_addr);
         *self.endpoint.lock().await = Some(endpoint);
 
         Ok(())
@@ -296,7 +298,7 @@ impl NvmeOfTransport for QuicTransport {
 
         debug!("Accepted QUIC connection from {}", remote_addr);
 
-        let conn = QuicConnection::new(
+        let conn = QuicConnection::new_for_target(
             connection,
             local_addr,
             remote_addr,
@@ -332,7 +334,7 @@ impl NvmeOfTransport for QuicTransport {
 
         debug!("Connected to NVMe-oF QUIC target at {}", remote_addr);
 
-        let conn = QuicConnection::new(
+        let conn = QuicConnection::new_for_initiator(
             connection,
             local_addr,
             remote_addr,
@@ -351,6 +353,13 @@ impl NvmeOfTransport for QuicTransport {
             endpoint.wait_idle().await;
         }
         Ok(())
+    }
+
+    async fn local_addr(&self) -> NvmeOfResult<SocketAddr> {
+        self.local_addr
+            .lock()
+            .await
+            .ok_or_else(|| NvmeOfError::Transport("Transport not bound".to_string()))
     }
 }
 
@@ -385,19 +394,48 @@ pub struct QuicConnection {
 }
 
 impl QuicConnection {
-    /// Create a new QUIC connection
-    pub async fn new(
+    /// Create a new QUIC connection for initiator (client)
+    /// Opens a bidirectional stream to the server
+    pub async fn new_for_initiator(
         connection: Connection,
         local_addr: SocketAddr,
         remote_addr: SocketAddr,
         id: u64,
         config: NvmeOfQuicConfig,
     ) -> NvmeOfResult<Self> {
-        // Open a bidirectional stream for NVMe commands
+        // Client opens a bidirectional stream for NVMe commands
         let (send_stream, recv_stream) = connection
             .open_bi()
             .await
             .map_err(|e| NvmeOfError::Transport(format!("Failed to open stream: {}", e)))?;
+
+        Ok(Self {
+            id,
+            connection,
+            local_addr,
+            remote_addr,
+            _config: config,
+            send_stream: Mutex::new(send_stream),
+            recv_stream: Mutex::new(recv_stream),
+            connected: AtomicBool::new(true),
+            state: parking_lot::RwLock::new(ConnectionState::Connecting),
+        })
+    }
+
+    /// Create a new QUIC connection for target (server)
+    /// Accepts a bidirectional stream from the client
+    pub async fn new_for_target(
+        connection: Connection,
+        local_addr: SocketAddr,
+        remote_addr: SocketAddr,
+        id: u64,
+        config: NvmeOfQuicConfig,
+    ) -> NvmeOfResult<Self> {
+        // Server accepts a bidirectional stream from the client
+        let (send_stream, recv_stream) = connection
+            .accept_bi()
+            .await
+            .map_err(|e| NvmeOfError::Transport(format!("Failed to accept stream: {}", e)))?;
 
         Ok(Self {
             id,
@@ -528,6 +566,14 @@ impl TransportConnection for QuicConnection {
 
     fn transport_type(&self) -> TransportType {
         TransportType::Tcp
+    }
+
+    async fn initialize_as_target(&self) -> NvmeOfResult<()> {
+        self.initialize_connection_target().await.map(|_| ())
+    }
+
+    async fn initialize_as_initiator(&self) -> NvmeOfResult<()> {
+        self.initialize_connection_initiator().await
     }
 
     async fn send_command(&self, capsule: &CommandCapsule) -> NvmeOfResult<()> {
