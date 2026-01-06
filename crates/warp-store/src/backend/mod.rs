@@ -58,6 +58,14 @@ pub use blind_dedup::{
 #[cfg(feature = "blind-dedup")]
 pub use warp_oprf::dedup::{DedupIndex, DedupReference, DedupToken, MemoryDedupIndex};
 
+#[cfg(feature = "nvmeof")]
+pub mod nvmeof;
+
+#[cfg(feature = "nvmeof")]
+pub use nvmeof::{
+    NvmeOfBackend, NvmeOfBackendConfig, NvmeOfBackendError, NvmeOfBackendResult, NvmeOfTargetConfig,
+};
+
 use async_trait::async_trait;
 
 use crate::Result;

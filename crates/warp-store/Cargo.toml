@@ -27,7 +27,12 @@ hpc-channels = ["dep:hpc-channels"]
 chonkers = ["warp-chonkers"]
 # Blind deduplication using OPRF (content-private dedup)
 blind-dedup = ["warp-oprf/ristretto255", "sled"]
-full = ["local", "portal", "parcode", "erasure", "gpu", "raft", "crdt", "wireguard", "rmpi", "hpc-channels", "chonkers", "blind-dedup"]
+# NVMe-oF storage backend (initiator)
+nvmeof = []
+nvmeof-rdma = ["nvmeof", "rmpi"]
+nvmeof-quic = ["nvmeof", "dep:quinn"]
+nvmeof-full = ["nvmeof", "nvmeof-rdma", "nvmeof-quic"]
+full = ["local", "portal", "parcode", "erasure", "gpu", "raft", "crdt", "wireguard", "rmpi", "hpc-channels", "chonkers", "blind-dedup", "nvmeof"]
 
 [dependencies]
 # Core warp crates
@@ -47,6 +52,7 @@ openraft = { workspace = true, optional = true }
 sled = { workspace = true, optional = true }
 rmpi = { workspace = true, optional = true }
 hpc-channels = { workspace = true, optional = true }
+quinn = { workspace = true, optional = true }
 
 # Async runtime
 tokio = { workspace = true }

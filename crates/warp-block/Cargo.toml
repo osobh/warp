@@ -6,6 +6,19 @@ rust-version.workspace = true
 license.workspace = true
 description = "NBD block device gateway for WARP storage with thin provisioning and COW snapshots"
 
+[features]
+default = []
+# NVMe over Fabrics support
+nvmeof = []
+# NVMe-oF with RDMA transport (simulated, no hardware dependency)
+nvmeof-rdma = ["nvmeof"]
+# NVMe-oF with QUIC transport
+nvmeof-quic = ["nvmeof", "dep:quinn"]
+# Full NVMe-oF support (all transports)
+nvmeof-full = ["nvmeof", "nvmeof-rdma", "nvmeof-quic"]
+# RDMA transport with actual hardware support (requires ibverbs)
+nvmeof-rdma-hw = ["nvmeof-rdma"]
+
 [dependencies]
 # WARP ecosystem
 warp-store = { path = "../warp-store" }
@@ -20,11 +33,15 @@ parking_lot = { workspace = true }
 
 # Serialization
 serde = { workspace = true }
+serde_json = { workspace = true }
 bytes = { workspace = true }
 
 # Error handling
 thiserror = { workspace = true }
 tracing = { workspace = true }
+
+# Optional: QUIC transport
+quinn = { version = "0.11", optional = true }
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["test-util"] }

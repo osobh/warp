@@ -10,25 +10,28 @@
 //! - Extent-based block-to-object mapping
 //! - Copy-on-write (COW) snapshots
 //! - TRIM/discard support
+//! - NVMe over Fabrics (NVMe-oF) target support
 //!
 //! # Architecture
 //!
 //! ```text
-//! ┌─────────────┐
-//! │ NBD Client  │
-//! │ (nbd-client)│
-//! └──────┬──────┘
-//!        │ NBD Protocol
-//! ┌──────▼──────┐
-//! │  NbdServer  │
-//! │  - Extent   │
-//! │  - ThinPool │
-//! │  - Snapshot │
-//! └──────┬──────┘
-//!        │
-//! ┌──────▼──────┐
-//! │  warp-store │
-//! └─────────────┘
+//! ┌─────────────┐     ┌─────────────┐
+//! │ NBD Client  │     │ NVMe Client │
+//! │ (nbd-client)│     │ (nvme-cli)  │
+//! └──────┬──────┘     └──────┬──────┘
+//!        │ NBD Protocol       │ NVMe-oF
+//! ┌──────▼──────┐     ┌──────▼──────┐
+//! │  NbdServer  │     │NvmeOfTarget │
+//! │  - Extent   │     │ - Subsystem │
+//! │  - ThinPool │     │ - Namespace │
+//! │  - Snapshot │     │ - Transport │
+//! └──────┬──────┘     └──────┬──────┘
+//!        │                   │
+//!        └─────────┬─────────┘
+//!                  │
+//!           ┌──────▼──────┐
+//!           │  warp-store │
+//!           └─────────────┘
 //! ```
 
 #![warn(missing_docs)]
@@ -37,6 +40,7 @@ pub mod config;
 pub mod error;
 pub mod extent;
 pub mod nbd;
+pub mod nvmeof;
 pub mod server;
 pub mod snapshot;
 pub mod thin;
@@ -49,3 +53,14 @@ pub use server::NbdServer;
 pub use snapshot::BlockSnapshot;
 pub use thin::{ThinPool, ThinVolume};
 pub use volume::{Volume, VolumeId, VolumeState};
+
+// NVMe-oF re-exports (always available for types, feature-gated for runtime)
+pub use nvmeof::{
+    generate_nqn, validate_nqn, NvmeOfConfig, NvmeOfError, NvmeOfResult, SubsystemConfig,
+    DISCOVERY_NQN, WARP_NQN_PREFIX,
+};
+
+#[cfg(feature = "nvmeof")]
+pub use nvmeof::{
+    AsyncVolume, DiscoveryService, NvmeOfConnection, NvmeOfNamespace, NvmeOfSubsystem, NvmeOfTarget,
+};
