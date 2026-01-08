@@ -696,7 +696,7 @@ warp-store = { version = "0.1", features = ["full"] }
 |---------|-------------|
 | `local` | Local filesystem backend (default) |
 | `portal` | P2P mesh storage via portal system |
-| `parcode` | Lazy-loading integration with hpc-ai/02-parcode |
+| `parcode` | Lazy-loading integration with hpc-ai/parcode |
 | `erasure` | Reed-Solomon erasure coding |
 | `gpu` | GPU acceleration via nvCOMP |
 | `raft` | Distributed consensus for metadata |

@@ -62,15 +62,15 @@ Together, they deliver a system where data flows like water—always finding the
 
 | Document | Description |
 |----------|-------------|
-| [Architecture](docs/01-ARCHITECTURE.md) | System design and component overview |
-| [Warp Engine](docs/02-WARP-ENGINE.md) | GPU-accelerated transfer engine |
-| [Portal System](docs/03-PORTAL-SYSTEM.md) | Zero-knowledge distributed storage |
-| [Integrity Layer](docs/04-INTEGRITY.md) | Three-layer cryptographic integrity |
-| [Network Layer](docs/05-NETWORK.md) | WireGuard mesh and P2P networking |
-| [GPU Scheduler](docs/06-SCHEDULER.md) | Real-time chunk scheduling |
-| [GPU Acceleration](docs/07-GPU-ACCELERATION.md) | Hardware optimization details |
-| [Development Plan](docs/08-DEVELOPMENT-PLAN.md) | Phased implementation roadmap |
-| [Glossary](docs/09-GLOSSARY.md) | Terms and definitions |
+| [Architecture](docs/ARCHITECTURE.md) | System design and component overview |
+| [Warp Engine](docs/WARP-ENGINE.md) | GPU-accelerated transfer engine |
+| [Portal System](docs/PORTAL-SYSTEM.md) | Zero-knowledge distributed storage |
+| [Integrity Layer](docs/INTEGRITY.md) | Three-layer cryptographic integrity |
+| [Network Layer](docs/NETWORK.md) | WireGuard mesh and P2P networking |
+| [GPU Scheduler](docs/SCHEDULER.md) | Real-time chunk scheduling |
+| [GPU Acceleration](docs/GPU-ACCELERATION.md) | Hardware optimization details |
+| [Development Plan](docs/DEVELOPMENT-PLAN.md) | Phased implementation roadmap |
+| [Glossary](docs/GLOSSARY.md) | Terms and definitions |
 
 ---
 

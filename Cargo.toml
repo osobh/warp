@@ -181,9 +181,9 @@ once_cell = "1.19"
 openraft = { version = "0.9", features = ["serde", "storage-v2"] }
 
 # HPC-AI integration
-hpc-channels = { path = "../02-hpc-channels", features = ["rkyv-codec"] }
-rmpi = { path = "../04-rmpi" }
-slai = { path = "../06-slai", default-features = false }
+hpc-channels = { path = "../hpc-channels", features = ["rkyv-codec"] }
+rmpi = { path = "../rmpi" }
+slai = { path = "../slai", default-features = false }
 
 [workspace.lints.rust]
 unsafe_code = "warn"
