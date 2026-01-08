@@ -20,19 +20,19 @@ jobs:
       - name: Checkout hpc-channels dependency
         uses: actions/checkout@v4
         with:
-          repository: rustyhpc/hpc-channels
+          repository: osobh/hpc-channels
           path: hpc-channels
 
       - name: Checkout rmpi dependency
         uses: actions/checkout@v4
         with:
-          repository: rustyhpc/rmpi
+          repository: osobh/rmpi
           path: rmpi
 
       - name: Checkout slai dependency
         uses: actions/checkout@v4
         with:
-          repository: rustyhpc/slai
+          repository: osobh/slai
           path: slai
 
       - name: Create symlinks for path dependencies
@@ -66,19 +66,19 @@ jobs:
       - name: Checkout hpc-channels dependency
         uses: actions/checkout@v4
         with:
-          repository: rustyhpc/hpc-channels
+          repository: osobh/hpc-channels
           path: hpc-channels
 
       - name: Checkout rmpi dependency
         uses: actions/checkout@v4
         with:
-          repository: rustyhpc/rmpi
+          repository: osobh/rmpi
           path: rmpi
 
       - name: Checkout slai dependency
         uses: actions/checkout@v4
         with:
-          repository: rustyhpc/slai
+          repository: osobh/slai
           path: slai
 
       - name: Create symlinks for path dependencies
@@ -112,19 +112,19 @@ jobs:
       - name: Checkout hpc-channels dependency
         uses: actions/checkout@v4
         with:
-          repository: rustyhpc/hpc-channels
+          repository: osobh/hpc-channels
           path: hpc-channels
 
       - name: Checkout rmpi dependency
         uses: actions/checkout@v4
         with:
-          repository: rustyhpc/rmpi
+          repository: osobh/rmpi
           path: rmpi
 
       - name: Checkout slai dependency
         uses: actions/checkout@v4
         with:
-          repository: rustyhpc/slai
+          repository: osobh/slai
           path: slai
 
       - name: Create symlinks for path dependencies
@@ -158,19 +158,19 @@ jobs:
       - name: Checkout hpc-channels dependency
         uses: actions/checkout@v4
         with:
-          repository: rustyhpc/hpc-channels
+          repository: osobh/hpc-channels
           path: hpc-channels
 
       - name: Checkout rmpi dependency
         uses: actions/checkout@v4
         with:
-          repository: rustyhpc/rmpi
+          repository: osobh/rmpi
           path: rmpi
 
       - name: Checkout slai dependency
         uses: actions/checkout@v4
         with:
-          repository: rustyhpc/slai
+          repository: osobh/slai
           path: slai
 
       - name: Create symlinks for path dependencies
@@ -205,19 +205,19 @@ jobs:
       - name: Checkout hpc-channels dependency
         uses: actions/checkout@v4
         with:
-          repository: rustyhpc/hpc-channels
+          repository: osobh/hpc-channels
           path: hpc-channels
 
       - name: Checkout rmpi dependency
         uses: actions/checkout@v4
         with:
-          repository: rustyhpc/rmpi
+          repository: osobh/rmpi
           path: rmpi
 
       - name: Checkout slai dependency
         uses: actions/checkout@v4
         with:
-          repository: rustyhpc/slai
+          repository: osobh/slai
           path: slai
 
       - name: Create symlinks for path dependencies
