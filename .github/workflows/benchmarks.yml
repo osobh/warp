@@ -22,18 +22,21 @@ jobs:
         with:
           repository: osobh/hpc-channels
           path: hpc-channels
+          token: ${{ secrets.PAT_TOKEN }}
 
       - name: Checkout rmpi dependency
         uses: actions/checkout@v4
         with:
           repository: osobh/rmpi
           path: rmpi
+          token: ${{ secrets.PAT_TOKEN }}
 
       - name: Checkout slai dependency
         uses: actions/checkout@v4
         with:
           repository: osobh/slai
           path: slai
+          token: ${{ secrets.PAT_TOKEN }}
 
       - name: Create symlinks for path dependencies
         run: |
@@ -68,18 +71,21 @@ jobs:
         with:
           repository: osobh/hpc-channels
           path: hpc-channels
+          token: ${{ secrets.PAT_TOKEN }}
 
       - name: Checkout rmpi dependency
         uses: actions/checkout@v4
         with:
           repository: osobh/rmpi
           path: rmpi
+          token: ${{ secrets.PAT_TOKEN }}
 
       - name: Checkout slai dependency
         uses: actions/checkout@v4
         with:
           repository: osobh/slai
           path: slai
+          token: ${{ secrets.PAT_TOKEN }}
 
       - name: Create symlinks for path dependencies
         run: |
@@ -114,18 +120,21 @@ jobs:
         with:
           repository: osobh/hpc-channels
           path: hpc-channels
+          token: ${{ secrets.PAT_TOKEN }}
 
       - name: Checkout rmpi dependency
         uses: actions/checkout@v4
         with:
           repository: osobh/rmpi
           path: rmpi
+          token: ${{ secrets.PAT_TOKEN }}
 
       - name: Checkout slai dependency
         uses: actions/checkout@v4
         with:
           repository: osobh/slai
           path: slai
+          token: ${{ secrets.PAT_TOKEN }}
 
       - name: Create symlinks for path dependencies
         run: |
@@ -160,18 +169,21 @@ jobs:
         with:
           repository: osobh/hpc-channels
           path: hpc-channels
+          token: ${{ secrets.PAT_TOKEN }}
 
       - name: Checkout rmpi dependency
         uses: actions/checkout@v4
         with:
           repository: osobh/rmpi
           path: rmpi
+          token: ${{ secrets.PAT_TOKEN }}
 
       - name: Checkout slai dependency
         uses: actions/checkout@v4
         with:
           repository: osobh/slai
           path: slai
+          token: ${{ secrets.PAT_TOKEN }}
 
       - name: Create symlinks for path dependencies
         run: |
@@ -207,18 +219,21 @@ jobs:
         with:
           repository: osobh/hpc-channels
           path: hpc-channels
+          token: ${{ secrets.PAT_TOKEN }}
 
       - name: Checkout rmpi dependency
         uses: actions/checkout@v4
         with:
           repository: osobh/rmpi
           path: rmpi
+          token: ${{ secrets.PAT_TOKEN }}
 
       - name: Checkout slai dependency
         uses: actions/checkout@v4
         with:
           repository: osobh/slai
           path: slai
+          token: ${{ secrets.PAT_TOKEN }}
 
       - name: Create symlinks for path dependencies
         run: |
