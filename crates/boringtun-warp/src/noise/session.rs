@@ -5,8 +5,8 @@
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Duration, Instant};
 
-use super::crypto::{aead_decrypt, aead_encrypt, KEY_LEN, TAG_LEN};
 use super::WireGuardError;
+use super::crypto::{KEY_LEN, TAG_LEN, aead_decrypt, aead_encrypt};
 
 /// Session lifetime before rekey is required (2 minutes for testing, normally 3 minutes)
 const SESSION_LIFETIME: Duration = Duration::from_secs(180);
@@ -246,14 +246,22 @@ mod tests {
         let mut decrypted = vec![0u8; plaintext.len()];
 
         // First message
-        let (counter1, _) = session1.encrypt_and_advance(plaintext, &mut ciphertext).unwrap();
+        let (counter1, _) = session1
+            .encrypt_and_advance(plaintext, &mut ciphertext)
+            .unwrap();
         assert_eq!(counter1, 0);
-        session2.decrypt(counter1, &ciphertext, &mut decrypted).unwrap();
+        session2
+            .decrypt(counter1, &ciphertext, &mut decrypted)
+            .unwrap();
 
         // Second message
-        let (counter2, _) = session1.encrypt_and_advance(plaintext, &mut ciphertext).unwrap();
+        let (counter2, _) = session1
+            .encrypt_and_advance(plaintext, &mut ciphertext)
+            .unwrap();
         assert_eq!(counter2, 1);
-        session2.decrypt(counter2, &ciphertext, &mut decrypted).unwrap();
+        session2
+            .decrypt(counter2, &ciphertext, &mut decrypted)
+            .unwrap();
 
         // Counter should have advanced
         assert_eq!(session1.send_counter(), 2);

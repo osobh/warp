@@ -82,7 +82,7 @@ impl WorkloadType {
             Self::Preprocessing => TransportType::GpuDirect, // GPU-direct for tensor loading
             Self::Evaluation => TransportType::NvLink,
             Self::Augmentation => TransportType::SharedMemory, // Local transforms
-            Self::Unknown => TransportType::Tcp, // Safe default
+            Self::Unknown => TransportType::Tcp,               // Safe default
         }
     }
 
@@ -308,7 +308,9 @@ impl SlaiSchedulingIntegration {
         let chunk_placement = brain_link.request_placement(brain_link_request).await?;
 
         // Check DPU availability
-        let dpu_available = self.check_dpu_availability(&brain_link, &chunk_placement).await;
+        let dpu_available = self
+            .check_dpu_availability(&brain_link, &chunk_placement)
+            .await;
         let use_dpu_inline = dpu_available
             && self.config.prefer_dpu
             && workload_type.benefits_from_dpu()
@@ -396,8 +398,7 @@ impl SlaiSchedulingIntegration {
         brain_link: &BrainLink,
         placement: &ChunkPlacement,
     ) -> bool {
-        brain_link.dpu_edge_count().await > 0
-            && placement.transport.uses_dpu()
+        brain_link.dpu_edge_count().await > 0 && placement.transport.uses_dpu()
     }
 
     /// Get prefetch suggestions based on object key
@@ -564,7 +565,11 @@ impl SlaiSchedulingIntegration {
 
     /// Update edge load
     pub async fn update_edge_load(&self, edge: EdgeIdx, load: f64) {
-        self.brain_link.write().await.update_edge_load(edge, load).await;
+        self.brain_link
+            .write()
+            .await
+            .update_edge_load(edge, load)
+            .await;
     }
 
     /// Get the configuration
@@ -820,7 +825,10 @@ mod tests {
         let integration = SlaiSchedulingIntegration::new(brain_link);
 
         integration
-            .update_prefetch_cache("test-key", vec!["predicted-1".to_string(), "predicted-2".to_string()])
+            .update_prefetch_cache(
+                "test-key",
+                vec!["predicted-1".to_string(), "predicted-2".to_string()],
+            )
             .await;
 
         let cache = integration.prefetch_cache.read().await;

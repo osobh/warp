@@ -247,8 +247,8 @@ impl WireGuardTunnel {
         let tunn = Tunn::new(
             static_private.into(),
             peer_public,
-            None,                         // preshared key
-            Some(25),                     // persistent keepalive (25 seconds)
+            None,     // preshared key
+            Some(25), // persistent keepalive (25 seconds)
             domain_id.try_into().unwrap_or(0),
         )
         .expect("Failed to create WireGuard tunnel");
@@ -877,7 +877,6 @@ impl WireGuardTunnelManager {
 
         Ok(None)
     }
-
 
     /// Encrypt and send data through a tunnel
     #[cfg(feature = "wireguard-native")]

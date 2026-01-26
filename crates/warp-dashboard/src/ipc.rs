@@ -282,10 +282,8 @@ impl IpcHandler {
                 self.app_state
                     .update_state(|state| {
                         // Find and mark as disconnected or remove
-                        if let Some(edge) = state
-                            .connected_edges
-                            .iter_mut()
-                            .find(|e| e.id == edge_id)
+                        if let Some(edge) =
+                            state.connected_edges.iter_mut().find(|e| e.id == edge_id)
                         {
                             edge.connected = false;
                         }
@@ -619,11 +617,7 @@ mod tests {
     #[tokio::test]
     async fn test_pause_transfer() {
         let mut state = DashboardState::new();
-        let mut transfer = TransferView::new(
-            "t1".to_string(),
-            "test".to_string(),
-            TDir::Send,
-        );
+        let mut transfer = TransferView::new("t1".to_string(), "test".to_string(), TDir::Send);
         transfer.status = TStatus::Active;
         state.add_active_transfer(transfer);
 
@@ -642,11 +636,7 @@ mod tests {
     #[tokio::test]
     async fn test_resume_transfer() {
         let mut state = DashboardState::new();
-        let mut transfer = TransferView::new(
-            "t1".to_string(),
-            "test".to_string(),
-            TDir::Send,
-        );
+        let mut transfer = TransferView::new("t1".to_string(), "test".to_string(), TDir::Send);
         transfer.status = TStatus::Paused;
         state.add_active_transfer(transfer);
 
@@ -665,11 +655,7 @@ mod tests {
     #[tokio::test]
     async fn test_cancel_transfer() {
         let mut state = DashboardState::new();
-        let mut transfer = TransferView::new(
-            "t1".to_string(),
-            "test".to_string(),
-            TDir::Send,
-        );
+        let mut transfer = TransferView::new("t1".to_string(), "test".to_string(), TDir::Send);
         transfer.status = TStatus::Active;
         state.add_active_transfer(transfer);
 

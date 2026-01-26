@@ -89,10 +89,7 @@ pub fn hmac_many(key: &[u8], data: &[&[u8]]) -> [u8; HASH_LEN] {
 /// HKDF function that extracts and expands in one step
 ///
 /// Returns (output1, output2) where each is 32 bytes
-pub fn hkdf2(
-    chaining_key: &[u8; HASH_LEN],
-    input: &[u8],
-) -> ([u8; HASH_LEN], [u8; HASH_LEN]) {
+pub fn hkdf2(chaining_key: &[u8; HASH_LEN], input: &[u8]) -> ([u8; HASH_LEN], [u8; HASH_LEN]) {
     // Extract
     let prk = hmac(chaining_key, input);
 
@@ -140,8 +137,8 @@ pub fn aead_encrypt(
     aad: &[u8],
     output: &mut [u8],
 ) -> Result<usize, WireGuardError> {
-    let cipher: ChaCha20Poly1305 = AeadKeyInit::new_from_slice(key)
-        .map_err(|_| WireGuardError::EncryptionFailed)?;
+    let cipher: ChaCha20Poly1305 =
+        AeadKeyInit::new_from_slice(key).map_err(|_| WireGuardError::EncryptionFailed)?;
 
     // Build nonce: 4 bytes of zeros + 8 bytes little-endian counter
     let mut nonce = [0u8; NONCE_LEN];
@@ -176,8 +173,8 @@ pub fn aead_decrypt(
         return Err(WireGuardError::InvalidPacket);
     }
 
-    let cipher: ChaCha20Poly1305 = AeadKeyInit::new_from_slice(key)
-        .map_err(|_| WireGuardError::DecryptionFailed)?;
+    let cipher: ChaCha20Poly1305 =
+        AeadKeyInit::new_from_slice(key).map_err(|_| WireGuardError::DecryptionFailed)?;
 
     // Build nonce: 4 bytes of zeros + 8 bytes little-endian counter
     let mut nonce = [0u8; NONCE_LEN];
@@ -275,7 +272,8 @@ mod tests {
         assert_eq!(ct_len, plaintext.len() + TAG_LEN);
 
         let mut decrypted = vec![0u8; plaintext.len()];
-        let pt_len = aead_decrypt(&key, counter, &ciphertext[..ct_len], aad, &mut decrypted).unwrap();
+        let pt_len =
+            aead_decrypt(&key, counter, &ciphertext[..ct_len], aad, &mut decrypted).unwrap();
         assert_eq!(pt_len, plaintext.len());
         assert_eq!(&decrypted[..pt_len], plaintext);
     }

@@ -20,11 +20,11 @@ use super::discovery::DiscoveryService;
 use super::error::{NvmeOfError, NvmeOfResult, NvmeStatus};
 use super::namespace::{AsyncVolume, NamespaceHandlerImpl, NamespaceId, NvmeOfNamespace};
 use super::subsystem::{NvmeOfSubsystem, SubsystemManager};
-use super::transport::tcp::TcpTransport;
 #[cfg(feature = "nvmeof-quic")]
 use super::transport::quic::{NvmeOfQuicConfig as QuicInternalConfig, QuicTransport};
 #[cfg(feature = "nvmeof-rdma")]
 use super::transport::rdma::{RdmaConfig, RdmaTransport};
+use super::transport::tcp::TcpTransport;
 use super::transport::{ConnectionState, NvmeOfTransport, TransportConnection};
 
 /// Namespace handler that routes to a subsystem's namespace manager

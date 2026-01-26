@@ -601,9 +601,8 @@ impl<B: StorageBackend> StorageCollectiveOps for RmpiCollectiveAdapter<B> {
                 let mut result_data = local_data.as_ref().to_vec();
 
                 // Ring reduce-scatter phase
-                let left_rank = Rank::new(
-                    (ctx.rank().id() + ctx.world_size() - 1) % ctx.world_size()
-                );
+                let left_rank =
+                    Rank::new((ctx.rank().id() + ctx.world_size() - 1) % ctx.world_size());
                 let right_rank = Rank::new((ctx.rank().id() + 1) % ctx.world_size());
 
                 for step in 0..world_size - 1 {
@@ -648,7 +647,8 @@ impl<B: StorageBackend> StorageCollectiveOps for RmpiCollectiveAdapter<B> {
                         match handle.recv::<Vec<u8>>(left_endpoint).await {
                             Ok(header_bytes) => {
                                 if let Ok(header) = ChunkHeader::from_bytes(&header_bytes) {
-                                    let mut recv_chunks = Vec::with_capacity(header.chunk_count as usize);
+                                    let mut recv_chunks =
+                                        Vec::with_capacity(header.chunk_count as usize);
                                     for _ in 0..header.chunk_count {
                                         match handle.recv::<Vec<u8>>(left_endpoint).await {
                                             Ok(chunk) => recv_chunks.push(chunk),
@@ -657,7 +657,8 @@ impl<B: StorageBackend> StorageCollectiveOps for RmpiCollectiveAdapter<B> {
                                             }
                                         }
                                     }
-                                    if let Ok(recv_data) = chunker.reassemble(&header, &recv_chunks) {
+                                    if let Ok(recv_data) = chunker.reassemble(&header, &recv_chunks)
+                                    {
                                         // Apply reduction operation element-wise
                                         Self::apply_reduction_inplace(
                                             &mut result_data[recv_start..recv_end],
@@ -712,8 +713,13 @@ impl<B: StorageBackend> StorageCollectiveOps for RmpiCollectiveAdapter<B> {
                                     }
                                 }
                                 if let Ok(recv_data) = chunker.reassemble(&header, &recv_chunks) {
-                                    result_data[recv_start..recv_end.min(recv_start + recv_data.len())]
-                                        .copy_from_slice(&recv_data[..recv_end.saturating_sub(recv_start).min(recv_data.len())]);
+                                    result_data
+                                        [recv_start..recv_end.min(recv_start + recv_data.len())]
+                                        .copy_from_slice(
+                                            &recv_data[..recv_end
+                                                .saturating_sub(recv_start)
+                                                .min(recv_data.len())],
+                                        );
                                 }
                             }
                         }

@@ -522,7 +522,10 @@ impl RdmaTransport {
             const CHUNK_SIZE: usize = 64 * 1024; // Must match send chunk size
 
             // Receive header first
-            let header_bytes = match handle.recv_bytes(rmpi_endpoint, RdmaChunkHeader::SIZE).await {
+            let header_bytes = match handle
+                .recv_bytes(rmpi_endpoint, RdmaChunkHeader::SIZE)
+                .await
+            {
                 Ok(bytes) => bytes,
                 Err(e) => {
                     endpoint.record_error();
@@ -634,13 +637,17 @@ impl RdmaTransport {
 
             // Receive chunks
             for chunk_idx in 0..header.chunk_count {
-                let chunk_bytes = handle
-                    .recv_bytes(rmpi_endpoint, CHUNK_SIZE)
-                    .await
-                    .map_err(|e| {
-                        endpoint.record_error();
-                        Error::Transport(format!("Failed to receive chunk {}: {}", chunk_idx, e))
-                    })?;
+                let chunk_bytes =
+                    handle
+                        .recv_bytes(rmpi_endpoint, CHUNK_SIZE)
+                        .await
+                        .map_err(|e| {
+                            endpoint.record_error();
+                            Error::Transport(format!(
+                                "Failed to receive chunk {}: {}",
+                                chunk_idx, e
+                            ))
+                        })?;
 
                 let take = remaining.min(CHUNK_SIZE);
                 data.extend_from_slice(&chunk_bytes[..take]);
@@ -705,9 +712,7 @@ impl RdmaTransport {
 
         info!(
             device_id,
-            device_ptr,
-            size,
-            "Registered GPU buffer for RDMA"
+            device_ptr, size, "Registered GPU buffer for RDMA"
         );
 
         Ok(GpuBufferRegistration::new(device_id, device_ptr, size))
@@ -1150,9 +1155,9 @@ mod tests {
         let endpoint = RdmaEndpoint::new("test".to_string(), "10.0.0.1:9000".parse().unwrap());
 
         // Record multiple receives with different latencies
-        endpoint.record_recv(100, 10);   // 10µs
-        endpoint.record_recv(100, 20);   // 20µs
-        endpoint.record_recv(100, 30);   // 30µs
+        endpoint.record_recv(100, 10); // 10µs
+        endpoint.record_recv(100, 20); // 20µs
+        endpoint.record_recv(100, 30); // 30µs
 
         let stats = endpoint.stats();
         assert_eq!(stats.messages_recv, 3);

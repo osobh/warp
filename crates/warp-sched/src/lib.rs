@@ -36,10 +36,6 @@ pub use brain_link::{
     BrainLink, BrainLinkStats, ChunkPlacement, ChunkPlacementRequest, CommunicationPattern,
     DpuCapabilities, DpuType, EdgeNodeInfo, NetworkLink, TransportType,
 };
-pub use slai_integration::{
-    SlaiCombinedMetrics, SlaiIntegrationConfig, SlaiIntegrationStats, SlaiSchedulingIntegration,
-    UnifiedPlacement, UnifiedPlacementRequest, WorkloadType as SchedWorkloadType,
-};
 pub use constraints::{
     ConstraintEvaluator, ConstraintViolation, CostConstraint, EdgeConstraints, PolicyEngine,
     PowerConstraint, SchedulePolicy, TimeConstraint, TimeWindow, ViolationSeverity,
@@ -54,6 +50,10 @@ pub use reoptimize::{
 };
 pub use saturation::{SaturationDetector, SaturationSummary};
 pub use scheduler::{ChunkScheduler, CpuChunkScheduler, SchedulerConfig};
+pub use slai_integration::{
+    SlaiCombinedMetrics, SlaiIntegrationConfig, SlaiIntegrationStats, SlaiSchedulingIntegration,
+    UnifiedPlacement, UnifiedPlacementRequest, WorkloadType as SchedWorkloadType,
+};
 pub use state::{CpuStateBuffers, GpuStateBuffers, StateSnapshot};
 pub use types::{
     Assignment, AssignmentBatch, ChunkId, ChunkState, ChunkStatus, DynamicEdgeMetrics, EdgeIdx,

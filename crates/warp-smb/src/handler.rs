@@ -3,8 +3,8 @@
 //! Implements SMB2/3 command processing and dispatch.
 
 use std::collections::HashMap;
-use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
 
 use bytes::{Buf, BufMut, BytesMut};
 use dashmap::DashMap;
@@ -19,8 +19,8 @@ use crate::config::SmbConfig;
 use crate::error::{NtStatus, SmbError, SmbResult};
 use crate::oplocks::OplockManager;
 use crate::protocol::{
-    CreateDisposition, DesiredAccess, FileAttributes, FileId, ShareAccess, Smb2Flags, Smb2Header,
-    SmbCommand, SMB2_HEADER_SIZE, SMB2_PROTOCOL_ID,
+    CreateDisposition, DesiredAccess, FileAttributes, FileId, SMB2_HEADER_SIZE, SMB2_PROTOCOL_ID,
+    ShareAccess, Smb2Flags, Smb2Header, SmbCommand,
 };
 use crate::server::{SessionFlags, SmbSession, TreeConnect};
 use crate::share::ShareManager;
@@ -212,11 +212,7 @@ impl SmbConnectionHandler {
     }
 
     /// Handle Negotiate command
-    async fn handle_negotiate(
-        &mut self,
-        header: &Smb2Header,
-        body: &[u8],
-    ) -> SmbResult<Vec<u8>> {
+    async fn handle_negotiate(&mut self, header: &Smb2Header, body: &[u8]) -> SmbResult<Vec<u8>> {
         if body.len() < 36 {
             return Err(SmbError::Protocol("Negotiate body too short".to_string()));
         }
@@ -290,7 +286,9 @@ impl SmbConnectionHandler {
         body: &[u8],
     ) -> SmbResult<Vec<u8>> {
         if body.len() < 24 {
-            return Err(SmbError::Protocol("SessionSetup body too short".to_string()));
+            return Err(SmbError::Protocol(
+                "SessionSetup body too short".to_string(),
+            ));
         }
 
         let mut buf = body;
@@ -447,11 +445,7 @@ impl SmbConnectionHandler {
     }
 
     /// Handle Create (open file) command
-    async fn handle_create(
-        &mut self,
-        header: &Smb2Header,
-        body: &[u8],
-    ) -> SmbResult<Vec<u8>> {
+    async fn handle_create(&mut self, header: &Smb2Header, body: &[u8]) -> SmbResult<Vec<u8>> {
         if body.len() < 56 {
             return Err(SmbError::Protocol("Create body too short".to_string()));
         }
@@ -554,11 +548,7 @@ impl SmbConnectionHandler {
     }
 
     /// Handle Close command
-    async fn handle_close(
-        &mut self,
-        header: &Smb2Header,
-        body: &[u8],
-    ) -> SmbResult<Vec<u8>> {
+    async fn handle_close(&mut self, header: &Smb2Header, body: &[u8]) -> SmbResult<Vec<u8>> {
         if body.len() < 24 {
             return Err(SmbError::Protocol("Close body too short".to_string()));
         }
@@ -595,11 +585,7 @@ impl SmbConnectionHandler {
     }
 
     /// Handle Read command
-    async fn handle_read(
-        &mut self,
-        header: &Smb2Header,
-        body: &[u8],
-    ) -> SmbResult<Vec<u8>> {
+    async fn handle_read(&mut self, header: &Smb2Header, body: &[u8]) -> SmbResult<Vec<u8>> {
         if body.len() < 48 {
             return Err(SmbError::Protocol("Read body too short".to_string()));
         }
@@ -616,7 +602,10 @@ impl SmbConnectionHandler {
         let _channel = buf.get_u32_le();
         let _remaining_bytes = buf.get_u32_le();
 
-        debug!("Read {} bytes at offset {} from {:?}", length, offset, file_id);
+        debug!(
+            "Read {} bytes at offset {} from {:?}",
+            length, offset, file_id
+        );
 
         // Get file info
         let file_info = self
@@ -670,11 +659,7 @@ impl SmbConnectionHandler {
     }
 
     /// Handle Write command
-    async fn handle_write(
-        &mut self,
-        header: &Smb2Header,
-        body: &[u8],
-    ) -> SmbResult<Vec<u8>> {
+    async fn handle_write(&mut self, header: &Smb2Header, body: &[u8]) -> SmbResult<Vec<u8>> {
         if body.len() < 48 {
             return Err(SmbError::Protocol("Write body too short".to_string()));
         }
@@ -686,7 +671,10 @@ impl SmbConnectionHandler {
         let offset = buf.get_u64_le();
         let file_id = FileId::parse(&mut &buf[..16]);
 
-        debug!("Write {} bytes at offset {} to {:?}", length, offset, file_id);
+        debug!(
+            "Write {} bytes at offset {} to {:?}",
+            length, offset, file_id
+        );
 
         // Get file info
         let file_info = self
@@ -743,7 +731,9 @@ impl SmbConnectionHandler {
         body: &[u8],
     ) -> SmbResult<Vec<u8>> {
         if body.len() < 32 {
-            return Err(SmbError::Protocol("QueryDirectory body too short".to_string()));
+            return Err(SmbError::Protocol(
+                "QueryDirectory body too short".to_string(),
+            ));
         }
 
         let mut buf = body;
@@ -782,11 +772,7 @@ impl SmbConnectionHandler {
     }
 
     /// Handle QueryInfo command
-    async fn handle_query_info(
-        &mut self,
-        header: &Smb2Header,
-        body: &[u8],
-    ) -> SmbResult<Vec<u8>> {
+    async fn handle_query_info(&mut self, header: &Smb2Header, body: &[u8]) -> SmbResult<Vec<u8>> {
         if body.len() < 40 {
             return Err(SmbError::Protocol("QueryInfo body too short".to_string()));
         }

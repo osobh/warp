@@ -90,7 +90,6 @@ pub struct AutoTierConfig {
     // ========================================================================
     // BrainLink DPU Integration
     // ========================================================================
-
     /// Enable DPU-aware tiering decisions
     ///
     /// When enabled, the tiering engine considers DPU capabilities when making

@@ -600,10 +600,7 @@ impl HpcStorageBackend for GpuDirectBackend {
         Ok(meta)
     }
 
-    async fn pinned_load(
-        &self,
-        key: &ObjectKey,
-    ) -> Result<warp_gpu::GpuBuffer<u8>> {
+    async fn pinned_load(&self, key: &ObjectKey) -> Result<warp_gpu::GpuBuffer<u8>> {
         let gpu_ctx = self
             .gpu_ctx
             .as_ref()
@@ -622,9 +619,9 @@ impl HpcStorageBackend for GpuDirectBackend {
             match pool.acquire(size) {
                 Ok(mut pinned) => {
                     // Read directly into pinned memory
-                    let data = tokio::fs::read(&path)
-                        .await
-                        .map_err(|e| Error::Backend(format!("Failed to read {}: {}", path.display(), e)))?;
+                    let data = tokio::fs::read(&path).await.map_err(|e| {
+                        Error::Backend(format!("Failed to read {}: {}", path.display(), e))
+                    })?;
 
                     pinned.as_mut_slice()[..data.len()].copy_from_slice(&data);
                     self.stats.write().await.pinned_hits += 1;
@@ -635,9 +632,9 @@ impl HpcStorageBackend for GpuDirectBackend {
                 Err(_) => {
                     // Fallback to regular read
                     self.stats.write().await.pinned_misses += 1;
-                    tokio::fs::read(&path)
-                        .await
-                        .map_err(|e| Error::Backend(format!("Failed to read {}: {}", path.display(), e)))?
+                    tokio::fs::read(&path).await.map_err(|e| {
+                        Error::Backend(format!("Failed to read {}: {}", path.display(), e))
+                    })?
                 }
             }
         } else {
@@ -762,12 +759,15 @@ impl GpuDirectBackend {
             "GPU-to-GPU transfer complete"
         );
 
-        Ok((dst_buffer, P2PTransferResult {
-            bytes_transferred: size,
-            path,
-            duration_us,
-            bandwidth_gbps,
-        }))
+        Ok((
+            dst_buffer,
+            P2PTransferResult {
+                bytes_transferred: size,
+                path,
+                duration_us,
+                bandwidth_gbps,
+            },
+        ))
     }
 
     /// P2P transfer via NVLink
@@ -805,11 +805,9 @@ impl GpuDirectBackend {
                         .map_err(|e| Error::Backend(format!("GPU copy failed: {}", e)))?;
                     pinned.as_slice().to_vec()
                 }
-                Err(_) => {
-                    src_buffer
-                        .copy_to_host()
-                        .map_err(|e| Error::Backend(format!("GPU copy failed: {}", e)))?
-                }
+                Err(_) => src_buffer
+                    .copy_to_host()
+                    .map_err(|e| Error::Backend(format!("GPU copy failed: {}", e)))?,
             }
         } else {
             src_buffer
@@ -960,7 +958,8 @@ impl GpuDirectBackend {
                     let mut sum: f32 = 0.0;
                     for buffer in &host_buffers {
                         if offset + 4 <= buffer.len() {
-                            let val = f32::from_le_bytes(buffer[offset..offset + 4].try_into().unwrap());
+                            let val =
+                                f32::from_le_bytes(buffer[offset..offset + 4].try_into().unwrap());
                             sum += val;
                         }
                     }
@@ -973,7 +972,8 @@ impl GpuDirectBackend {
                     let mut max_val: f32 = f32::NEG_INFINITY;
                     for buffer in &host_buffers {
                         if offset + 4 <= buffer.len() {
-                            let val = f32::from_le_bytes(buffer[offset..offset + 4].try_into().unwrap());
+                            let val =
+                                f32::from_le_bytes(buffer[offset..offset + 4].try_into().unwrap());
                             max_val = max_val.max(val);
                         }
                     }
@@ -986,7 +986,8 @@ impl GpuDirectBackend {
                     let mut min_val: f32 = f32::INFINITY;
                     for buffer in &host_buffers {
                         if offset + 4 <= buffer.len() {
-                            let val = f32::from_le_bytes(buffer[offset..offset + 4].try_into().unwrap());
+                            let val =
+                                f32::from_le_bytes(buffer[offset..offset + 4].try_into().unwrap());
                             min_val = min_val.min(val);
                         }
                     }
@@ -1000,7 +1001,8 @@ impl GpuDirectBackend {
                     let mut sum: f32 = 0.0;
                     for buffer in &host_buffers {
                         if offset + 4 <= buffer.len() {
-                            let val = f32::from_le_bytes(buffer[offset..offset + 4].try_into().unwrap());
+                            let val =
+                                f32::from_le_bytes(buffer[offset..offset + 4].try_into().unwrap());
                             sum += val;
                         }
                     }
@@ -1222,7 +1224,9 @@ mod tests {
     fn test_p2p_transfer_result() {
         let result = P2PTransferResult {
             bytes_transferred: 1024 * 1024,
-            path: P2PPath::NvLink { bandwidth_gbps: 600 },
+            path: P2PPath::NvLink {
+                bandwidth_gbps: 600,
+            },
             duration_us: 1000,
             bandwidth_gbps: 8.0,
         };

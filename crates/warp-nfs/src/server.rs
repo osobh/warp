@@ -284,7 +284,11 @@ impl NfsServerHandle {
     }
 
     /// Create an RPC error response from a parse error
-    fn create_rpc_error_response(&self, message: &[u8], error: RpcError) -> Result<Vec<u8>, RpcError> {
+    fn create_rpc_error_response(
+        &self,
+        message: &[u8],
+        error: RpcError,
+    ) -> Result<Vec<u8>, RpcError> {
         // Try to extract XID from the message
         let xid = if message.len() >= 4 {
             u32::from_be_bytes(message[0..4].try_into().unwrap())

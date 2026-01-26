@@ -354,13 +354,7 @@ impl RpcReplyHeader {
                     1 => RpcRejectReason::AuthError,
                     _ => RpcRejectReason::AuthError,
                 };
-                (
-                    RpcReplyStatus::Denied,
-                    None,
-                    Some(reason),
-                    0,
-                    Bytes::new(),
-                )
+                (RpcReplyStatus::Denied, None, Some(reason), 0, Bytes::new())
             }
             _ => {
                 return Err(RpcError::InvalidMessage(format!(

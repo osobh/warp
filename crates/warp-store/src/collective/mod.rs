@@ -37,7 +37,9 @@
 #[cfg(feature = "rmpi")]
 pub mod rmpi_adapter;
 #[cfg(feature = "rmpi")]
-pub use rmpi_adapter::{RmpiCollectiveAdapter, SafeSendChunker, ChunkHeader, DEFAULT_CHUNK_SIZE, MAX_CHUNK_SIZE};
+pub use rmpi_adapter::{
+    ChunkHeader, DEFAULT_CHUNK_SIZE, MAX_CHUNK_SIZE, RmpiCollectiveAdapter, SafeSendChunker,
+};
 
 use std::collections::HashMap;
 use std::sync::Arc;

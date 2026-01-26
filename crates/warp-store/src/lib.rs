@@ -77,7 +77,7 @@ pub use collective::{
     GatherResult, Rank, ReduceOperation, ScatterConfig, ScatterResult, StorageCollectiveOps,
 };
 #[cfg(feature = "rmpi")]
-pub use collective::{RmpiCollectiveAdapter, SafeSendChunker, ChunkHeader};
+pub use collective::{ChunkHeader, RmpiCollectiveAdapter, SafeSendChunker};
 #[cfg(feature = "raft")]
 pub use consistency::{NodeId, ObjectMetadataEntry, RaftMetrics, RaftStore, RaftStoreConfig};
 pub use ephemeral::{AccessScope, EphemeralToken, Permissions, RateLimit};

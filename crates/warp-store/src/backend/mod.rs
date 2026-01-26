@@ -37,8 +37,8 @@ mod gpu_direct;
 
 #[cfg(feature = "gpu")]
 pub use gpu_direct::{
-    GpuBufferHandle, GpuDirectBackend, GpuDirectConfig, GpuDirectStats, GpuReduceOp, NvLinkTopology,
-    P2PPath, P2PTransferResult, PinnedHandle,
+    GpuBufferHandle, GpuDirectBackend, GpuDirectConfig, GpuDirectStats, GpuReduceOp,
+    NvLinkTopology, P2PPath, P2PTransferResult, PinnedHandle,
 };
 
 #[cfg(feature = "chonkers")]

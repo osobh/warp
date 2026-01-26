@@ -181,9 +181,7 @@ fn test_concurrent_status_updates() {
             // Node 1 should have a valid status
             let status = detector.get_status(1);
             assert!(status.is_some());
-            assert!(
-                status == Some(NodeStatus::Suspect) || status == Some(NodeStatus::Healthy)
-            );
+            assert!(status == Some(NodeStatus::Suspect) || status == Some(NodeStatus::Healthy));
         },
         1000,
     );

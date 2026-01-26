@@ -181,7 +181,10 @@ impl Tunn {
 
         match handshake.create_initiation(self.tunnel_index, dst) {
             Ok(len) => {
-                debug!(tunnel_index = self.tunnel_index, "Created handshake initiation");
+                debug!(
+                    tunnel_index = self.tunnel_index,
+                    "Created handshake initiation"
+                );
                 TunnResult::WriteToNetwork(&mut dst[..len])
             }
             Err(e) => {
@@ -485,7 +488,10 @@ mod tests {
 
     #[test]
     fn test_message_type_parsing() {
-        assert_eq!(MessageType::try_from(1).unwrap(), MessageType::HandshakeInit);
+        assert_eq!(
+            MessageType::try_from(1).unwrap(),
+            MessageType::HandshakeInit
+        );
         assert_eq!(
             MessageType::try_from(2).unwrap(),
             MessageType::HandshakeResponse

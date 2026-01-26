@@ -7,12 +7,12 @@ use std::time::Instant;
 use rand_core::OsRng;
 use x25519_dalek::{PublicKey, StaticSecret};
 
+use super::WireGuardError;
 use super::crypto::{
-    aead_decrypt, aead_encrypt, hash, hash_many, hkdf2, hkdf3, hmac, HASH_LEN, KEY_LEN,
-    NOISE_PROTOCOL_NAME, TAG_LEN, WG_IDENTIFIER,
+    HASH_LEN, KEY_LEN, NOISE_PROTOCOL_NAME, TAG_LEN, WG_IDENTIFIER, aead_decrypt, aead_encrypt,
+    hash, hash_many, hkdf2, hkdf3, hmac,
 };
 use super::session::Session;
-use super::WireGuardError;
 
 /// Size of handshake initiation message
 pub const HANDSHAKE_INIT_SIZE: usize = 148;
@@ -260,7 +260,13 @@ impl Handshake {
         // Decrypt peer's static public key
         let encrypted_static = &packet[40..88];
         let mut peer_static_bytes = [0u8; 32];
-        aead_decrypt(&key, 0, encrypted_static, &self.hash, &mut peer_static_bytes)?;
+        aead_decrypt(
+            &key,
+            0,
+            encrypted_static,
+            &self.hash,
+            &mut peer_static_bytes,
+        )?;
 
         // Verify it matches expected peer
         if peer_static_bytes != *self.peer_static_public.as_bytes() {
@@ -431,11 +437,7 @@ impl Handshake {
         // Derive transport keys
         let (t1, t2) = hkdf2(&self.chaining_key, &[]);
 
-        let (send_key, recv_key) = if is_initiator {
-            (t1, t2)
-        } else {
-            (t2, t1)
-        };
+        let (send_key, recv_key) = if is_initiator { (t1, t2) } else { (t2, t1) };
 
         self.transport_keys = Some(TransportKeys {
             send_key,
@@ -448,7 +450,12 @@ impl Handshake {
         self.ephemeral_private = None;
         self.state = HandshakeState::Complete;
 
-        Some(Session::new(send_key, recv_key, self.our_index, self.peer_index))
+        Some(Session::new(
+            send_key,
+            recv_key,
+            self.our_index,
+            self.peer_index,
+        ))
     }
 
     /// Generate TAI64N timestamp
@@ -484,19 +491,11 @@ mod tests {
         let responder_public = PublicKey::from(&responder_private);
 
         // Create handshake states
-        let mut initiator = Handshake::new(
-            initiator_private,
-            initiator_public,
-            responder_public,
-            None,
-        );
+        let mut initiator =
+            Handshake::new(initiator_private, initiator_public, responder_public, None);
 
-        let mut responder = Handshake::new(
-            responder_private,
-            responder_public,
-            initiator_public,
-            None,
-        );
+        let mut responder =
+            Handshake::new(responder_private, responder_public, initiator_public, None);
 
         // Step 1: Initiator creates initiation
         let mut init_msg = vec![0u8; HANDSHAKE_INIT_SIZE];
@@ -524,10 +523,14 @@ mod tests {
         // Verify sessions can encrypt/decrypt
         let plaintext = b"Hello, WireGuard!";
         let mut ciphertext = vec![0u8; plaintext.len() + TAG_LEN];
-        let ct_len = initiator_session.encrypt(0, plaintext, &mut ciphertext).unwrap();
+        let ct_len = initiator_session
+            .encrypt(0, plaintext, &mut ciphertext)
+            .unwrap();
 
         let mut decrypted = vec![0u8; plaintext.len()];
-        let pt_len = responder_session.decrypt(0, &ciphertext[..ct_len], &mut decrypted).unwrap();
+        let pt_len = responder_session
+            .decrypt(0, &ciphertext[..ct_len], &mut decrypted)
+            .unwrap();
 
         assert_eq!(&decrypted[..pt_len], plaintext);
     }
