@@ -46,6 +46,8 @@ tokio = { workspace = true, features = ["test-util", "macros", "rt-multi-thread"
 tempfile.workspace = true
 proptest.workspace = true
 test-case.workspace = true
+loom.workspace = true
+shuttle.workspace = true
 
 [features]
 default = []

@@ -49,10 +49,10 @@ All 8 passes of the fullcleanreview completed successfully:
 
 ### Testing
 
-- [ ] Add loom/shuttle tests for concurrent code paths (from Pass 3 plan)
-  - Healer daemon state transitions
-  - Scrub daemon state transitions
-  - NetworkManager state lock
+- [x] Add loom/shuttle tests for concurrent code paths (DONE)
+  - Healer daemon: `crates/warp-store/tests/healer_loom.rs`
+  - Scrub daemon: `crates/warp-store/tests/scrub_shuttle.rs`
+  - NetworkManager: `crates/portal-net/tests/manager_loom.rs`, `manager_shuttle.rs`
 
 ### Feature Stubs
 
