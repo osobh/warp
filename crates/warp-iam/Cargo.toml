@@ -50,7 +50,7 @@ urlencoding = "2.1"
 reqwest = { version = "0.12", features = ["json"], optional = true }
 
 # LDAP support (optional)
-ldap3 = { version = "0.11", optional = true }
+ldap3 = { version = "0.12", optional = true }
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["test-util", "macros", "rt-multi-thread"] }

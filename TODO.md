@@ -53,11 +53,19 @@ All 8 passes of the fullcleanreview completed successfully:
   - Scrub daemon: `crates/warp-store/tests/scrub_shuttle.rs`
   - NetworkManager: `crates/portal-net/tests/manager_loom.rs`, `manager_shuttle.rs`
 
+### Feature Implementations
+
+- [x] LDAP provider implemented (DONE)
+  - Full `IdentityProvider` trait implementation with ldap3 v0.12
+  - Supports OpenLDAP and Active Directory configurations
+  - STARTTLS and TLS verification options
+  - User/group search and authentication
+  - Enable with: `cargo build -p warp-iam --features ldap`
+
 ### Feature Stubs
 
 The following feature modules have placeholder implementations:
 - `warp-dpu/src/backends/bluefield.rs` - BlueField DPU (requires DOCA SDK)
-- `warp-iam/src/ldap.rs` - LDAP provider (requires ldap3 crate)
 - `warp-kms/src/aws.rs` - AWS KMS (requires aws-sdk-kms crate)
 
 ## Review Plan Reference

@@ -180,21 +180,24 @@ impl LdapProvider {
         }
 
         // Create new connection
-        let settings = ldap3::LdapConnSettings::new()
+        let mut settings = ldap3::LdapConnSettings::new()
             .set_conn_timeout(std::time::Duration::from_secs(self.config.timeout_seconds));
+
+        // Configure TLS verification
+        if self.config.skip_tls_verify {
+            settings = settings.set_no_tls_verify(true);
+        }
+
+        // Enable STARTTLS if configured
+        if self.config.starttls {
+            settings = settings.set_starttls(true);
+        }
 
         let (ldap_conn, mut ldap) = ldap3::LdapConnAsync::with_settings(settings, &self.config.url)
             .await
             .map_err(|e| Error::Ldap(format!("Connection failed: {}", e)))?;
 
         ldap3::drive!(ldap_conn);
-
-        // STARTTLS if configured
-        if self.config.starttls {
-            ldap.start_tls(self.config.skip_tls_verify)
-                .await
-                .map_err(|e| Error::Ldap(format!("STARTTLS failed: {}", e)))?;
-        }
 
         // Bind with service account if configured
         if let (Some(bind_dn), Some(bind_pw)) = (&self.config.bind_dn, &self.config.bind_password) {
@@ -221,20 +224,22 @@ impl LdapProvider {
 
     /// Create a fresh connection for user authentication (avoids session mixing)
     async fn create_auth_connection(&self) -> Result<ldap3::Ldap> {
-        let settings = ldap3::LdapConnSettings::new()
+        let mut settings = ldap3::LdapConnSettings::new()
             .set_conn_timeout(std::time::Duration::from_secs(self.config.timeout_seconds));
 
-        let (ldap_conn, mut ldap) = ldap3::LdapConnAsync::with_settings(settings, &self.config.url)
+        if self.config.skip_tls_verify {
+            settings = settings.set_no_tls_verify(true);
+        }
+
+        if self.config.starttls {
+            settings = settings.set_starttls(true);
+        }
+
+        let (ldap_conn, ldap) = ldap3::LdapConnAsync::with_settings(settings, &self.config.url)
             .await
             .map_err(|e| Error::Ldap(format!("Connection failed: {}", e)))?;
 
         ldap3::drive!(ldap_conn);
-
-        if self.config.starttls {
-            ldap.start_tls(self.config.skip_tls_verify)
-                .await
-                .map_err(|e| Error::Ldap(format!("STARTTLS failed: {}", e)))?;
-        }
 
         Ok(ldap)
     }
@@ -335,7 +340,7 @@ impl LdapProvider {
         let entry = ldap3::SearchEntry::construct(entries.into_iter().next().unwrap());
 
         Ok(Some(LdapGroupEntry {
-            dn: entry.dn,
+            dn: entry.dn.clone(),
             id: get_first_attr(&entry, &self.config.group_id_attr).unwrap_or_default(),
             name: get_first_attr(&entry, &self.config.group_name_attr).unwrap_or_default(),
             description: get_first_attr(&entry, "description"),
@@ -386,7 +391,7 @@ impl LdapProvider {
             .map(|e| {
                 let entry = ldap3::SearchEntry::construct(e);
                 LdapGroupEntry {
-                    dn: entry.dn,
+                    dn: entry.dn.clone(),
                     id: get_first_attr(&entry, &self.config.group_id_attr).unwrap_or_default(),
                     name: get_first_attr(&entry, &self.config.group_name_attr).unwrap_or_default(),
                     description: get_first_attr(&entry, "description"),
